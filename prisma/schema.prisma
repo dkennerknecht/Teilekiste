@@ -1,0 +1,352 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          String         @default("READ")
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  allowedScopes UserLocation[]
+  movements     StockMovement[]
+  reservations  Reservation[]
+  auditLogs     AuditLog[]
+  favorites     Favorite[]
+  recentViews   RecentView[]
+  accounts      Account[]
+  sessions      Session[]
+  apiTokens     ApiToken[]
+}
+
+model UserLocation {
+  id                String           @id @default(uuid())
+  userId            String
+  storageLocationId String
+  createdAt         DateTime         @default(now())
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storageLocation   StorageLocation  @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storageLocationId])
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items     Item[]
+  customFields CustomField[]
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  itemTags  ItemTag[]
+}
+
+model StorageLocation {
+  id        String         @id @default(uuid())
+  name      String         @unique
+  code      String?        @unique
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  items     Item[]
+  scopes    UserLocation[]
+}
+
+model Area {
+  id        String       @id @default(uuid())
+  code      String       @unique
+  name      String
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  types     LabelType[]
+  counters  SequenceCounter[]
+
+  @@unique([code, name])
+}
+
+model LabelType {
+  id        String            @id @default(uuid())
+  areaId    String
+  code      String
+  name      String
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  area      Area              @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  counters  SequenceCounter[]
+
+  @@unique([areaId, code])
+}
+
+model SequenceCounter {
+  id         String    @id @default(uuid())
+  areaId     String
+  typeId     String
+  nextNumber Int       @default(1)
+  area       Area      @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  type       LabelType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+
+  @@unique([areaId, typeId])
+}
+
+model LabelConfig {
+  id                String   @id @default("default")
+  separator         String   @default("-")
+  digits            Int      @default(3)
+  prefix            String?
+  suffix            String?
+  recycleNumbers    Boolean  @default(false)
+  delimiter         String   @default(",")
+  allowCodeEdit     Boolean  @default(true)
+  regenerateOnType  Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Item {
+  id                String              @id @default(uuid())
+  labelCode         String              @unique
+  name              String
+  description       String
+  categoryId        String
+  storageLocationId String
+  storageArea       String?
+  bin               String?
+  stock             Int                 @default(0)
+  unit              String              @default("STK")
+  minStock          Int?
+  manufacturer      String?
+  mpn               String?
+  datasheetUrl      String?
+  purchaseUrl       String?
+  barcodeEan        String?
+  isArchived        Boolean             @default(false)
+  deletedAt         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  category          Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  storageLocation   StorageLocation     @relation(fields: [storageLocationId], references: [id], onDelete: Restrict)
+  tags              ItemTag[]
+  images            ItemImage[]
+  attachments       Attachment[]
+  movements         StockMovement[]
+  reservations      Reservation[]
+  customValues      ItemCustomFieldValue[]
+  favorites         Favorite[]
+  recentViews       RecentView[]
+  bomParents        BillOfMaterial[]    @relation("BOMChild")
+  bomChildren       BillOfMaterial[]    @relation("BOMParent")
+
+  @@index([name])
+  @@index([labelCode])
+  @@index([mpn])
+  @@index([manufacturer])
+  @@index([storageLocationId])
+  @@index([deletedAt])
+  @@index([minStock, stock])
+}
+
+model ItemTag {
+  itemId String
+  tagId  String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, tagId])
+}
+
+model ItemImage {
+  id        String   @id @default(uuid())
+  itemId    String
+  path      String
+  thumbPath String?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  mime      String
+  size      Int
+  caption   String?
+  createdAt DateTime @default(now())
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, isPrimary])
+  @@index([itemId, sortOrder])
+}
+
+model Attachment {
+  id        String         @id @default(uuid())
+  itemId    String
+  path      String
+  mime      String
+  size      Int
+  kind      String
+  createdAt DateTime       @default(now())
+  item      Item           @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+model StockMovement {
+  id        String         @id @default(uuid())
+  itemId    String
+  delta     Int
+  reason    String
+  note      String?
+  userId    String
+  createdAt DateTime       @default(now())
+  item      Item           @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([itemId, createdAt])
+}
+
+model Reservation {
+  id          String   @id @default(uuid())
+  itemId       String
+  reservedQty  Int
+  reservedFor  String
+  note         String?
+  userId       String
+  createdAt    DateTime @default(now())
+  item         Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([itemId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  before    String?
+  after     String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model CustomField {
+  id           String           @id @default(uuid())
+  name         String
+  key          String           @unique
+  type         String
+  options      String?
+  required     Boolean          @default(false)
+  categoryId   String?
+  isActive     Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  values       ItemCustomFieldValue[]
+
+  @@unique([name, categoryId])
+}
+
+model ItemCustomFieldValue {
+  id            String      @id @default(uuid())
+  itemId         String
+  customFieldId  String
+  valueJson      String
+  item           Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  customField    CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, customFieldId])
+  @@index([customFieldId])
+}
+
+model Favorite {
+  userId    String
+  itemId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+}
+
+model RecentView {
+  userId       String
+  itemId       String
+  lastViewedAt DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item         Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+  @@index([lastViewedAt])
+}
+
+model BillOfMaterial {
+  id          String @id @default(uuid())
+  parentItemId String
+  childItemId  String
+  qty         Int    @default(1)
+  parent      Item   @relation("BOMParent", fields: [parentItemId], references: [id], onDelete: Cascade)
+  child       Item   @relation("BOMChild", fields: [childItemId], references: [id], onDelete: Cascade)
+
+  @@unique([parentItemId, childItemId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model ApiToken {
+  id         String   @id @default(uuid())
+  name       String
+  tokenHash  String   @unique
+  isActive   Boolean  @default(true)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+}

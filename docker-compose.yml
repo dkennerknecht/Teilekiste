@@ -1,0 +1,21 @@
+services:
+  teilekiste:
+    build: .
+    container_name: teilekiste
+    ports:
+      - "3000:3000"
+    environment:
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-super-secret}
+      DATABASE_URL: ${DATABASE_URL:-file:/data/sqlite/app.db}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/data/uploads}
+      ATTACHMENT_DIR: ${ATTACHMENT_DIR:-/data/attachments}
+      BACKUP_DIR: ${BACKUP_DIR:-/data/backups}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-20}
+    volumes:
+      - teilekiste_data:/data
+    restart: unless-stopped
+
+volumes:
+  teilekiste_data:
