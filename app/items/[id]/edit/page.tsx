@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { fileHref } from "@/lib/file-href";
 
 type ItemImage = {
   id: string;
@@ -13,15 +15,6 @@ type ItemImage = {
 };
 type TagOption = { id: string; name: string };
 
-function fileHref(absolutePath: string) {
-  const encoded = absolutePath
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-  return `/api/files/${encoded}`;
-}
-
 export default function EditItemPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [form, setForm] = useState<any>(null);
@@ -30,7 +23,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     const data = await fetch(`/api/items/${params.id}`, { cache: "no-store" }).then((r) => r.json());
     setForm({
       name: data.name,
@@ -44,14 +37,14 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
       tagIds: (data.tags || []).map((t: any) => t.tagId)
     });
     setImages((data.images || []).slice().sort((a: ItemImage, b: ItemImage) => a.sortOrder - b.sortOrder));
-  }
+  }, [params.id]);
 
   useEffect(() => {
     fetch("/api/meta", { cache: "no-store" })
       .then((r) => r.json())
       .then((meta) => setTags(meta.tags || []));
     load();
-  }, [params.id]);
+  }, [load]);
 
   const imageIds = useMemo(() => images.map((img) => img.id), [images]);
 
@@ -168,7 +161,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         <p className="text-sm text-workshop-700">Erstes Bild ist automatisch das Titelbild. Reihenfolge per Drag&Drop ändern.</p>
 
         <form
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
           onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
@@ -178,8 +171,8 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
           }}
         >
           <input className="input" type="file" name="file" accept="image/*" capture="environment" required />
-          <input className="input" type="text" name="caption" placeholder="Bildtitel (optional)" />
-          <button className="btn" type="submit">
+          <input className="input sm:flex-1" type="text" name="caption" placeholder="Bildtitel (optional)" />
+          <button className="btn w-full sm:w-auto" type="submit">
             Bild hochladen
           </button>
         </form>
@@ -187,11 +180,11 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         {images.length === 0 ? (
           <p className="text-sm text-workshop-700">Noch keine Bilder vorhanden.</p>
         ) : (
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
             {images.map((img, index) => (
               <div
                 key={img.id}
-                className={`w-28 rounded border p-2 ${
+                className={`min-w-0 rounded border p-2 sm:w-28 ${
                   dragOverId === img.id ? "border-workshop-700 bg-workshop-50" : "border-workshop-200"
                 }`}
                 draggable
@@ -219,7 +212,14 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
                 }}
               >
                 <div className="relative">
-                  <img src={fileHref(img.thumbPath || img.path)} alt={img.caption || `Bild ${index + 1}`} className="h-20 w-full rounded object-cover" />
+                  <Image
+                    src={fileHref(img.thumbPath || img.path)}
+                    alt={img.caption || `Bild ${index + 1}`}
+                    width={96}
+                    height={80}
+                    unoptimized
+                    className="h-20 w-full rounded object-cover"
+                  />
                   <button
                     type="button"
                     className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-700 hover:bg-white"

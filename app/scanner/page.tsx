@@ -29,7 +29,7 @@ export default function ScannerPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Scanner-Mode</h1>
-      <form className="card flex gap-2" onSubmit={scan}>
+      <form className="card flex flex-col gap-2 sm:flex-row" onSubmit={scan}>
         <input
           ref={inputRef}
           autoFocus
@@ -38,7 +38,7 @@ export default function ScannerPage() {
           value={code}
           onChange={(e) => setCode(e.target.value)}
         />
-        <button className="btn" type="submit">
+        <button className="btn w-full sm:w-auto" type="submit">
           Oeffnen
         </button>
       </form>
@@ -48,9 +48,9 @@ export default function ScannerPage() {
           <p className="font-mono text-workshop-700">{item.labelCode}</p>
           <h2 className="text-xl font-semibold">{item.name}</h2>
           <p>Bestand: {item.stock} | Verfuegbar: {item.availableStock}</p>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
-              className="btn"
+              className="btn w-full sm:w-auto"
               onClick={async () => {
                 await fetch(`/api/items/${item.id}/movements`, {
                   method: "POST",
@@ -62,7 +62,7 @@ export default function ScannerPage() {
             >
               -1 buchen
             </button>
-            <Link className="btn-secondary" href={`/items/${item.id}`}>
+            <Link className="btn-secondary w-full sm:w-auto" href={`/items/${item.id}`}>
               Detailseite
             </Link>
           </div>

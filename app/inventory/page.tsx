@@ -28,9 +28,39 @@ export default function InventoryPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Inventur-Modus</h1>
-      <div className="card">
+      <div className="space-y-3 md:hidden">
+        {rows.map((r) => (
+          <div key={r.id} className="card space-y-2">
+            <div>
+              <p className="font-mono text-sm text-workshop-700">{r.labelCode}</p>
+              <p className="font-medium">{r.name}</p>
+              <p className="text-sm text-workshop-700">
+                {r.storageArea || "-"} / {r.bin || "-"}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-lg bg-workshop-50 p-3">
+                <p className="text-workshop-700">Soll</p>
+                <p className="mt-1 text-lg font-semibold">{r.stock}</p>
+              </div>
+              <label className="rounded-lg bg-workshop-50 p-3">
+                <span className="text-workshop-700">Ist</span>
+                <input
+                  className="input mt-2"
+                  type="number"
+                  defaultValue={r.stock}
+                  onChange={(e) => setCounted((v) => ({ ...v, [r.id]: Number(e.target.value) }))}
+                />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card hidden md:block">
         <p className="mb-2 text-sm">Laufreihenfolge: Regal/Fach/Code</p>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-[760px] w-full text-sm">
           <thead>
             <tr className="border-b border-workshop-200 text-left">
               <th className="px-2 py-2">Code</th>
@@ -58,7 +88,8 @@ export default function InventoryPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <div className="card space-y-2">
@@ -71,7 +102,7 @@ export default function InventoryPage() {
           ))}
         </ul>
         <button
-          className="btn"
+          className="btn w-full sm:w-auto"
           onClick={async () => {
             const updates = preview.map((p) => ({ itemId: p.id, countedStock: p.counted!, note: "Inventur" }));
             const res = await fetch("/api/inventory", {
@@ -87,7 +118,7 @@ export default function InventoryPage() {
         >
           Differenzen uebernehmen
         </button>
-        <a className="btn-secondary" href="/api/export/csv">Inventur-Report CSV</a>
+        <a className="btn-secondary w-full sm:w-auto" href="/api/export/csv">Inventur-Report CSV</a>
       </div>
     </div>
   );

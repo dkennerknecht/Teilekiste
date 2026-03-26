@@ -12,6 +12,7 @@ services:
       UPLOAD_DIR: ${UPLOAD_DIR:-/data/uploads}
       ATTACHMENT_DIR: ${ATTACHMENT_DIR:-/data/attachments}
       BACKUP_DIR: ${BACKUP_DIR:-/data/backups}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-10}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-20}
       RUN_SEED_ON_STARTUP: ${RUN_SEED_ON_STARTUP:-0}
     volumes:

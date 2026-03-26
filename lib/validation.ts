@@ -154,6 +154,12 @@ export const apiTokenCreateSchema = z.object({
   expiresAt: z.string().trim().min(1).optional().nullable()
 });
 
+export const bomEntrySchema = z.object({
+  childItemId: uuidSchema,
+  qty: z.number().int().positive().max(9999)
+});
+
 export const backupRestoreSchema = z.object({
-  strategy: z.enum(["merge", "overwrite"]).default("merge")
+  strategy: z.enum(["merge", "overwrite"]).default("merge"),
+  dryRun: z.boolean().optional().default(true)
 });

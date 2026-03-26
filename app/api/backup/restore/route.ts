@@ -6,7 +6,8 @@ import AdmZip from "adm-zip";
 import { requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { restoreBackupData, type BackupPayload } from "@/lib/backup-restore";
+import { inspectBackupZip } from "@/lib/backup";
+import { previewBackupRestore, restoreBackupData, type BackupPayload } from "@/lib/backup-restore";
 import { backupRestoreSchema } from "@/lib/validation";
 import { badRequest } from "@/lib/http";
 
@@ -16,24 +17,45 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file");
-  const parsed = backupRestoreSchema.safeParse({ strategy: String(form.get("strategy") || "merge") });
+  const parsed = backupRestoreSchema.safeParse({
+    strategy: String(form.get("strategy") || "merge"),
+    dryRun: String(form.get("dryRun") || "1") !== "0"
+  });
   if (!parsed.success) return badRequest("Invalid restore strategy");
-  const strategy = parsed.data.strategy;
+  const { strategy, dryRun } = parsed.data;
 
   if (!(file instanceof File)) return badRequest("Backup ZIP fehlt");
   if (file.size > 500 * 1024 * 1024) return badRequest("Backup ZIP zu gross (max 500MB)");
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const zip = new AdmZip(buffer);
-  const exportEntry = zip.getEntry("export.json");
-  if (!exportEntry) return badRequest("export.json fehlt");
   let payload: BackupPayload;
+  let manifest: Awaited<ReturnType<typeof inspectBackupZip>>["manifest"] = null;
+  let checksumVerified = false;
   try {
-    payload = JSON.parse(exportEntry.getData().toString("utf8"));
-  } catch {
-    return badRequest("export.json ungueltig");
+    const inspected = await inspectBackupZip(buffer);
+    payload = inspected.payload as BackupPayload;
+    manifest = inspected.manifest;
+    checksumVerified = inspected.checksumVerified;
+  } catch (error) {
+    return badRequest((error as Error).message || "export.json ungueltig");
   }
 
+  if (manifest && !checksumVerified) {
+    return badRequest("Backup-Pruefsumme stimmt nicht");
+  }
+
+  if (dryRun) {
+    const preview = await previewBackupRestore({ payload, strategy });
+    return NextResponse.json({
+      ok: true,
+      dryRun: true,
+      checksumVerified,
+      manifest,
+      ...preview
+    });
+  }
+
+  const zip = new AdmZip(buffer);
   if (strategy === "overwrite") {
     await prisma.$transaction([
       prisma.favorite.deleteMany(),
@@ -44,9 +66,16 @@ export async function POST(req: NextRequest) {
       prisma.stockMovement.deleteMany(),
       prisma.itemImage.deleteMany(),
       prisma.attachment.deleteMany(),
+      prisma.billOfMaterial.deleteMany(),
+      prisma.auditLog.deleteMany(),
       prisma.item.deleteMany(),
       prisma.customField.deleteMany(),
       prisma.tag.deleteMany(),
+      prisma.sequenceCounter.deleteMany(),
+      prisma.labelType.deleteMany(),
+      prisma.area.deleteMany(),
+      prisma.labelConfig.deleteMany(),
+      prisma.userLocation.deleteMany(),
       prisma.category.deleteMany(),
       prisma.storageLocation.deleteMany()
     ]);
@@ -71,10 +100,21 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    dryRun: false,
     strategy,
+    checksumVerified,
+    manifest,
     restoredCategories: result.restoredCategories,
+    restoredLocations: result.restoredLocations,
+    restoredTags: result.restoredTags,
+    restoredAreas: result.restoredAreas,
+    restoredTypes: result.restoredTypes,
+    restoredSequenceCounters: result.restoredSequenceCounters,
     restoredItems: result.restoredItems,
+    restoredBomEntries: result.restoredBomEntries,
+    restoredAuditLogs: result.restoredAuditLogs,
     restoredUsers: result.restoredUsers,
+    restoredUserScopes: result.restoredUserScopes,
     placeholderUsers: result.placeholderUsers,
     conflicts: result.conflicts
   });

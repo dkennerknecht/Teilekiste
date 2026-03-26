@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const userFindFirstMock = vi.fn();
 const userUpdateMock = vi.fn();
 const userCreateMock = vi.fn();
+const userLocationDeleteManyMock = vi.fn();
+const userLocationCreateMock = vi.fn();
 const categoryFindFirstMock = vi.fn();
 const categoryUpdateMock = vi.fn();
 const categoryCreateMock = vi.fn();
@@ -28,6 +30,10 @@ vi.mock("@/lib/prisma", () => ({
       findFirst: userFindFirstMock,
       update: userUpdateMock,
       create: userCreateMock
+    },
+    userLocation: {
+      deleteMany: userLocationDeleteManyMock,
+      create: userLocationCreateMock
     },
     category: {
       findFirst: categoryFindFirstMock,
@@ -80,6 +86,8 @@ afterEach(() => {
 describe("Backup restore", () => {
   it("maps merge conflicts to existing supporting rows and restores related item data", async () => {
     userFindFirstMock.mockResolvedValue({ id: "user-existing", email: "admin@local" });
+    userLocationDeleteManyMock.mockResolvedValue({});
+    userLocationCreateMock.mockResolvedValue({});
     categoryFindFirstMock.mockResolvedValue({ id: "cat-existing", name: "Passive" });
     locationFindFirstMock.mockResolvedValue({ id: "loc-existing", name: "Shelf" });
     tagFindFirstMock.mockResolvedValue({ id: "tag-existing", name: "SMD" });
@@ -105,7 +113,8 @@ describe("Backup restore", () => {
             email: "admin@local",
             role: "ADMIN",
             isActive: true,
-            passwordHash: "$2a$10$exampleexampleexampleexampleexampleexampleexample12"
+            passwordHash: "$2a$10$exampleexampleexampleexampleexampleexampleexample12",
+            allowedLocationIds: ["loc-backup"]
           }
         ],
         categories: [{ id: "cat-backup", name: "Passive" }],
@@ -243,6 +252,16 @@ describe("Backup restore", () => {
         create: expect.objectContaining({
           userId: "user-existing"
         })
+      })
+    );
+
+    expect(userLocationDeleteManyMock).toHaveBeenCalledWith({ where: { userId: "user-existing" } });
+    expect(userLocationCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          userId: "user-existing",
+          storageLocationId: "loc-existing"
+        }
       })
     );
   });

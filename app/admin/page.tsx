@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type IdObj = { id: string };
@@ -17,6 +18,9 @@ export default function AdminPage() {
   const [importResult, setImportResult] = useState<any>(null);
   const [feedback, setFeedback] = useState<string>("");
   const [restoreResult, setRestoreResult] = useState<any>(null);
+  const [backupResult, setBackupResult] = useState<any>(null);
+  const [areas, setAreas] = useState<any[]>([]);
+  const [types, setTypes] = useState<any[]>([]);
 
   const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
   const [editCategoryName, setEditCategoryName] = useState("");
@@ -31,7 +35,7 @@ export default function AdminPage() {
   const [editUser, setEditUser] = useState({ name: "", email: "", role: "READ", isActive: true, password: "" });
 
   async function load() {
-    const [d, c, t, l, f, cfg, u, tokens] = await Promise.all([
+    const [d, c, t, l, f, cfg, u, tokens, meta] = await Promise.all([
       fetch("/api/admin/dash", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/categories", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/tags", { cache: "no-store" }).then((r) => r.json()),
@@ -39,7 +43,8 @@ export default function AdminPage() {
       fetch("/api/admin/custom-fields", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/label-config", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/api-tokens", { cache: "no-store" }).then((r) => r.json())
+      fetch("/api/admin/api-tokens", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/meta", { cache: "no-store" }).then((r) => r.json())
     ]);
     setDash(d);
     setCategories(c);
@@ -49,6 +54,8 @@ export default function AdminPage() {
     setLabelConfig(cfg);
     setUsers(u);
     setApiTokens(tokens);
+    setAreas(meta.areas || []);
+    setTypes(meta.types || []);
   }
 
   useEffect(() => {
@@ -112,11 +119,16 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Admin</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Admin</h1>
+        <Link className="btn-secondary" href="/admin/audit">
+          Audit History
+        </Link>
+      </div>
       {feedback && <div className="rounded border border-workshop-300 bg-workshop-100 p-2 text-sm">{feedback}</div>}
 
       {dash && (
-        <div className="grid gap-3 md:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div className="card"><p className="text-xs">Items</p><p className="text-2xl font-bold">{dash.items}</p></div>
           <div className="card"><p className="text-xs">Unter min</p><p className="text-2xl font-bold">{dash.lowStock}</p></div>
           <div className="card"><p className="text-xs">Nutzer</p><p className="text-2xl font-bold">{dash.users}</p></div>
@@ -125,39 +137,90 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="card flex flex-wrap gap-2">
-        <button className="btn" onClick={async () => { await fetch("/api/backup/create", { method: "POST" }); await load(); }}>Backup jetzt</button>
+      <div className="card flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <button
+          className="btn"
+          onClick={async () => {
+            const { res, data } = await apiJson("/api/backup/create", { method: "POST" });
+            setBackupResult(data);
+            setFeedback(res.ok ? "Backup erstellt" : `Backup fehlgeschlagen: ${data.error || "Unbekannt"}`);
+            await load();
+          }}
+        >
+          Backup jetzt
+        </button>
         <form
           onSubmit={async (e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
             const { res, data } = await apiJson("/api/backup/restore", { method: "POST", body: form });
             setRestoreResult(data);
-            setFeedback(res.ok ? "Restore ausgefuehrt" : `Restore Fehler: ${data.error || "Unbekannt"}`);
-            await load();
+            setFeedback(
+              res.ok
+                ? data.dryRun
+                  ? "Restore-Vorschau aktualisiert"
+                  : "Restore ausgefuehrt"
+                : `Restore Fehler: ${data.error || "Unbekannt"}`
+            );
+            if (res.ok && !data.dryRun) {
+              await load();
+            }
           }}
-          className="flex items-center gap-2"
+          className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
         >
           <input className="input" type="file" name="file" accept=".zip" required />
           <select className="input" name="strategy"><option value="merge">merge</option><option value="overwrite">overwrite</option></select>
-          <button className="btn-secondary" type="submit">Restore ZIP</button>
+          <select className="input" name="dryRun"><option value="1">Preview</option><option value="0">Apply</option></select>
+          <button className="btn-secondary w-full sm:w-auto" type="submit">Restore ZIP</button>
         </form>
       </div>
 
+      {backupResult?.backupFile && (
+        <div className="card text-sm">
+          <p className="font-semibold">Letztes Backup</p>
+          <p className="break-all">{backupResult.backupFile}</p>
+          <p>ZIP SHA-256: <span className="font-mono text-xs">{backupResult.zipSha256}</span></p>
+          <p>
+            Inhalt: {backupResult.manifest?.itemCount || 0} Items, {backupResult.manifest?.bomCount || 0} BOM-Eintraege,
+            {" "}{backupResult.manifest?.auditCount || 0} Audit-Logs
+          </p>
+          <p>Retention geloeschter Dateien: {(backupResult.deletedBackups || []).join(", ") || "-"}</p>
+        </div>
+      )}
+
       {restoreResult?.conflicts && (
         <div className="card text-sm">
-          <p className="font-semibold">Restore Konflikte (merge)</p>
+          <p className="font-semibold">{restoreResult.dryRun ? "Restore Vorschau" : "Restore Ergebnis"}</p>
+          {restoreResult.manifest && (
+            <p>
+              Manifest: {restoreResult.manifest.itemCount || 0} Items, {restoreResult.manifest.bomCount || 0} BOM,
+              {" "}{restoreResult.manifest.auditCount || 0} Audit-Logs, Checksumme: {restoreResult.checksumVerified ? "ok" : "nicht vorhanden"}
+            </p>
+          )}
+          {restoreResult.summary && (
+            <p>
+              Preview: {restoreResult.summary.items} Items, {restoreResult.summary.boms} BOM, {restoreResult.summary.auditLogs} Audit-Logs
+            </p>
+          )}
+          {!restoreResult.dryRun && (
+            <p>
+              Wiederhergestellt: {restoreResult.restoredItems || 0} Items, {restoreResult.restoredBomEntries || 0} BOM,
+              {" "}{restoreResult.restoredAuditLogs || 0} Audit-Logs
+            </p>
+          )}
           <p>Kategorien: {(restoreResult.conflicts.categories || []).join(", ") || "-"}</p>
           <p>Lagerorte: {(restoreResult.conflicts.locations || []).join(", ") || "-"}</p>
           <p>Tags: {(restoreResult.conflicts.tags || []).join(", ") || "-"}</p>
           <p>Items (labelCode): {(restoreResult.conflicts.items || []).join(", ") || "-"}</p>
+          <p>Areas: {(restoreResult.conflicts.areas || []).join(", ") || "-"}</p>
+          <p>Types: {(restoreResult.conflicts.types || []).join(", ") || "-"}</p>
         </div>
       )}
 
       <section className="card space-y-2">
         <h2 className="font-semibold">CSV Import (Dry-run + Apply)</h2>
         <form
-          className="grid gap-2 md:grid-cols-5"
+          className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5"
           onSubmit={async (e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
@@ -165,28 +228,68 @@ export default function AdminPage() {
             setImportResult(data);
           }}
         >
-          <input className="input md:col-span-2" type="file" name="file" accept=".csv,text/csv" required />
-          <input className="input" name="areaId" placeholder="Area ID" required />
-          <input className="input" name="typeId" placeholder="Type ID" required />
+          <input className="input sm:col-span-2 xl:col-span-2" type="file" name="file" accept=".csv,text/csv" required />
+          <select className="input" name="areaId" required>
+            <option value="">Area</option>
+            {areas.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.code} - {area.name}
+              </option>
+            ))}
+          </select>
+          <select className="input" name="typeId" required>
+            <option value="">Type</option>
+            {types.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.code} - {type.name}
+              </option>
+            ))}
+          </select>
           <select className="input" name="dryRun"><option value="1">Dry-run</option><option value="0">Apply</option></select>
-          <button className="btn md:col-span-2">Import starten</button>
+          <button className="btn sm:col-span-2 xl:col-span-2">Import starten</button>
         </form>
         {importResult && (
-          <div className="rounded border border-workshop-200 p-2 text-sm">
-            <p>Rows: {importResult.totalRows} | Created: {importResult.created} | DryRun: {String(importResult.dryRun)}</p>
-            {!!importResult.errors?.length && <p className="text-red-700">Fehler: {importResult.errors.join(" | ")}</p>}
+          <div className="space-y-2 rounded border border-workshop-200 p-2 text-sm">
+            <p>
+              Rows: {importResult.totalRows} | Created: {importResult.created} | DryRun: {String(importResult.dryRun)}
+              {" "} | Errors: {importResult.errorsCount || 0} | Warnings: {importResult.warningsCount || 0}
+            </p>
+            {!!importResult.createdItems?.length && (
+              <p>
+                Angelegt: {importResult.createdItems.map((item: any) => `${item.labelCode} (${item.name})`).join(", ")}
+              </p>
+            )}
+            <div className="space-y-2">
+              {(importResult.rows || []).slice(0, 20).map((row: any) => (
+                <div
+                  key={row.lineNumber}
+                  className={`rounded border px-3 py-2 ${row.status === "ready" ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}
+                >
+                  <p className="font-medium">
+                    Zeile {row.lineNumber} - {row.status === "ready" ? "bereit" : "fehlerhaft"}
+                  </p>
+                  {row.input && (
+                    <p>
+                      {row.input.name} | {row.input.categoryName} | {row.input.locationName}
+                    </p>
+                  )}
+                  {!!row.errors?.length && <p className="text-red-700">Fehler: {row.errors.join(" | ")}</p>}
+                  {!!row.warnings?.length && <p className="text-amber-700">Warnungen: {row.warnings.join(" | ")}</p>}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <section className="card space-y-2">
           <h2 className="font-semibold">Kategorien</h2>
           <ul className="space-y-1 text-sm">
             {categories.map((c) => (
               <li key={c.id} className="rounded border border-workshop-200 p-2">
                 {editCategoryId === c.id ? (
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <input className="input" value={editCategoryName} onChange={(e) => setEditCategoryName(e.target.value)} />
                     <button className="btn-secondary px-2" onClick={async () => {
                       const { res, data } = await apiJson("/api/admin/categories", {
@@ -199,9 +302,9 @@ export default function AdminPage() {
                     <button className="btn-secondary px-2" onClick={() => setEditCategoryId(null)}>Abbrechen</button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <span>{c.name}</span>
-                    <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="break-words">{c.name}</span>
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <button className="btn-secondary px-2 py-1" onClick={() => startEdit(c, "category")}>Bearbeiten</button>
                       <button className="btn-secondary px-2 py-1" onClick={async () => {
                         const { res, data } = await apiJson("/api/admin/categories", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: c.id }) });
@@ -214,7 +317,7 @@ export default function AdminPage() {
               </li>
             ))}
           </ul>
-          <form className="flex gap-2" onSubmit={async (e) => {
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             const { res, data } = await apiJson("/api/admin/categories", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name") }) });
@@ -233,7 +336,7 @@ export default function AdminPage() {
             {tags.map((t) => (
               <li key={t.id} className="rounded border border-workshop-200 p-2">
                 {editTagId === t.id ? (
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <input className="input" value={editTagName} onChange={(e) => setEditTagName(e.target.value)} />
                     <button className="btn-secondary px-2" onClick={async () => {
                       const { res, data } = await apiJson("/api/admin/tags", {
@@ -246,9 +349,9 @@ export default function AdminPage() {
                     <button className="btn-secondary px-2" onClick={() => setEditTagId(null)}>Abbrechen</button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <span>{t.name}</span>
-                    <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="break-words">{t.name}</span>
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <button className="btn-secondary px-2 py-1" onClick={() => startEdit(t, "tag")}>Bearbeiten</button>
                       <button className="btn-secondary px-2 py-1" onClick={async () => {
                         const { res, data } = await apiJson("/api/admin/tags", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: t.id }) });
@@ -261,7 +364,7 @@ export default function AdminPage() {
               </li>
             ))}
           </ul>
-          <form className="flex gap-2" onSubmit={async (e) => {
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             const { res, data } = await apiJson("/api/admin/tags", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name") }) });
@@ -281,8 +384,8 @@ export default function AdminPage() {
         <ul className="space-y-1 text-sm">
           {apiTokens.map((t) => (
             <li key={t.id} className="rounded border border-workshop-200 p-2">
-              <div className="flex items-center justify-between gap-2">
-                <span>{t.name} | {t.user?.email || t.userId} | aktiv: {String(t.isActive)}</span>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="break-words">{t.name} | {t.user?.email || t.userId} | aktiv: {String(t.isActive)}</span>
                 {t.isActive && <button className="btn-secondary px-2 py-1" onClick={async () => {
                   await fetch(`/api/admin/api-tokens/${t.id}`, { method: "DELETE" });
                   setFeedback("API Token deaktiviert");
@@ -292,7 +395,7 @@ export default function AdminPage() {
             </li>
           ))}
         </ul>
-        <form className="grid gap-2 md:grid-cols-4" onSubmit={async (e) => {
+        <form className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4" onSubmit={async (e) => {
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           const { res, data } = await apiJson("/api/admin/api-tokens", {
@@ -317,7 +420,7 @@ export default function AdminPage() {
           {users.map((u) => (
             <li key={u.id} className="rounded border border-workshop-200 p-2">
               {editUserId === u.id ? (
-                <div className="grid gap-2 md:grid-cols-6">
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
                   <input className="input" value={editUser.name} onChange={(e) => setEditUser((v) => ({ ...v, name: e.target.value }))} />
                   <input className="input" value={editUser.email} onChange={(e) => setEditUser((v) => ({ ...v, email: e.target.value }))} />
                   <select className="input" value={editUser.role} onChange={(e) => setEditUser((v) => ({ ...v, role: e.target.value }))}>
@@ -325,7 +428,7 @@ export default function AdminPage() {
                   </select>
                   <label className="text-sm"><input type="checkbox" checked={editUser.isActive} onChange={(e) => setEditUser((v) => ({ ...v, isActive: e.target.checked }))} /> aktiv</label>
                   <input className="input" value={editUser.password} onChange={(e) => setEditUser((v) => ({ ...v, password: e.target.value }))} placeholder="Neues Passwort (optional)" />
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <button className="btn-secondary px-2" onClick={async () => {
                       const payload: any = { id: u.id, name: editUser.name, email: editUser.email, role: editUser.role, isActive: editUser.isActive };
                       if (editUser.password) payload.password = editUser.password;
@@ -338,9 +441,9 @@ export default function AdminPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between gap-2">
-                  <span>{u.name} ({u.email}) - {u.role} - aktiv: {String(u.isActive)}</span>
-                  <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="break-words">{u.name} ({u.email}) - {u.role} - aktiv: {String(u.isActive)}</span>
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <button className="btn-secondary px-2 py-1" onClick={() => startEdit(u, "user")}>Bearbeiten</button>
                     <button className="btn-secondary px-2 py-1" onClick={async () => {
                       const { res, data } = await apiJson("/api/admin/users", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: u.id }) });
@@ -353,7 +456,7 @@ export default function AdminPage() {
             </li>
           ))}
         </ul>
-        <form className="grid gap-2 md:grid-cols-5" onSubmit={async (e) => {
+        <form className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" onSubmit={async (e) => {
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           const { res, data } = await apiJson("/api/admin/users", {
@@ -376,14 +479,14 @@ export default function AdminPage() {
         </form>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <section className="card space-y-2">
           <h2 className="font-semibold">Lagerorte</h2>
           <ul className="space-y-1 text-sm">
             {locations.map((l) => (
               <li key={l.id} className="rounded border border-workshop-200 p-2">
                 {editLocationId === l.id ? (
-                  <div className="grid gap-2 md:grid-cols-4">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <input className="input" value={editLocationName} onChange={(e) => setEditLocationName(e.target.value)} />
                     <input className="input" value={editLocationCode} onChange={(e) => setEditLocationCode(e.target.value)} />
                     <button className="btn-secondary" onClick={async () => {
@@ -397,9 +500,9 @@ export default function AdminPage() {
                     <button className="btn-secondary" onClick={() => setEditLocationId(null)}>Abbrechen</button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <span>{l.name} ({l.code})</span>
-                    <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="break-words">{l.name} ({l.code})</span>
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <button className="btn-secondary px-2 py-1" onClick={() => startEdit(l, "location")}>Bearbeiten</button>
                       <button className="btn-secondary px-2 py-1" onClick={async () => {
                         const { res, data } = await apiJson("/api/admin/locations", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: l.id }) });
@@ -412,7 +515,7 @@ export default function AdminPage() {
               </li>
             ))}
           </ul>
-          <form className="grid grid-cols-3 gap-2" onSubmit={async (e) => {
+          <form className="grid gap-2 sm:grid-cols-3" onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             const { res, data } = await apiJson("/api/admin/locations", {
@@ -434,14 +537,14 @@ export default function AdminPage() {
             {customFields.map((f) => (
               <li key={f.id} className="rounded border border-workshop-200 p-2">
                 {editCustomId === f.id ? (
-                  <div className="grid gap-2 md:grid-cols-5">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                     <input className="input" value={editCustom.name} onChange={(e) => setEditCustom((v) => ({ ...v, name: e.target.value }))} />
                     <input className="input" value={editCustom.key} onChange={(e) => setEditCustom((v) => ({ ...v, key: e.target.value }))} />
                     <select className="input" value={editCustom.type} onChange={(e) => setEditCustom((v) => ({ ...v, type: e.target.value }))}>
                       <option>TEXT</option><option>NUMBER</option><option>BOOLEAN</option><option>SELECT</option><option>MULTI_SELECT</option><option>DATE</option>
                     </select>
                     <input className="input" value={editCustom.optionsRaw} onChange={(e) => setEditCustom((v) => ({ ...v, optionsRaw: e.target.value }))} placeholder="opt1|opt2" />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:col-span-2 xl:col-span-1">
                       <button className="btn-secondary" onClick={async () => {
                         const options = editCustom.optionsRaw ? editCustom.optionsRaw.split("|") : null;
                         const { res, data } = await apiJson("/api/admin/custom-fields", {
@@ -456,9 +559,9 @@ export default function AdminPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <span>{f.name} ({f.type}) {f.key}</span>
-                    <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="break-words">{f.name} ({f.type}) {f.key}</span>
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       <button className="btn-secondary px-2 py-1" onClick={() => startEdit(f, "custom")}>Bearbeiten</button>
                       <button className="btn-secondary px-2 py-1" onClick={async () => {
                         const { res, data } = await apiJson("/api/admin/custom-fields", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: f.id }) });
@@ -471,7 +574,7 @@ export default function AdminPage() {
               </li>
             ))}
           </ul>
-          <form className="grid grid-cols-3 gap-2" onSubmit={async (e) => {
+          <form className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             const { res, data } = await apiJson("/api/admin/custom-fields", {
@@ -485,7 +588,7 @@ export default function AdminPage() {
             <input className="input" name="name" placeholder="Name" required />
             <input className="input" name="key" placeholder="key" required />
             <select className="input" name="type"><option>TEXT</option><option>NUMBER</option><option>BOOLEAN</option><option>SELECT</option><option>MULTI_SELECT</option><option>DATE</option></select>
-            <input className="input col-span-2" name="options" placeholder="option1|option2|option3" />
+            <input className="input sm:col-span-2 xl:col-span-2" name="options" placeholder="option1|option2|option3" />
             <button className="btn-secondary" type="submit">Anlegen</button>
           </form>
         </section>
@@ -494,7 +597,7 @@ export default function AdminPage() {
       {labelConfig && (
         <section className="card space-y-2">
           <h2 className="font-semibold">Label-Code Einstellungen</h2>
-          <form className="grid gap-2 md:grid-cols-5" onSubmit={async (e) => {
+          <form className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             await fetch("/api/admin/label-config", {
@@ -511,8 +614,8 @@ export default function AdminPage() {
             <input className="input" name="prefix" defaultValue={labelConfig.prefix || ""} placeholder="Prefix" />
             <input className="input" name="suffix" defaultValue={labelConfig.suffix || ""} placeholder="Suffix" />
             <input className="input" name="delimiter" defaultValue={labelConfig.delimiter || ";"} placeholder="CSV Delimiter" />
-            <label className="text-sm"><input type="checkbox" name="regenerateOnType" defaultChecked={labelConfig.regenerateOnType} /> Neuen Code bei Area/Type Aenderung</label>
-            <button className="btn md:col-span-2">Speichern</button>
+            <label className="text-sm sm:col-span-2 xl:col-span-1"><input type="checkbox" name="regenerateOnType" defaultChecked={labelConfig.regenerateOnType} /> Neuen Code bei Area/Type Aenderung</label>
+            <button className="btn sm:col-span-2 xl:col-span-2">Speichern</button>
           </form>
         </section>
       )}

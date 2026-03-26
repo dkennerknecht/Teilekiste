@@ -3,6 +3,8 @@ import { parse } from "csv-parse/sync";
 import { requireWriteAccess } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { assignNextLabelCode } from "@/lib/label-code";
+import { auditLog } from "@/lib/audit";
+import { analyzeImportRows } from "@/lib/import-items";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 
 export async function POST(req: NextRequest) {
@@ -31,59 +33,110 @@ export async function POST(req: NextRequest) {
   const text = await file.text();
   const rows = parse(text, { columns: true, skip_empty_lines: true }) as Record<string, string>[];
 
-  const errors: string[] = [];
-  const preview: unknown[] = [];
-  let created = 0;
-
   const categories = await prisma.category.findMany();
   const locations = await prisma.storageLocation.findMany();
   const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
   const locationMap = new Map(locations.map((l) => [l.name.toLowerCase(), l.id]));
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
+  const duplicateValues = rows.flatMap((row) => [
+    String(row.name || "").trim().toLowerCase(),
+    String(row.mpn || "").trim().toLowerCase(),
+    String(row.barcodeEan || "").trim().toLowerCase()
+  ]).filter(Boolean);
 
-  for (const [idx, row] of rows.entries()) {
-    const categoryId = categoryMap.get((row.category || "").toLowerCase());
-    const locationId = locationMap.get((row.storageLocation || "").toLowerCase());
-    if (!categoryId || !locationId) {
-      errors.push(`Zeile ${idx + 2}: Kategorie oder Lagerort unbekannt`);
-      continue;
+  const duplicateCandidates = duplicateValues.length
+    ? await prisma.item.findMany({
+        where: {
+          deletedAt: null,
+          OR: duplicateValues.flatMap((value) => [
+            { name: { equals: value } },
+            { mpn: { equals: value } },
+            { barcodeEan: { equals: value } }
+          ]) as never
+        },
+        select: { id: true, labelCode: true, name: true, mpn: true, barcodeEan: true }
+      })
+    : [];
+
+  const duplicateCandidatesByKey = new Map<string, Array<{ id: string; labelCode: string; name: string }>>();
+  for (const candidate of duplicateCandidates) {
+    for (const key of [candidate.name, candidate.mpn, candidate.barcodeEan].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)) {
+      const entries = duplicateCandidatesByKey.get(key) || [];
+      entries.push({ id: candidate.id, labelCode: candidate.labelCode, name: candidate.name });
+      duplicateCandidatesByKey.set(key, entries);
     }
+  }
 
-    if (allowedLocationIds && !allowedLocationIds.includes(locationId)) {
-      errors.push(`Zeile ${idx + 2}: Lagerort nicht erlaubt`);
-      continue;
-    }
+  const report = analyzeImportRows({
+    rows,
+    categoryMap,
+    locationMap,
+    allowedLocationIds,
+    duplicateCandidatesByKey
+  });
 
-    const input = {
-      name: row.name,
-      description: row.description || "",
-      categoryId,
-      storageLocationId: locationId,
-      storageArea: row.storageArea || null,
-      bin: row.bin || null,
-      stock: Number(row.stock || 0),
-      minStock: row.minStock ? Number(row.minStock) : null,
-      unit: (row.unit || "STK") as "STK" | "M" | "SET" | "PACK",
-      manufacturer: row.manufacturer || null,
-      mpn: row.mpn || null,
-      barcodeEan: row.barcodeEan || null
-    };
+  if (!dryRun && report.analyzedRows.some((row) => row.status === "error")) {
+    return NextResponse.json({
+      dryRun,
+      ok: false,
+      totalRows: rows.length,
+      created: 0,
+      errorsCount: report.errorsCount,
+      warningsCount: report.warningsCount,
+      rows: report.analyzedRows
+    }, { status: 400 });
+  }
 
-    preview.push(input);
+  let createdItems: Array<{ id: string; labelCode: string; name: string }> = [];
+  if (!dryRun) {
+    createdItems = await prisma.$transaction(async (tx) => {
+      const created: Array<{ id: string; labelCode: string; name: string }> = [];
 
-    if (!dryRun) {
-      const labelCode = await assignNextLabelCode(areaId, typeId);
-      await prisma.item.create({ data: { ...input, labelCode } });
-      created += 1;
-    }
+      for (const row of report.readyRows) {
+        const labelCode = await assignNextLabelCode(areaId, typeId, tx);
+        const item = await tx.item.create({
+          data: {
+            labelCode,
+            ...row.input
+          }
+        });
+
+        if (row.input.stock !== 0) {
+          await tx.stockMovement.create({
+            data: {
+              itemId: item.id,
+              delta: row.input.stock,
+              reason: "PURCHASE",
+              note: `CSV Import Zeile ${row.lineNumber}`,
+              userId: auth.user!.id
+            }
+          });
+        }
+
+        await auditLog({
+          userId: auth.user!.id,
+          action: "ITEM_CREATE",
+          entity: "Item",
+          entityId: item.id,
+          after: item
+        }, tx);
+
+        created.push({ id: item.id, labelCode: item.labelCode, name: item.name });
+      }
+
+      return created;
+    });
   }
 
   return NextResponse.json({
     dryRun,
+    ok: true,
     totalRows: rows.length,
-    created,
-    errors,
-    preview: preview.slice(0, 25)
+    created: createdItems.length,
+    createdItems,
+    errorsCount: report.errorsCount,
+    warningsCount: report.warningsCount,
+    rows: report.analyzedRows
   });
 }

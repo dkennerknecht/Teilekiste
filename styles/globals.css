@@ -6,22 +6,27 @@
   color-scheme: light;
 }
 
+html,
+body {
+  overflow-x: hidden;
+}
+
 body {
   @apply min-h-screen bg-workshop-50 text-workshop-900 dark:bg-[#0f141b] dark:text-[#e6ebf2];
 }
 
 .card {
-  @apply rounded-xl border border-workshop-200 bg-white p-4 shadow-sm dark:border-[#2a313d] dark:bg-[#171d26];
+  @apply rounded-xl border border-workshop-200 bg-white p-3 shadow-sm sm:p-4 dark:border-[#2a313d] dark:bg-[#171d26];
 }
 
 .btn {
-  @apply inline-flex items-center rounded-md bg-workshop-700 px-3 py-2 text-sm font-medium text-white hover:bg-workshop-800 disabled:opacity-50;
+  @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-md bg-workshop-700 px-3 py-2 text-sm font-medium text-white hover:bg-workshop-800 disabled:opacity-50;
 }
 
 .btn-secondary {
-  @apply inline-flex items-center rounded-md border border-workshop-300 bg-white px-3 py-2 text-sm font-medium text-workshop-800 hover:bg-workshop-100 dark:border-[#374154] dark:bg-[#1a212d] dark:text-[#e6ebf2] dark:hover:bg-[#222b38];
+  @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-md border border-workshop-300 bg-white px-3 py-2 text-sm font-medium text-workshop-800 hover:bg-workshop-100 dark:border-[#374154] dark:bg-[#1a212d] dark:text-[#e6ebf2] dark:hover:bg-[#222b38];
 }
 
 .input {
-  @apply w-full rounded-md border border-workshop-300 bg-white px-3 py-2 text-sm focus:border-workshop-500 focus:outline-none dark:border-[#374154] dark:bg-[#141a24] dark:text-[#e6ebf2];
+  @apply min-h-[2.75rem] w-full rounded-md border border-workshop-300 bg-white px-3 py-2 text-sm focus:border-workshop-500 focus:outline-none dark:border-[#374154] dark:bg-[#141a24] dark:text-[#e6ebf2];
 }

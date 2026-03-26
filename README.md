@@ -24,8 +24,10 @@ Self-hostbare Inventar-Webapp fuer kleine Werkstaetten mit Docker Compose, lokal
 - Duplikatwarnung bei Create (Name/MPN/EAN)
 - CSV/JSON Export, P-touch CSV Export
 - CSV Import (Dry-run/Apply)
-- Backup ZIP erstellen (JSON + Upload/Attachment Verzeichnisse)
-- Restore ZIP (Merge/Overwrite)
+- Stuecklisten/BOM pro Item inkl. Rueckverweise auf Baugruppen
+- Audit History pro Item und im Admin-Bereich
+- Backup ZIP erstellen (JSON + Upload/Attachment Verzeichnisse, Manifest, SHA-256, Retention)
+- Restore ZIP (Preview, Merge/Overwrite, Checksum-Pruefung)
 - Papierkorb (Soft Delete / Restore / Hard Delete)
 - Admin Bereich: Users, Categories, Tags, Locations, Custom Fields, Label Config, Backup
 - Lagerort-Dashboard "Wo liegt was?"
@@ -51,6 +53,7 @@ docker compose up -d --build
 
 - [http://localhost:3000](http://localhost:3000)
 - Default Seed Login: `admin@local` / `admin123`
+- Zusätzlicher Demo-Reader: `reader@local` / `admin123`
 
 Hinweis: Beim Container-Start laeuft `prisma migrate deploy` automatisch. Demo-Seed-Daten werden nur geladen, wenn `RUN_SEED_ON_STARTUP=1` gesetzt ist.
 
@@ -76,6 +79,7 @@ Wichtige ENV:
 - `UPLOAD_DIR=/data/uploads`
 - `ATTACHMENT_DIR=/data/attachments`
 - `BACKUP_DIR=/data/backups`
+- `BACKUP_RETENTION_COUNT=10`
 
 ## P-touch Workflow (Brother P-touch Editor)
 
@@ -118,9 +122,12 @@ Erwartete Spalten (Beispiel):
 ## Backup / Restore
 
 - Backup: Admin -> "Backup jetzt" -> ZIP in `/data/backups`
-- Restore: Admin -> ZIP hochladen + Strategie
+- Restore: Admin -> ZIP hochladen + Preview oder Apply
 - `merge`: vorhandene Daten bleiben, neue werden zusammengefuehrt
 - `overwrite`: zentrale Tabellen werden vorab geleert
+- Das ZIP enthaelt `manifest.json` mit SHA-256 fuer `export.json`
+- Alte ZIPs werden anhand `BACKUP_RETENTION_COUNT` automatisch aufgeraeumt
+- Fuer geplante Backups kann `npm run backup:create` via cron/systemd ausgefuehrt werden
 
 ## RBAC / Scope
 
@@ -146,9 +153,10 @@ npm run dev
 ```bash
 npm run lint
 npm test
+npm run test:e2e
 ```
 
-Aktuell enthalten: API-Integrationstests (Vitest + Supertest) fuer ausgewählte Route Handler.
+Aktuell enthalten: API-Integrationstests (Vitest + Supertest) fuer ausgewaehlte Route Handler sowie Playwright-Smokes fuer Login, Item-Anlage, BOM/Audit und Admin-Schutz.
 
 ## API Tokens (read-only)
 

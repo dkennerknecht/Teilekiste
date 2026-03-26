@@ -13,6 +13,7 @@ type BackupUser = {
   role: string;
   isActive: boolean;
   passwordHash?: string | null;
+  allowedLocationIds?: string[];
 };
 
 type BackupCategory = {
@@ -40,6 +41,40 @@ type BackupCustomField = {
   required?: boolean;
   isActive?: boolean;
   categoryId?: string | null;
+};
+
+type BackupArea = {
+  id: string;
+  code: string;
+  name: string;
+  active?: boolean;
+};
+
+type BackupLabelType = {
+  id: string;
+  areaId: string;
+  code: string;
+  name: string;
+  active?: boolean;
+};
+
+type BackupSequenceCounter = {
+  id: string;
+  areaId: string;
+  typeId: string;
+  nextNumber: number;
+};
+
+type BackupLabelConfig = {
+  id?: string;
+  separator?: string;
+  digits?: number;
+  prefix?: string | null;
+  suffix?: string | null;
+  recycleNumbers?: boolean;
+  delimiter?: string;
+  allowCodeEdit?: boolean;
+  regenerateOnType?: boolean;
 };
 
 type BackupItemTag = {
@@ -117,13 +152,36 @@ type BackupItem = {
   reservations?: BackupReservation[];
 };
 
+type BackupBom = {
+  parentItemId: string;
+  childItemId: string;
+  qty: number;
+};
+
+type BackupAuditLog = {
+  id: string;
+  userId?: string | null;
+  action: string;
+  entity: string;
+  entityId: string;
+  before?: unknown;
+  after?: unknown;
+  createdAt?: string | null;
+};
+
 export type BackupPayload = {
   users?: BackupUser[];
   categories?: BackupCategory[];
   locations?: BackupLocation[];
   tags?: BackupTag[];
   customFields?: BackupCustomField[];
+  areas?: BackupArea[];
+  types?: BackupLabelType[];
+  sequenceCounters?: BackupSequenceCounter[];
+  labelConfig?: BackupLabelConfig | null;
   items?: BackupItem[];
+  boms?: BackupBom[];
+  auditLogs?: BackupAuditLog[];
 };
 
 export type RestoreResult = {
@@ -132,10 +190,20 @@ export type RestoreResult = {
     locations: string[];
     tags: string[];
     items: string[];
+    areas: string[];
+    types: string[];
   };
   restoredCategories: number;
+  restoredLocations: number;
+  restoredTags: number;
+  restoredAreas: number;
+  restoredTypes: number;
+  restoredSequenceCounters: number;
   restoredItems: number;
+  restoredBomEntries: number;
+  restoredAuditLogs: number;
   restoredUsers: number;
+  restoredUserScopes: number;
   placeholderUsers: number;
 };
 
@@ -226,7 +294,9 @@ export async function restoreBackupData(input: {
     categories: [] as string[],
     locations: [] as string[],
     tags: [] as string[],
-    items: [] as string[]
+    items: [] as string[],
+    areas: [] as string[],
+    types: [] as string[]
   };
 
   const { userIdMap, restoredUsers, placeholderUsers } = await resolveUserIds(payload.users, strategy);
@@ -234,6 +304,8 @@ export async function restoreBackupData(input: {
   const locationIdMap = new Map<string, string>();
   const tagIdMap = new Map<string, string>();
   const customFieldIdMap = new Map<string, string>();
+  const areaIdMap = new Map<string, string>();
+  const typeIdMap = new Map<string, string>();
 
   for (const category of payload.categories || []) {
     const existing = await prisma.category.findFirst({
@@ -297,6 +369,129 @@ export async function restoreBackupData(input: {
     tagIdMap.set(tag.id, created.id);
   }
 
+  for (const area of payload.areas || []) {
+    const existing = await prisma.area.findFirst({
+      where: { OR: [{ id: area.id }, { code: area.code }] }
+    });
+
+    if (existing) {
+      areaIdMap.set(area.id, existing.id);
+      if (strategy === "merge" && existing.id !== area.id) {
+        conflicts.areas.push(area.code);
+        continue;
+      }
+      await prisma.area.update({
+        where: { id: existing.id },
+        data: {
+          code: area.code,
+          name: area.name,
+          active: area.active !== false
+        }
+      });
+      continue;
+    }
+
+    const created = await prisma.area.create({
+      data: {
+        id: area.id,
+        code: area.code,
+        name: area.name,
+        active: area.active !== false
+      }
+    });
+    areaIdMap.set(area.id, created.id);
+  }
+
+  for (const type of payload.types || []) {
+    const resolvedAreaId = areaIdMap.get(type.areaId) || type.areaId;
+    const existing = await prisma.labelType.findFirst({
+      where: {
+        OR: [
+          { id: type.id },
+          { areaId: resolvedAreaId, code: type.code }
+        ]
+      }
+    });
+
+    if (existing) {
+      typeIdMap.set(type.id, existing.id);
+      if (strategy === "merge" && existing.id !== type.id) {
+        conflicts.types.push(`${type.code} (${resolvedAreaId})`);
+        continue;
+      }
+      await prisma.labelType.update({
+        where: { id: existing.id },
+        data: {
+          areaId: resolvedAreaId,
+          code: type.code,
+          name: type.name,
+          active: type.active !== false
+        }
+      });
+      continue;
+    }
+
+    const created = await prisma.labelType.create({
+      data: {
+        id: type.id,
+        areaId: resolvedAreaId,
+        code: type.code,
+        name: type.name,
+        active: type.active !== false
+      }
+    });
+    typeIdMap.set(type.id, created.id);
+  }
+
+  if (payload.labelConfig) {
+    await prisma.labelConfig.upsert({
+      where: { id: payload.labelConfig.id || "default" },
+      update: {
+        separator: payload.labelConfig.separator ?? undefined,
+        digits: payload.labelConfig.digits ?? undefined,
+        prefix: payload.labelConfig.prefix ?? null,
+        suffix: payload.labelConfig.suffix ?? null,
+        recycleNumbers: payload.labelConfig.recycleNumbers ?? undefined,
+        delimiter: payload.labelConfig.delimiter ?? undefined,
+        allowCodeEdit: payload.labelConfig.allowCodeEdit ?? undefined,
+        regenerateOnType: payload.labelConfig.regenerateOnType ?? undefined
+      },
+      create: {
+        id: payload.labelConfig.id || "default",
+        separator: payload.labelConfig.separator || "-",
+        digits: payload.labelConfig.digits ?? 3,
+        prefix: payload.labelConfig.prefix ?? null,
+        suffix: payload.labelConfig.suffix ?? null,
+        recycleNumbers: payload.labelConfig.recycleNumbers ?? false,
+        delimiter: payload.labelConfig.delimiter || ",",
+        allowCodeEdit: payload.labelConfig.allowCodeEdit ?? true,
+        regenerateOnType: payload.labelConfig.regenerateOnType ?? true
+      }
+    });
+  }
+
+  for (const counter of payload.sequenceCounters || []) {
+    const resolvedAreaId = areaIdMap.get(counter.areaId) || counter.areaId;
+    const resolvedTypeId = typeIdMap.get(counter.typeId) || counter.typeId;
+    await prisma.sequenceCounter.upsert({
+      where: {
+        areaId_typeId: {
+          areaId: resolvedAreaId,
+          typeId: resolvedTypeId
+        }
+      },
+      update: {
+        nextNumber: counter.nextNumber
+      },
+      create: {
+        id: counter.id,
+        areaId: resolvedAreaId,
+        typeId: resolvedTypeId,
+        nextNumber: counter.nextNumber
+      }
+    });
+  }
+
   for (const field of payload.customFields || []) {
     const restoredField = await prisma.customField.upsert({
       where: { key: field.key },
@@ -320,6 +515,27 @@ export async function restoreBackupData(input: {
       }
     });
     customFieldIdMap.set(field.id, restoredField.id);
+  }
+
+  let restoredUserScopes = 0;
+  for (const user of payload.users || []) {
+    const restoredUserId = userIdMap.get(user.id);
+    if (!restoredUserId) continue;
+    const locationIds = Array.from(
+      new Set((user.allowedLocationIds || []).map((locationId) => locationIdMap.get(locationId) || locationId))
+    );
+    await prisma.userLocation.deleteMany({ where: { userId: restoredUserId } });
+    for (const locationId of locationIds) {
+      await prisma.userLocation
+        .create({
+          data: {
+            userId: restoredUserId,
+            storageLocationId: locationId
+          }
+        })
+        .catch(() => null);
+      restoredUserScopes += 1;
+    }
   }
 
   for (const item of payload.items || []) {
@@ -509,11 +725,150 @@ export async function restoreBackupData(input: {
     }
   }
 
+  let restoredBomEntries = 0;
+  for (const bom of payload.boms || []) {
+    await prisma.billOfMaterial.upsert({
+      where: {
+        parentItemId_childItemId: {
+          parentItemId: bom.parentItemId,
+          childItemId: bom.childItemId
+        }
+      },
+      update: { qty: bom.qty },
+      create: {
+        parentItemId: bom.parentItemId,
+        childItemId: bom.childItemId,
+        qty: bom.qty
+      }
+    });
+    restoredBomEntries += 1;
+  }
+
+  let restoredAuditLogs = 0;
+  for (const log of payload.auditLogs || []) {
+    await prisma.auditLog.upsert({
+      where: { id: log.id },
+      update: {
+        userId: log.userId ? userIdMap.get(log.userId) || fallbackUserId : null,
+        action: log.action,
+        entity: log.entity,
+        entityId: log.entityId,
+        before: log.before === undefined ? null : typeof log.before === "string" ? log.before : JSON.stringify(log.before),
+        after: log.after === undefined ? null : typeof log.after === "string" ? log.after : JSON.stringify(log.after)
+      },
+      create: {
+        id: log.id,
+        userId: log.userId ? userIdMap.get(log.userId) || fallbackUserId : null,
+        action: log.action,
+        entity: log.entity,
+        entityId: log.entityId,
+        before: log.before === undefined ? null : typeof log.before === "string" ? log.before : JSON.stringify(log.before),
+        after: log.after === undefined ? null : typeof log.after === "string" ? log.after : JSON.stringify(log.after),
+        ...(parseDate(log.createdAt) ? { createdAt: parseDate(log.createdAt) } : {})
+      }
+    });
+    restoredAuditLogs += 1;
+  }
+
   return {
     conflicts,
     restoredCategories: (payload.categories || []).length,
+    restoredLocations: (payload.locations || []).length,
+    restoredTags: (payload.tags || []).length,
+    restoredAreas: (payload.areas || []).length,
+    restoredTypes: (payload.types || []).length,
+    restoredSequenceCounters: (payload.sequenceCounters || []).length,
     restoredItems: (payload.items || []).length,
+    restoredBomEntries,
+    restoredAuditLogs,
     restoredUsers,
+    restoredUserScopes,
     placeholderUsers
   } satisfies RestoreResult;
+}
+
+export async function previewBackupRestore(input: {
+  payload: BackupPayload;
+  strategy: RestoreStrategy;
+}) {
+  const { payload, strategy } = input;
+  const conflicts: RestoreResult["conflicts"] = {
+    categories: [],
+    locations: [],
+    tags: [],
+    items: [],
+    areas: [],
+    types: []
+  };
+
+  for (const category of payload.categories || []) {
+    const existing = await prisma.category.findFirst({
+      where: { OR: [{ id: category.id }, { name: category.name }] }
+    });
+    if (existing && strategy === "merge" && existing.id !== category.id) {
+      conflicts.categories.push(category.name);
+    }
+  }
+
+  for (const location of payload.locations || []) {
+    const existing = await prisma.storageLocation.findFirst({
+      where: { OR: [{ id: location.id }, { name: location.name }] }
+    });
+    if (existing && strategy === "merge" && existing.id !== location.id) {
+      conflicts.locations.push(location.name);
+    }
+  }
+
+  for (const tag of payload.tags || []) {
+    const existing = await prisma.tag.findFirst({
+      where: { OR: [{ id: tag.id }, { name: tag.name }] }
+    });
+    if (existing && strategy === "merge" && existing.id !== tag.id) {
+      conflicts.tags.push(tag.name);
+    }
+  }
+
+  for (const area of payload.areas || []) {
+    const existing = await prisma.area.findFirst({
+      where: { OR: [{ id: area.id }, { code: area.code }] }
+    });
+    if (existing && strategy === "merge" && existing.id !== area.id) {
+      conflicts.areas.push(area.code);
+    }
+  }
+
+  for (const type of payload.types || []) {
+    const existing = await prisma.labelType.findFirst({
+      where: { OR: [{ id: type.id }, { code: type.code }] }
+    });
+    if (existing && strategy === "merge" && existing.id !== type.id) {
+      conflicts.types.push(type.code);
+    }
+  }
+
+  for (const item of payload.items || []) {
+    const existing = await prisma.item.findFirst({
+      where: { OR: [{ id: item.id }, { labelCode: item.labelCode }] }
+    });
+    if (existing && strategy === "merge" && existing.id !== item.id) {
+      conflicts.items.push(item.labelCode);
+    }
+  }
+
+  return {
+    strategy,
+    conflicts,
+    summary: {
+      users: (payload.users || []).length,
+      categories: (payload.categories || []).length,
+      locations: (payload.locations || []).length,
+      tags: (payload.tags || []).length,
+      areas: (payload.areas || []).length,
+      types: (payload.types || []).length,
+      sequenceCounters: (payload.sequenceCounters || []).length,
+      items: (payload.items || []).length,
+      boms: (payload.boms || []).length,
+      auditLogs: (payload.auditLogs || []).length
+    }
+  };
 }

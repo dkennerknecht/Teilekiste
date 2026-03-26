@@ -6,6 +6,10 @@ out
 !.env.example
 prisma/dev.db
 prisma/dev.db-journal
+prisma/playwright.db
+prisma/playwright.db-journal
 /data
 *.log
 .DS_Store
+playwright-report
+test-results

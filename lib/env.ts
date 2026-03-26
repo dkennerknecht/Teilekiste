@@ -5,5 +5,6 @@ export const env = {
   UPLOAD_DIR: process.env.UPLOAD_DIR || "/data/uploads",
   ATTACHMENT_DIR: process.env.ATTACHMENT_DIR || "/data/attachments",
   BACKUP_DIR: process.env.BACKUP_DIR || "/data/backups",
-  MAX_UPLOAD_SIZE_MB: Number(process.env.MAX_UPLOAD_SIZE_MB || 20)
+  MAX_UPLOAD_SIZE_MB: Number(process.env.MAX_UPLOAD_SIZE_MB || 20),
+  BACKUP_RETENTION_COUNT: Number(process.env.BACKUP_RETENTION_COUNT || 10)
 };

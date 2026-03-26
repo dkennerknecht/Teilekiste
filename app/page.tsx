@@ -1,7 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { fileHref } from "@/lib/file-href";
 
 type Item = {
   id: string;
@@ -21,18 +24,9 @@ type Item = {
   } | null;
 };
 
-function fileHref(absolutePath: string) {
-  const encoded = absolutePath
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-  return `/api/files/${encoded}`;
-}
-
 export default function HomePage() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<Item[]>([]);
-  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkArea, setBulkArea] = useState("");
   const [bulkType, setBulkType] = useState("");
@@ -40,14 +34,28 @@ export default function HomePage() {
   const [types, setTypes] = useState<Array<{ id: string; areaId: string; code: string; name: string }>>([]);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const searchQuery = searchParams.get("q")?.trim() || "";
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/items?q=${encodeURIComponent(query)}`);
+    const res = await fetch(`/api/items?q=${encodeURIComponent(searchQuery)}`);
     const data = await res.json();
     setItems(Array.isArray(data) ? data : data.items || []);
     setLoading(false);
-  }, [query]);
+  }, [searchQuery]);
+
+  async function quickAdjust(itemId: string, delta: number) {
+    await fetch(`/api/items/${itemId}/movements`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        delta,
+        reason: delta < 0 ? "CONSUMPTION" : "PURCHASE",
+        note: "Quick Button"
+      })
+    });
+    await load();
+  }
 
   useEffect(() => {
     load();
@@ -61,75 +69,57 @@ export default function HomePage() {
 
   return (
     <div className="space-y-4">
-      <div className="card flex flex-wrap items-center gap-2">
-        <input
-          className="input max-w-sm"
-          placeholder="Suchen: labelCode, Name, MPN, Hersteller"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <button className="btn" onClick={load}>
-          Suchen
-        </button>
-        <a className="btn-secondary" href="/api/export/csv">
-          CSV Export
-        </a>
-        <a className="btn-secondary" href="/api/export/json">
-          JSON Export
-        </a>
-        <a className="btn-secondary" href="/api/export/ptouch">
-          P-touch CSV
-        </a>
-      </div>
-      <div className="card flex flex-wrap items-center gap-2">
-        <span className="text-sm">Bulk-Auswahl: {selected.length} Items</span>
-        <select className="input w-40" value={bulkArea} onChange={(e) => setBulkArea(e.target.value)}>
-          <option value="">Area</option>
-          {areas.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.code}
-            </option>
-          ))}
-        </select>
-        <select className="input w-48" value={bulkType} onChange={(e) => setBulkType(e.target.value)}>
-          <option value="">Type</option>
-          {types
-            .filter((t) => !bulkArea || t.areaId === bulkArea)
-            .map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.code} - {t.name}
+      <div className="card overflow-x-auto">
+        <div className="flex min-w-max items-center gap-2">
+          <span className="whitespace-nowrap text-sm">Bulk: {selected.length}</span>
+          <select className="input h-10 min-h-0 w-24 shrink-0 px-2 py-1" value={bulkArea} onChange={(e) => setBulkArea(e.target.value)}>
+            <option value="">Area</option>
+            {areas.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.code}
               </option>
             ))}
-        </select>
-        <button
-          className="btn-secondary"
-          onClick={async () => {
-            const res = await fetch("/api/items/bulk", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ itemIds: selected, areaId: bulkArea, typeId: bulkType, dryRun: true })
-            });
-            const data = await res.json();
-            setBulkPreview(data.previewCodes || []);
-          }}
-        >
-          Dry-run Codes
-        </button>
-        <button
-          className="btn"
-          onClick={async () => {
-            await fetch("/api/items/bulk", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ itemIds: selected, areaId: bulkArea, typeId: bulkType, dryRun: false })
-            });
-            setSelected([]);
-            setBulkPreview([]);
-            await load();
-          }}
-        >
-          Anwenden
-        </button>
+          </select>
+          <select className="input h-10 min-h-0 w-36 shrink-0 px-2 py-1" value={bulkType} onChange={(e) => setBulkType(e.target.value)}>
+            <option value="">Type</option>
+            {types
+              .filter((t) => !bulkArea || t.areaId === bulkArea)
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code} - {t.name}
+                </option>
+              ))}
+          </select>
+          <button
+            className="btn-secondary h-10 min-h-0 shrink-0 px-2.5 py-1 text-sm"
+            onClick={async () => {
+              const res = await fetch("/api/items/bulk", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ itemIds: selected, areaId: bulkArea, typeId: bulkType, dryRun: true })
+              });
+              const data = await res.json();
+              setBulkPreview(data.previewCodes || []);
+            }}
+          >
+            Vorschau
+          </button>
+          <button
+            className="btn h-10 min-h-0 shrink-0 px-2.5 py-1 text-sm"
+            onClick={async () => {
+              await fetch("/api/items/bulk", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ itemIds: selected, areaId: bulkArea, typeId: bulkType, dryRun: false })
+              });
+              setSelected([]);
+              setBulkPreview([]);
+              await load();
+            }}
+          >
+            Anwenden
+          </button>
+        </div>
       </div>
       {bulkPreview.length > 0 && (
         <div className="card text-sm">
@@ -144,11 +134,78 @@ export default function HomePage() {
         </div>
       )}
 
-      <div className="card overflow-auto">
+      <div className="space-y-3 md:hidden">
         {loading ? (
-          <p>Lade...</p>
+          <div className="card">
+            <p>Lade...</p>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="card">
+            <p className="text-sm text-workshop-700">Keine Items gefunden.</p>
+          </div>
         ) : (
-          <table className="w-full text-sm">
+          items.map((item) => (
+            <article key={item.id} className="rounded-xl border border-workshop-200 bg-white p-2.5 shadow-sm dark:border-[#2a313d] dark:bg-[#171d26]">
+              <div className="flex items-center gap-2">
+                <input
+                  className="shrink-0"
+                  type="checkbox"
+                  checked={selected.includes(item.id)}
+                  onChange={(e) =>
+                    setSelected((prev) =>
+                      e.target.checked ? [...new Set([...prev, item.id])] : prev.filter((id) => id !== item.id)
+                    )
+                  }
+                />
+                {item.primaryImage ? (
+                  <Image
+                    src={fileHref(item.primaryImage.thumbPath || item.primaryImage.path)}
+                    alt={item.primaryImage.caption || item.name}
+                    width={48}
+                    height={48}
+                    unoptimized
+                    className="h-12 w-12 shrink-0 rounded border border-workshop-200 object-cover"
+                  />
+                ) : (
+                  <div className="h-12 w-12 shrink-0 rounded border border-dashed border-workshop-200" />
+                )}
+                <div className="min-w-0 flex-1 leading-tight">
+                  <Link href={`/items/${item.id}`} className="block truncate font-mono text-xs text-workshop-700 underline">
+                    {item.labelCode}
+                  </Link>
+                  <p className="mt-0.5 truncate text-sm font-medium">{item.name}</p>
+                  <p className="truncate text-xs text-workshop-700">
+                    {item.category.name} · {item.storageLocation.name}
+                  </p>
+                  <p className="text-xs text-workshop-700">
+                    Bestand {item.stock} · Verfuegbar {item.availableStock}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                {[-1, 1].map((delta) => (
+                    <button
+                      key={delta}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-workshop-300 bg-white text-lg font-medium text-workshop-800 dark:border-[#374154] dark:bg-[#1a212d] dark:text-[#e6ebf2]"
+                      onClick={() => quickAdjust(item.id, delta)}
+                    >
+                    {delta > 0 ? "+" : "-"}
+                    </button>
+                ))}
+                </div>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
+      <div className="hidden md:block">
+        {loading ? (
+          <div className="card">
+            <p>Lade...</p>
+          </div>
+        ) : (
+          <div className="card overflow-x-auto">
+            <table className="min-w-[900px] w-full text-sm">
             <thead>
               <tr className="border-b border-workshop-200 text-left">
                 <th className="px-2 py-2">#</th>
@@ -159,7 +216,7 @@ export default function HomePage() {
                 <th className="px-2 py-2">Ort</th>
                 <th className="px-2 py-2">Bestand</th>
                 <th className="px-2 py-2">Verfuegbar</th>
-                <th className="px-2 py-2">Quick</th>
+                <th className="px-2 py-2">+/-</th>
               </tr>
             </thead>
             <tbody>
@@ -178,9 +235,12 @@ export default function HomePage() {
                   </td>
                   <td className="px-2 py-2">
                     {item.primaryImage ? (
-                      <img
+                      <Image
                         src={fileHref(item.primaryImage.thumbPath || item.primaryImage.path)}
                         alt={item.primaryImage.caption || item.name}
+                        width={48}
+                        height={48}
+                        unoptimized
                         className="h-12 w-12 rounded border border-workshop-200 object-cover"
                       />
                     ) : (
@@ -199,24 +259,13 @@ export default function HomePage() {
                   <td className="px-2 py-2">{item.availableStock}</td>
                   <td className="px-2 py-2">
                     <div className="flex gap-1">
-                      {[-5, -1, 1, 5].map((delta) => (
+                      {[-1, 1].map((delta) => (
                         <button
                           key={delta}
-                          className="btn-secondary px-2 py-1"
-                          onClick={async () => {
-                            await fetch(`/api/items/${item.id}/movements`, {
-                              method: "POST",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify({
-                                delta,
-                                reason: delta < 0 ? "CONSUMPTION" : "PURCHASE",
-                                note: "Quick Button"
-                              })
-                            });
-                            await load();
-                          }}
+                          className="btn-secondary px-3 py-1 text-lg"
+                          onClick={() => quickAdjust(item.id, delta)}
                         >
-                          {delta > 0 ? `+${delta}` : delta}
+                          {delta > 0 ? "+" : "-"}
                         </button>
                       ))}
                     </div>
@@ -224,7 +273,8 @@ export default function HomePage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
       </div>
     </div>

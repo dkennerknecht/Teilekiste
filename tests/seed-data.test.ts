@@ -21,7 +21,13 @@ describe("seedDatabase", () => {
     const attachmentCreateMock = vi.fn();
 
     const prisma = {
-      user: { upsert: vi.fn().mockResolvedValue({ id: "admin-id" }) },
+      user: {
+        upsert: vi
+          .fn()
+          .mockResolvedValueOnce({ id: "admin-id" })
+          .mockResolvedValueOnce({ id: "reader-id" })
+      },
+      userLocation: { upsert: vi.fn().mockResolvedValue({}) },
       category: {
         upsert: vi
           .fn()

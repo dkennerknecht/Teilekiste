@@ -56,7 +56,7 @@ describe("API Integration", () => {
       const res = await request(server).get("/api/items/duplicates");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.text).toBe("[]");
       expect(findManyMock).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

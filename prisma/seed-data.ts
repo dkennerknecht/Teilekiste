@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 
 type SeedPrisma = {
   user: { upsert(args: any): Promise<{ id: string }> };
+  userLocation: { upsert(args: any): Promise<unknown> };
   category: { upsert(args: any): Promise<{ id: string }> };
   storageLocation: { upsert(args: any): Promise<{ id: string }> };
   tag: { upsert(args: any): Promise<unknown> };
@@ -88,6 +89,17 @@ export async function seedDatabase(prisma: SeedPrisma) {
     }
   });
 
+  const reader = await prisma.user.upsert({
+    where: { email: "reader@local" },
+    update: {},
+    create: {
+      name: "Reader",
+      email: "reader@local",
+      passwordHash,
+      role: "READ"
+    }
+  });
+
   const categories = await Promise.all(
     ["Mikrocontroller", "Passiv", "Schutz", "Kabel", "Werkzeug"].map((name) =>
       prisma.category.upsert({
@@ -111,6 +123,20 @@ export async function seedDatabase(prisma: SeedPrisma) {
       })
     )
   );
+
+  await prisma.userLocation.upsert({
+    where: {
+      userId_storageLocationId: {
+        userId: reader.id,
+        storageLocationId: locations[0].id
+      }
+    },
+    update: {},
+    create: {
+      userId: reader.id,
+      storageLocationId: locations[0].id
+    }
+  });
 
   await Promise.all(
     ["SMD", "THT", "Sicherung", "ESP32", "Netzwerk", "3D-Druck"].map((name) =>

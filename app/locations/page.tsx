@@ -27,7 +27,7 @@ export default function LocationsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Wo liegt was?</h1>
-      <a className="btn-secondary" href="/api/export/csv">Fachliste exportieren</a>
+      <a className="btn-secondary w-full sm:w-auto" href="/api/export/csv">Fachliste exportieren</a>
       <div className="grid gap-4 md:grid-cols-2">
         {grouped.map(([location, data]) => (
           <section key={location} className="card">
@@ -35,8 +35,10 @@ export default function LocationsPage() {
             <p className="text-sm">Items: {data.count} | Unter Mindestbestand: <span className="font-semibold text-red-700">{data.low}</span></p>
             <ul className="mt-2 max-h-56 space-y-1 overflow-auto text-sm">
               {data.bins.map((b) => (
-                <li key={b.code} className="rounded border border-workshop-200 p-2 font-mono">
-                  {b.code} | {b.name} | Bestand {b.stock}
+                <li key={b.code} className="rounded border border-workshop-200 p-2">
+                  <p className="font-mono">{b.code}</p>
+                  <p className="break-words">{b.name}</p>
+                  <p className="text-workshop-700">Bestand {b.stock}</p>
                 </li>
               ))}
             </ul>

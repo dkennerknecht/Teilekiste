@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, requireWriteAccess } from "@/lib/api";
 import { itemUpdateSchema } from "@/lib/validation";
 import { auditLog } from "@/lib/audit";
+import { summarizeAuditEntry } from "@/lib/audit-view";
 import { assignNextLabelCode } from "@/lib/label-code";
+import { loadItemBom } from "@/lib/item-bom";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { parseJson } from "@/lib/http";
 
@@ -32,6 +34,25 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const [{ bomChildren, bomParents }, auditEntries] = await Promise.all([
+    loadItemBom(item.id, allowedLocationIds),
+    auth.user!.role === "ADMIN"
+      ? prisma.auditLog.findMany({
+          where: {
+            entity: "Item",
+            entityId: item.id
+          },
+          include: {
+            user: {
+              select: { name: true, email: true }
+            }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 25
+        })
+      : Promise.resolve([])
+  ]);
+
   await prisma.recentView.upsert({
     where: { userId_itemId: { userId: auth.user!.id, itemId: item.id } },
     update: { lastViewedAt: new Date() },
@@ -41,6 +62,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const reservedQty = item.reservations.reduce((sum, r) => sum + r.reservedQty, 0);
   return NextResponse.json({
     ...item,
+    bomChildren,
+    bomParents,
+    auditEntries: auditEntries.map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      entity: entry.entity,
+      entityId: entry.entityId,
+      createdAt: entry.createdAt,
+      user: entry.user,
+      summary: summarizeAuditEntry(entry)
+    })),
     primaryImage: item.images[0] ?? null,
     reservedQty,
     availableStock: item.stock - reservedQty

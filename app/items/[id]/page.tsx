@@ -21,28 +21,14 @@ import {
   Minus,
   Plus
 } from "lucide-react";
-
-type ItemImage = {
-  id: string;
-  path: string;
-  thumbPath: string | null;
-  caption: string | null;
-  sortOrder: number;
-};
+import { ItemImageGallery } from "@/components/item-image-gallery";
+import { ItemBomSection } from "@/components/item-bom-section";
+import { ItemAuditSection } from "@/components/item-audit-section";
 
 type TagOption = { id: string; name: string };
 type CategoryOption = { id: string; name: string };
 type AreaOption = { id: string; code: string; name: string };
 type TypeOption = { id: string; areaId: string; code: string; name: string };
-
-function fileHref(absolutePath: string) {
-  const encoded = absolutePath
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-  return `/api/files/${encoded}`;
-}
 
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [item, setItem] = useState<any>(null);
@@ -53,9 +39,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [types, setTypes] = useState<TypeOption[]>([]);
   const [labelCfg, setLabelCfg] = useState({ separator: "-", digits: 3 });
-  const [images, setImages] = useState<ItemImage[]>([]);
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [previewImage, setPreviewImage] = useState<ItemImage | null>(null);
   const [delta, setDelta] = useState(1);
   const [reason, setReason] = useState("PURCHASE");
   const [note, setNote] = useState("");
@@ -68,7 +51,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     const res = await fetch(`/api/items/${params.id}`, { cache: "no-store" });
     const data = await res.json();
     setItem(data);
-    setImages((data.images || []).slice().sort((a: ItemImage, b: ItemImage) => a.sortOrder - b.sortOrder));
     setForm({
       name: data.name || "",
       description: data.description || "",
@@ -133,8 +115,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     }));
   }, [editMode, item, areas, types, labelCfg.separator, form?.areaId, form?.typeId]);
 
-  const primaryImage: ItemImage | null = useMemo(() => (images.length ? images[0] : null), [images]);
-
   const history = useMemo(() => {
     if (!item) return [];
     const movements = (item.movements || []).map((m: any) => ({
@@ -155,16 +135,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   if (!item || !form) return <p>Lade...</p>;
 
   const owner = item.movements?.[0]?.user?.name || item.movements?.[0]?.user?.email || "-";
-
-  async function persistImageOrder(nextImages: ItemImage[]) {
-    setImages(nextImages);
-    await fetch(`/api/items/${item.id}/images`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ orderedImageIds: nextImages.map((img) => img.id) })
-    });
-    await load();
-  }
 
   async function quickStockAdjust(deltaValue: number) {
     await fetch(`/api/items/${item.id}/movements`, {
@@ -202,14 +172,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="space-y-4 text-[#171922] dark:text-[#e6ebf2]">
-      {previewImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPreviewImage(null)}>
-          <img src={fileHref(previewImage.path)} alt={previewImage.caption || item.name} className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain" />
-        </div>
-      )}
-
-      <div className="rounded-xl border border-[#d7d7dc] bg-[#f4f4f6] px-4 py-3 dark:border-[#2a313d] dark:bg-[#1a212d]">
-        <div className="flex items-start justify-between gap-4">
+      <div className="rounded-xl border border-[#d7d7dc] bg-[#f4f4f6] px-3 py-3 sm:px-4 dark:border-[#2a313d] dark:bg-[#1a212d]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <button className="mt-0.5 text-[#33343b] dark:text-[#dce2ee]" onClick={() => window.history.back()}>
               <ArrowLeft size={22} />
@@ -219,11 +183,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               <h1 className="text-xl font-semibold leading-6 text-[#15161a] dark:text-[#e6ebf2]">{editMode ? "Item bearbeiten" : "Item Details"}</h1>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             {editMode ? (
               <>
                 <button
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#bfc2cc] bg-white px-4 py-2 text-sm font-medium text-[#22242b] dark:border-[#3a4458] dark:bg-[#202837] dark:text-[#e6ebf2]"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#bfc2cc] bg-white px-4 py-2 text-sm font-medium text-[#22242b] sm:w-auto dark:border-[#3a4458] dark:bg-[#202837] dark:text-[#e6ebf2]"
                   onClick={() => {
                     setEditMode(false);
                     setForm({
@@ -246,7 +210,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   <X size={16} /> Abbrechen
                 </button>
                 <button
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#05082b] px-4 py-2 text-sm font-medium text-white"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#05082b] px-4 py-2 text-sm font-medium text-white sm:w-auto"
                   onClick={async () => {
                     const selectedArea = areas.find((a) => a.id === form.areaId);
                     const selectedType = types.find((t) => t.id === form.typeId);
@@ -284,7 +248,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               </>
             ) : (
               <button
-                className="inline-flex items-center gap-2 rounded-xl bg-[#05082b] px-4 py-2 text-sm font-medium text-white"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#05082b] px-4 py-2 text-sm font-medium text-white sm:w-auto"
                 onClick={() => setEditMode(true)}
               >
                 <PencilLine size={16} /> Bearbeiten
@@ -296,89 +260,24 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <section>
-          <div className="overflow-hidden rounded-2xl border border-[#d7d7dc] bg-white dark:border-[#2a313d] dark:bg-[#171d26]">
-            {primaryImage ? (
-              <img
-                src={fileHref(primaryImage.path)}
-                alt={primaryImage.caption || item.name}
-                className="h-[460px] w-full cursor-zoom-in object-cover"
-                onClick={() => setPreviewImage(primaryImage)}
-              />
-            ) : (
-              <div className="flex h-[460px] items-center justify-center text-[#6a6d79] dark:text-[#a6b0c2]">Kein Bild vorhanden</div>
-            )}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {images.map((img, index) => (
-              <div
-                key={img.id}
-                className="relative"
-                draggable={editMode}
-                onDragStart={() => setDraggedId(img.id)}
-                onDragOver={(e) => editMode && e.preventDefault()}
-                onDrop={async () => {
-                  if (!editMode || !draggedId || draggedId === img.id) return;
-                  const from = images.findIndex((x) => x.id === draggedId);
-                  const to = images.findIndex((x) => x.id === img.id);
-                  if (from < 0 || to < 0) return;
-                  const next = images.slice();
-                  const [moved] = next.splice(from, 1);
-                  next.splice(to, 0, moved);
-                  await persistImageOrder(next);
-                  setDraggedId(null);
-                }}
-                onDragEnd={() => setDraggedId(null)}
-              >
-                <img
-                  src={fileHref(img.thumbPath || img.path)}
-                  alt={img.caption || `Bild ${index + 1}`}
-                  className={`h-[88px] w-[88px] cursor-zoom-in rounded-xl border object-cover ${index === 0 ? "border-[#0f1535]" : "border-[#d7d7dc]"}`}
-                  onClick={() => setPreviewImage(img)}
-                />
-                {editMode && (
-                  <button
-                    type="button"
-                    className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-700"
-                    onClick={async () => {
-                      await fetch(`/api/items/${item.id}/images?imageId=${img.id}`, { method: "DELETE" });
-                      await load();
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {editMode && (
-            <form
-              className="mt-3 flex flex-wrap gap-2"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const fd = new FormData(e.currentTarget);
-                await fetch(`/api/items/${item.id}/images`, { method: "POST", body: fd });
-                e.currentTarget.reset();
-                await load();
-              }}
-            >
-              <input className="input" type="file" name="file" accept="image/*" capture="environment" required />
-              <input className="input" type="text" name="caption" placeholder="Bildtitel" />
-              <button className="btn-secondary" type="submit">Upload</button>
-            </form>
-          )}
+          <ItemImageGallery
+            itemId={item.id}
+            itemName={item.name}
+            images={item.images || []}
+            editMode={editMode}
+            onReload={load}
+          />
         </section>
 
         <section className="space-y-3">
-          <div className="grid grid-cols-1 gap-2 rounded-xl border border-[#d7d7dc] bg-[#f4f4f6] p-3 text-[16px] text-[#555869] dark:border-[#2a313d] dark:bg-[#1a212d] dark:text-[#b4bdce] md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 rounded-xl border border-[#d7d7dc] bg-[#f4f4f6] p-3 text-sm text-[#555869] sm:text-[16px] dark:border-[#2a313d] dark:bg-[#1a212d] dark:text-[#b4bdce] md:grid-cols-3">
             <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> Erstellt: {new Date(item.createdAt).toLocaleDateString("de-DE")}</div>
             <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> Zuletzt bearbeitet: {new Date(item.updatedAt).toLocaleDateString("de-DE")}</div>
             <div className="inline-flex items-center gap-2"><User size={15} /> von {owner}</div>
           </div>
 
           <div className="rounded-xl border border-[#d7d7dc] bg-white p-4 dark:border-[#2a313d] dark:bg-[#171d26]">
-            <h2 className="mb-4 inline-flex items-center gap-2 text-[34px] font-semibold text-[#1b1d24] dark:text-[#e6ebf2]"><FolderOpen size={18} /> Details</h2>
+            <h2 className="mb-4 inline-flex items-center gap-2 text-[26px] font-semibold text-[#1b1d24] sm:text-[34px] dark:text-[#e6ebf2]"><FolderOpen size={18} /> Details</h2>
 
             <div className="space-y-4 text-[#171922]">
               <div>
@@ -547,14 +446,14 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         </button>
                       ))}
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                       <input
-                        className="input max-w-xs"
+                        className="input w-full sm:max-w-xs"
                         placeholder="Neuen Tag erstellen"
                         value={newTagName}
                         onChange={(e) => setNewTagName(e.target.value)}
                       />
-                      <button type="button" className="btn-secondary" onClick={createTagInEdit} disabled={creatingTag || !newTagName.trim()}>
+                      <button type="button" className="btn-secondary w-full sm:w-auto" onClick={createTagInEdit} disabled={creatingTag || !newTagName.trim()}>
                         {creatingTag ? "Anlegen..." : "Tag anlegen"}
                       </button>
                     </div>
@@ -594,12 +493,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       </div>
 
       <section className="rounded-xl border border-[#d7d7dc] bg-white p-4 dark:border-[#2a313d] dark:bg-[#171d26]">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[#1b1d24] dark:text-[#e6ebf2]"><Package2 size={18} /> Bestandsverwaltung</h3>
           <span className="rounded-full bg-[#d4eee1] px-3 py-1 text-sm font-medium text-[#0a7a4d]">Auf Lager</span>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl bg-[#f2f2f5] p-4 text-center dark:bg-[#202734]">
             <p className="text-sm text-[#6d7080] dark:text-[#aab4c7]">Gesamtbestand</p>
             <div className="mt-2 flex items-center justify-center gap-3">
@@ -624,13 +523,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-lg text-[#616474] dark:text-[#aab4c7]">Mindestbestand: <b>{item.minStock ?? "-"}</b> Stück</p>
-          <div className="flex flex-wrap gap-2">
-            <input className="input w-24" type="number" value={reservedQty} onChange={(e) => setReservedQty(Number(e.target.value))} />
-            <input className="input min-w-64" placeholder="Projekt/Person" value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+            <input className="input w-full sm:w-24" type="number" value={reservedQty} onChange={(e) => setReservedQty(Number(e.target.value))} />
+            <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Projekt/Person" value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />
             <button
-              className="btn-secondary"
+              className="btn-secondary w-full sm:w-auto"
               onClick={async () => {
                 await fetch(`/api/items/${item.id}/reservations`, {
                   method: "POST",
@@ -650,8 +549,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           <p className="mb-2 text-lg font-medium text-[#616474] dark:text-[#aab4c7]">Aktive Reservierungen</p>
           <ul className="space-y-2">
             {(item.reservations || []).map((r: any) => (
-              <li key={r.id} className="flex items-center justify-between rounded-xl border border-[#e6e6eb] p-3 dark:border-[#2f3746]">
-                <div>
+              <li key={r.id} className="flex flex-col gap-3 rounded-xl border border-[#e6e6eb] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#2f3746]">
+                <div className="min-w-0">
                   <p className="font-medium">{r.reservedFor}</p>
                   <p className="text-sm text-[#616474] dark:text-[#aab4c7]">{r.reservedQty}x • {new Date(r.createdAt).toLocaleDateString("de-DE")}</p>
                 </div>
@@ -673,18 +572,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
         <div className="mt-4 border-t border-[#e6e6eb] pt-3">
           <p className="mb-2 text-sm font-semibold">Bestandsbuchung</p>
-          <div className="flex flex-wrap gap-2">
-            <input className="input w-28" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} />
-            <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <input className="input w-full sm:w-28" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} />
+            <select className="input w-full sm:w-auto" value={reason} onChange={(e) => setReason(e.target.value)}>
               <option>PURCHASE</option>
               <option>CONSUMPTION</option>
               <option>CORRECTION</option>
               <option>INVENTORY</option>
               <option>RESERVATION</option>
             </select>
-            <input className="input min-w-64" placeholder="Notiz" value={note} onChange={(e) => setNote(e.target.value)} />
+            <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Notiz" value={note} onChange={(e) => setNote(e.target.value)} />
             <button
-              className="btn"
+              className="btn w-full sm:w-auto"
               onClick={async () => {
                 await fetch(`/api/items/${item.id}/movements`, {
                   method: "POST",
@@ -711,6 +610,16 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           ))}
         </ul>
       </section>
+
+      <ItemBomSection
+        itemId={item.id}
+        bomChildren={item.bomChildren || []}
+        bomParents={item.bomParents || []}
+        editMode={editMode}
+        onChanged={load}
+      />
+
+      <ItemAuditSection entries={item.auditEntries || []} />
     </div>
   );
 }
