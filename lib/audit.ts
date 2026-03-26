@@ -1,4 +1,7 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+type AuditDb = Pick<Prisma.TransactionClient, "auditLog">;
 
 export async function auditLog(input: {
   userId?: string;
@@ -7,8 +10,8 @@ export async function auditLog(input: {
   entityId: string;
   before?: unknown;
   after?: unknown;
-}) {
-  await prisma.auditLog.create({
+}, db: AuditDb = prisma) {
+  await db.auditLog.create({
     data: {
       userId: input.userId,
       action: input.action,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/api";
-import { adminUserSchema } from "@/lib/validation";
+import { adminUserSchema, adminUserUpdateSchema, idPayloadSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
 
 export async function GET(req: NextRequest) {
@@ -39,8 +39,9 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth.error) return auth.error;
-  const body = await req.json();
-  if (!body.id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, adminUserUpdateSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as ReturnType<typeof adminUserUpdateSchema.parse>;
 
   const data: Record<string, unknown> = {
     name: body.name,
@@ -73,8 +74,9 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth.error) return auth.error;
-  const { id } = await req.json();
-  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, idPayloadSchema);
+  if ("error" in parsed) return parsed.error;
+  const { id } = parsed.data as ReturnType<typeof idPayloadSchema.parse>;
   await prisma.user.update({ where: { id }, data: { isActive: false } });
   return NextResponse.json({ ok: true });
 }

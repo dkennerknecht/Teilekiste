@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
+import { namePayloadSchema } from "@/lib/validation";
+import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest) {
   const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
-  const body = await req.json().catch(() => null);
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
-  if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, namePayloadSchema);
+  if ("error" in parsed) return parsed.error;
+  const { name } = parsed.data as ReturnType<typeof namePayloadSchema.parse>;
 
   const existing = await prisma.tag.findUnique({ where: { name } });
   if (existing) return NextResponse.json(existing);

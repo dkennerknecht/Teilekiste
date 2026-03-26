@@ -1,10 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { createBackupZip } from "@/lib/backup";
 
-export async function POST() {
-  const auth = await requireAdmin();
+export async function POST(req: NextRequest) {
+  const auth = await requireAdmin(req);
   if (auth.error) return auth.error;
 
   const exportJson = {

@@ -3,29 +3,17 @@ import { requireWriteAccess } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { assignNextLabelCode, previewBulkLabelCodes } from "@/lib/label-code";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
-
-type BulkBody = {
-  itemIds: string[];
-  categoryId?: string;
-  storageLocationId?: string;
-  storageArea?: string | null;
-  bin?: string | null;
-  minStock?: number | null;
-  unit?: "STK" | "M" | "SET" | "PACK";
-  addTagIds?: string[];
-  removeTagIds?: string[];
-  areaId?: string;
-  typeId?: string;
-  dryRun?: boolean;
-};
+import { bulkItemSchema } from "@/lib/validation";
+import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
-  const body = (await req.json()) as BulkBody;
-  const itemIds = body.itemIds || [];
-  if (!itemIds.length) return NextResponse.json({ error: "No itemIds" }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, bulkItemSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as ReturnType<typeof bulkItemSchema.parse>;
+  const itemIds = body.itemIds;
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   const items = await prisma.item.findMany({ where: { id: { in: itemIds } } });
@@ -60,7 +48,7 @@ export async function POST(req: NextRequest) {
       const codeRow = previewCodes.find((row) => row.itemId === item.id);
       let labelCode: string | undefined;
       if (codeRow && body.areaId && body.typeId) {
-        labelCode = await assignNextLabelCode(body.areaId, body.typeId);
+        labelCode = await assignNextLabelCode(body.areaId, body.typeId, tx);
       }
       await tx.item.update({
         where: { id: item.id },

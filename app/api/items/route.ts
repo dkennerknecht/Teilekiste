@@ -76,57 +76,64 @@ export async function POST(req: NextRequest) {
   while (attempts < 3) {
     attempts += 1;
     try {
-      const labelCode = await assignNextLabelCode(parsed.data.areaId, parsed.data.typeId);
+      const item = await prisma.$transaction(async (tx) => {
+        const labelCode = await assignNextLabelCode(parsed.data.areaId, parsed.data.typeId, tx);
 
-      const item = await prisma.item.create({
-        data: {
-          labelCode,
-          name: parsed.data.name,
-          description: parsed.data.description,
-          categoryId: parsed.data.categoryId,
-          storageLocationId: parsed.data.storageLocationId,
-          storageArea: parsed.data.storageArea || null,
-          bin: parsed.data.bin || null,
-          stock: parsed.data.stock,
-          unit: parsed.data.unit,
-          minStock: parsed.data.minStock || null,
-          manufacturer: parsed.data.manufacturer || null,
-          mpn: parsed.data.mpn || null,
-          datasheetUrl: parsed.data.datasheetUrl || null,
-          purchaseUrl: parsed.data.purchaseUrl || null,
-          barcodeEan: parsed.data.barcodeEan || null,
-          tags: {
-            create: parsed.data.tagIds.map((tagId) => ({ tagId }))
+        const createdItem = await tx.item.create({
+          data: {
+            labelCode,
+            name: parsed.data.name,
+            description: parsed.data.description,
+            categoryId: parsed.data.categoryId,
+            storageLocationId: parsed.data.storageLocationId,
+            storageArea: parsed.data.storageArea || null,
+            bin: parsed.data.bin || null,
+            stock: parsed.data.stock,
+            unit: parsed.data.unit,
+            minStock: parsed.data.minStock || null,
+            manufacturer: parsed.data.manufacturer || null,
+            mpn: parsed.data.mpn || null,
+            datasheetUrl: parsed.data.datasheetUrl || null,
+            purchaseUrl: parsed.data.purchaseUrl || null,
+            barcodeEan: parsed.data.barcodeEan || null,
+            tags: {
+              create: parsed.data.tagIds.map((tagId) => ({ tagId }))
+            }
           }
-        }
-      });
+        });
 
-      await Promise.all(
-        Object.entries(parsed.data.customValues || {}).map(([fieldId, value]) =>
-          prisma.itemCustomFieldValue.upsert({
-            where: { itemId_customFieldId: { itemId: item.id, customFieldId: fieldId } },
-            update: { valueJson: JSON.stringify(value) },
-            create: { itemId: item.id, customFieldId: fieldId, valueJson: JSON.stringify(value) }
-          })
-        )
-      );
+        await Promise.all(
+          Object.entries(parsed.data.customValues || {}).map(([fieldId, value]) =>
+            tx.itemCustomFieldValue.upsert({
+              where: { itemId_customFieldId: { itemId: createdItem.id, customFieldId: fieldId } },
+              update: { valueJson: JSON.stringify(value) },
+              create: { itemId: createdItem.id, customFieldId: fieldId, valueJson: JSON.stringify(value) }
+            })
+          )
+        );
 
-      await prisma.stockMovement.create({
-        data: {
-          itemId: item.id,
-          delta: parsed.data.stock,
-          reason: "PURCHASE",
-          note: "Initial stock",
-          userId: auth.user!.id
-        }
-      });
+        await tx.stockMovement.create({
+          data: {
+            itemId: createdItem.id,
+            delta: parsed.data.stock,
+            reason: "PURCHASE",
+            note: "Initial stock",
+            userId: auth.user!.id
+          }
+        });
 
-      await auditLog({
-        userId: auth.user!.id,
-        action: "ITEM_CREATE",
-        entity: "Item",
-        entityId: item.id,
-        after: item
+        await auditLog(
+          {
+            userId: auth.user!.id,
+            action: "ITEM_CREATE",
+            entity: "Item",
+            entityId: createdItem.id,
+            after: createdItem
+          },
+          tx
+        );
+
+        return createdItem;
       });
 
       return NextResponse.json(item, { status: 201 });

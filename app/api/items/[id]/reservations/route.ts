@@ -3,13 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
 import { reservationSchema } from "@/lib/validation";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
-  const parsed = reservationSchema.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, reservationSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as ReturnType<typeof reservationSchema.parse>;
 
   const item = await prisma.item.findUnique({ where: { id: params.id } });
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -22,9 +24,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const reservation = await prisma.reservation.create({
     data: {
       itemId: params.id,
-      reservedQty: parsed.data.reservedQty,
-      reservedFor: parsed.data.reservedFor,
-      note: parsed.data.note || null,
+      reservedQty: body.reservedQty,
+      reservedFor: body.reservedFor,
+      note: body.note || null,
       userId: auth.user!.id
     }
   });

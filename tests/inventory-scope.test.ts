@@ -29,6 +29,8 @@ afterEach(() => {
 
 describe("Inventory scope enforcement", () => {
   it("rejects inventory updates for items outside the caller scope", async () => {
+    const itemId = "33333333-3333-4333-8333-333333333333";
+
     requireWriteAccessMock.mockResolvedValue({
       user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
     });
@@ -40,7 +42,7 @@ describe("Inventory scope enforcement", () => {
       })
     );
     findUniqueMock.mockResolvedValue({
-      id: "item-1",
+      id: itemId,
       stock: 4,
       storageLocationId: "loc-forbidden"
     });
@@ -51,12 +53,14 @@ describe("Inventory scope enforcement", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          updates: [{ itemId: "item-1", countedStock: 7 }]
+          updates: [{ itemId, countedStock: 7 }]
         })
       })
     );
 
     const response = await POST(request);
+    expect(response).toBeDefined();
+    if (!response) throw new Error("Expected response");
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: "Forbidden" });

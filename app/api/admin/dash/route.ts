@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 
-export async function GET() {
-  const auth = await requireAdmin();
+export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
   if (auth.error) return auth.error;
 
   const [items, lowStock, users, locations] = await Promise.all([

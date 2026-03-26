@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { generateApiToken, hashApiToken } from "@/lib/token";
+import { apiTokenCreateSchema } from "@/lib/validation";
+import { parseJson } from "@/lib/http";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req);
@@ -19,7 +21,9 @@ export async function POST(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth.error) return auth.error;
 
-  const body = await req.json();
+  const parsed = await parseJson<unknown>(req, apiTokenCreateSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as ReturnType<typeof apiTokenCreateSchema.parse>;
   const userId = String(body.userId || auth.user!.id);
   const name = String(body.name || "Read-only token").slice(0, 120);
   const expiresAt = body.expiresAt ? new Date(String(body.expiresAt)) : null;

@@ -62,6 +62,8 @@ describe("Item scope enforcement", () => {
     } as unknown as NextRequest;
 
     const response = await PATCH(request, { params: { id: "item-1" } });
+    expect(response).toBeDefined();
+    if (!response) throw new Error("Expected response");
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: "Forbidden" });

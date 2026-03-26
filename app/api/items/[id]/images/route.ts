@@ -9,6 +9,8 @@ import { saveFile } from "@/lib/fs";
 import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { orderedImageIdsSchema } from "@/lib/validation";
+import { parseJson } from "@/lib/http";
 
 const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -25,7 +27,7 @@ async function checkItemAccess(itemId: string, user: { id: string; role: string 
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
   const access = await checkItemAccess(params.id, auth.user!);
@@ -73,21 +75,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
   const access = await checkItemAccess(params.id, auth.user!);
   if (access.error) return access.error;
 
-  const body = (await req.json().catch(() => null)) as { orderedImageIds?: unknown } | null;
-  const rawOrder = body?.orderedImageIds;
-  const orderedImageIds: string[] | null = Array.isArray(rawOrder)
-    ? rawOrder.filter((id: unknown): id is string => typeof id === "string")
-    : null;
-
-  if (!orderedImageIds || orderedImageIds.length === 0) {
-    return NextResponse.json({ error: "orderedImageIds required" }, { status: 400 });
-  }
+  const parsed = await parseJson<unknown>(req, orderedImageIdsSchema);
+  if ("error" in parsed) return parsed.error;
+  const { orderedImageIds } = parsed.data as ReturnType<typeof orderedImageIdsSchema.parse>;
 
   const existing = await prisma.itemImage.findMany({
     where: { itemId: params.id },
@@ -116,7 +112,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
   const access = await checkItemAccess(params.id, auth.user!);

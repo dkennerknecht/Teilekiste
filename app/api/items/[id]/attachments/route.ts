@@ -19,7 +19,7 @@ const allowed = new Set([
 ]);
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
   const item = await prisma.item.findUnique({ where: { id: params.id } });

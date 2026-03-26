@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireWriteAccess } from "@/lib/api";
-import { itemSchema } from "@/lib/validation";
+import { itemUpdateSchema } from "@/lib/validation";
 import { auditLog } from "@/lib/audit";
 import { assignNextLabelCode } from "@/lib/label-code";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { parseJson } from "@/lib/http";
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireAuth();
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requireAuth(req);
   if (auth.error) return auth.error;
 
   const item = await prisma.item.findUnique({
@@ -47,12 +48,12 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
-  const body = await req.json();
-  const parsed = itemSchema.partial().safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, itemUpdateSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as ReturnType<typeof itemUpdateSchema.parse>;
 
   const existing = await prisma.item.findUnique({ where: { id: params.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -61,24 +62,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const targetLocationId = parsed.data.storageLocationId || existing.storageLocationId;
+  const targetLocationId = body.storageLocationId || existing.storageLocationId;
   if (allowedLocationIds && !allowedLocationIds.includes(targetLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let labelCode = existing.labelCode;
   const config = await prisma.labelConfig.findUnique({ where: { id: "default" } });
-  const hasManualCode = !!parsed.data.labelCode && auth.user!.role === "ADMIN" && config?.allowCodeEdit;
+  const hasManualCode = !!body.labelCode && auth.user!.role === "ADMIN" && config?.allowCodeEdit;
   if (hasManualCode) {
-    labelCode = parsed.data.labelCode!;
+    labelCode = body.labelCode!;
   }
-  if (!hasManualCode && parsed.data.areaId && parsed.data.typeId) {
+  if (!hasManualCode && body.areaId && body.typeId) {
     if (config?.regenerateOnType) {
-      labelCode = await assignNextLabelCode(parsed.data.areaId, parsed.data.typeId);
+      labelCode = await assignNextLabelCode(body.areaId, body.typeId);
     }
   }
 
-  const { tagIds, ...itemData } = parsed.data;
+  const { tagIds, ...itemData } = body;
 
   const item = await prisma.item.update({
     where: { id: params.id },
@@ -99,9 +100,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   });
 
-  if (parsed.data.customValues) {
+  if (body.customValues) {
     await Promise.all(
-      Object.entries(parsed.data.customValues).map(([fieldId, value]) =>
+      Object.entries(body.customValues).map(([fieldId, value]) =>
         prisma.itemCustomFieldValue.upsert({
           where: { itemId_customFieldId: { itemId: item.id, customFieldId: fieldId } },
           update: { valueJson: JSON.stringify(value) },
@@ -123,8 +124,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json(item);
 }
 
-export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
   const existing = await prisma.item.findUnique({ where: { id: params.id } });

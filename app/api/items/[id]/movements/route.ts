@@ -4,13 +4,15 @@ import { requireWriteAccess } from "@/lib/api";
 import { stockMovementSchema } from "@/lib/validation";
 import { auditLog } from "@/lib/audit";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const auth = await requireWriteAccess();
+  const auth = await requireWriteAccess(req);
   if (auth.error) return auth.error;
 
-  const parsed = stockMovementSchema.safeParse(await req.json());
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const parsed = await parseJson<unknown>(req, stockMovementSchema);
+  if ("error" in parsed) return parsed.error;
+  const body = parsed.data as ReturnType<typeof stockMovementSchema.parse>;
 
   const item = await prisma.item.findUnique({ where: { id: params.id } });
   if (!item) return NextResponse.json({ error: "Item not found" }, { status: 404 });
@@ -24,16 +26,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const movement = await tx.stockMovement.create({
       data: {
         itemId: item.id,
-        delta: parsed.data.delta,
-        reason: parsed.data.reason,
-        note: parsed.data.note,
+        delta: body.delta,
+        reason: body.reason,
+        note: body.note,
         userId: auth.user!.id
       }
     });
 
     const newItem = await tx.item.update({
       where: { id: item.id },
-      data: { stock: { increment: parsed.data.delta } }
+      data: { stock: { increment: body.delta } }
     });
 
     return { movement, item: newItem };
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     entity: "Item",
     entityId: item.id,
     before: { stock: item.stock },
-    after: { stock: updated.item.stock, delta: parsed.data.delta }
+    after: { stock: updated.item.stock, delta: body.delta }
   });
 
   return NextResponse.json(updated);

@@ -5,14 +5,30 @@ import { useRouter } from "next/navigation";
 
 type Option = { id: string; name: string; code?: string; areaId?: string; codeLabel?: string };
 
+const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 export default function NewItemPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<Option[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
   const [areas, setAreas] = useState<Option[]>([]);
   const [types, setTypes] = useState<Option[]>([]);
+  const [tags, setTags] = useState<Option[]>([]);
   const [labelPreview, setLabelPreview] = useState("");
   const [duplicates, setDuplicates] = useState<Array<{ id: string; labelCode: string; name: string }>>([]);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [newTagName, setNewTagName] = useState("");
+  const [creatingTag, setCreatingTag] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -33,11 +49,12 @@ export default function NewItemPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { categories: cat, locations: loc, areas: ar, types: ty } = await fetch("/api/meta").then((r) => r.json());
+      const { categories: cat, locations: loc, areas: ar, types: ty, tags: tg } = await fetch("/api/meta").then((r) => r.json());
       setCategories(cat);
       setLocations(loc);
       setAreas(ar);
       setTypes(ty);
+      setTags(tg || []);
       if (cat[0]) setForm((f) => ({ ...f, categoryId: cat[0].id }));
       if (loc[0]) setForm((f) => ({ ...f, storageLocationId: loc[0].id }));
       if (ar[0]) {
@@ -65,6 +82,57 @@ export default function NewItemPage() {
       .then(setDuplicates);
   }, [form.name, form.mpn, form.barcodeEan]);
 
+  async function createTag() {
+    const name = newTagName.trim();
+    if (!name) return;
+
+    setCreatingTag(true);
+    const res = await fetch("/api/tags", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json().catch(() => null);
+    setCreatingTag(false);
+
+    if (!res.ok || !data?.id) {
+      alert(data?.error || "Tag anlegen fehlgeschlagen");
+      return;
+    }
+
+    setTags((prev) => (prev.some((tag) => tag.id === data.id) ? prev : [...prev, data].sort((a, b) => a.name.localeCompare(b.name))));
+    setForm((prev) => ({
+      ...prev,
+      tagIds: prev.tagIds.includes(data.id) ? prev.tagIds : [...prev.tagIds, data.id]
+    }));
+    setNewTagName("");
+  }
+
+  function handleAreaChange(areaId: string) {
+    const nextType = types.find((type) => type.areaId === areaId);
+    setForm((prev) => ({
+      ...prev,
+      areaId,
+      typeId: nextType?.id || ""
+    }));
+  }
+
+  function handleImageSelection(files: FileList | null) {
+    if (!files?.length) return;
+
+    const incoming = Array.from(files);
+    const rejected = incoming.filter((file) => !allowedImageTypes.has(file.type));
+    if (rejected.length > 0) {
+      alert(`Diese Dateitypen werden nicht unterstuetzt: ${rejected.map((file) => file.name).join(", ")}`);
+    }
+
+    setSelectedImages((prev) => {
+      const existing = new Set(prev.map(fileKey));
+      const next = incoming.filter((file) => allowedImageTypes.has(file.type) && !existing.has(fileKey(file)));
+      return next.length > 0 ? [...prev, ...next] : prev;
+    });
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Neues Item</h1>
@@ -81,20 +149,47 @@ export default function NewItemPage() {
           className="grid gap-3 md:grid-cols-2"
           onSubmit={async (e) => {
             e.preventDefault();
-            const payload = {
-              ...form,
-              minStock: form.minStock === "" ? null : Number(form.minStock)
-            };
-            const res = await fetch("/api/items", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(payload)
-            });
-            if (res.ok) {
-              const item = await res.json();
-              router.push(`/items/${item.id}`);
-            } else {
+            setSubmitting(true);
+            try {
+              const payload = {
+                ...form,
+                minStock: form.minStock === "" ? null : Number(form.minStock)
+              };
+              const res = await fetch("/api/items", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(payload)
+              });
+              if (res.ok) {
+                const item = await res.json();
+                const failedUploads: string[] = [];
+
+                for (const image of selectedImages) {
+                  const uploadData = new FormData();
+                  uploadData.set("file", image);
+
+                  const uploadRes = await fetch(`/api/items/${item.id}/images`, {
+                    method: "POST",
+                    body: uploadData
+                  });
+
+                  if (!uploadRes.ok) failedUploads.push(image.name);
+                }
+
+                if (failedUploads.length > 0) {
+                  alert(`Item angelegt, aber diese Bilder konnten nicht hochgeladen werden: ${failedUploads.join(", ")}`);
+                }
+
+                router.push(`/items/${item.id}`);
+                return;
+              }
+
+              const error = await res.json().catch(() => null);
+              alert(error?.error || "Anlegen fehlgeschlagen");
+            } catch {
               alert("Anlegen fehlgeschlagen");
+            } finally {
+              setSubmitting(false);
             }
           }}
         >
@@ -147,7 +242,7 @@ export default function NewItemPage() {
 
           <label className="text-sm">
             Area (Label)
-            <select className="input mt-1" value={form.areaId} onChange={(e) => setForm({ ...form, areaId: e.target.value })}>
+            <select className="input mt-1" value={form.areaId} onChange={(e) => handleAreaChange(e.target.value)}>
               {areas.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.code} - {a.name}
@@ -219,8 +314,83 @@ export default function NewItemPage() {
             />
           </label>
 
-          <button className="btn md:col-span-2" type="submit">
-            Speichern
+          <fieldset className="text-sm md:col-span-2">
+            <legend className="mb-1">Tags</legend>
+            {tags.length === 0 ? (
+              <p className="rounded-md border border-dashed border-workshop-200 px-3 py-2 text-workshop-700">Noch keine Tags vorhanden.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <label key={tag.id} className="inline-flex items-center gap-1 rounded border border-workshop-200 px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={form.tagIds.includes(tag.id)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          tagIds: e.target.checked
+                            ? [...new Set([...prev.tagIds, tag.id])]
+                            : prev.tagIds.filter((id: string) => id !== tag.id)
+                        }))
+                      }
+                    />
+                    <span>{tag.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                className="input flex-1"
+                type="text"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                placeholder="Neuen Tag anlegen"
+              />
+              <button type="button" className="btn-secondary" onClick={createTag} disabled={creatingTag || !newTagName.trim()}>
+                {creatingTag ? "Tag wird angelegt..." : "Tag anlegen"}
+              </button>
+            </div>
+          </fieldset>
+
+          <fieldset className="text-sm md:col-span-2">
+            <legend className="mb-1">Bilder</legend>
+            <p className="mb-2 text-workshop-700">Du kannst Bilder direkt mit anlegen. Das erste erfolgreiche Upload wird spaeter das Titelbild.</p>
+            <input
+              className="input"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={(e) => {
+                handleImageSelection(e.target.files);
+                e.currentTarget.value = "";
+              }}
+            />
+            {selectedImages.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {selectedImages.map((image, index) => (
+                  <div key={fileKey(image)} className="flex items-center justify-between gap-3 rounded border border-workshop-200 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{image.name}</p>
+                      <p className="text-xs text-workshop-700">
+                        Bild {index + 1} - {formatFileSize(image.size)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setSelectedImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index))}
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </fieldset>
+
+          <button className="btn md:col-span-2" type="submit" disabled={submitting}>
+            {submitting ? "Speichere..." : "Speichern"}
           </button>
         </form>
       </div>

@@ -52,7 +52,7 @@ docker compose up -d --build
 - [http://localhost:3000](http://localhost:3000)
 - Default Seed Login: `admin@local` / `admin123`
 
-Hinweis: Beim Container-Start laufen `prisma migrate deploy` + `prisma seed` automatisch.
+Hinweis: Beim Container-Start laeuft `prisma migrate deploy` automatisch. Demo-Seed-Daten werden nur geladen, wenn `RUN_SEED_ON_STARTUP=1` gesetzt ist.
 
 ## Volumes / Persistenz
 
