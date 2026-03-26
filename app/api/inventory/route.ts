@@ -30,36 +30,47 @@ export async function POST(req: NextRequest) {
   if (auth.error) return auth.error;
 
   const body = (await req.json()) as { updates: Array<{ itemId: string; countedStock: number; note?: string }> };
+  const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const applied = [] as Array<{ itemId: string; before: number; after: number; delta: number }>;
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const applied = [] as Array<{ itemId: string; before: number; after: number; delta: number }>;
 
-    for (const update of body.updates || []) {
-      const item = await tx.item.findUnique({ where: { id: update.itemId } });
-      if (!item) continue;
-      const delta = update.countedStock - item.stock;
-      if (delta === 0) continue;
-
-      const newItem = await tx.item.update({
-        where: { id: item.id },
-        data: { stock: update.countedStock }
-      });
-
-      await tx.stockMovement.create({
-        data: {
-          itemId: item.id,
-          delta,
-          reason: "INVENTORY",
-          note: update.note || "Inventurabgleich",
-          userId: auth.user!.id
+      for (const update of body.updates || []) {
+        const item = await tx.item.findUnique({ where: { id: update.itemId } });
+        if (!item) continue;
+        if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+          throw new Error("FORBIDDEN");
         }
-      });
+        const delta = update.countedStock - item.stock;
+        if (delta === 0) continue;
 
-      applied.push({ itemId: item.id, before: item.stock, after: newItem.stock, delta });
+        const newItem = await tx.item.update({
+          where: { id: item.id },
+          data: { stock: update.countedStock }
+        });
+
+        await tx.stockMovement.create({
+          data: {
+            itemId: item.id,
+            delta,
+            reason: "INVENTORY",
+            note: update.note || "Inventurabgleich",
+            userId: auth.user!.id
+          }
+        });
+
+        applied.push({ itemId: item.id, before: item.stock, after: newItem.stock, delta });
+      }
+
+      return applied;
+    });
+
+    return NextResponse.json({ applied: result });
+  } catch (error) {
+    if ((error as Error).message === "FORBIDDEN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-
-    return applied;
-  });
-
-  return NextResponse.json({ applied: result });
+    throw error;
+  }
 }

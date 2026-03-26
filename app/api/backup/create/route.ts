@@ -16,7 +16,9 @@ export async function POST() {
     tags: await prisma.tag.findMany(),
     locations: await prisma.storageLocation.findMany(),
     customFields: await prisma.customField.findMany(),
-    users: await prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, isActive: true } })
+    users: await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true, isActive: true, passwordHash: true }
+    })
   };
 
   const backupFile = await createBackupZip(exportJson);

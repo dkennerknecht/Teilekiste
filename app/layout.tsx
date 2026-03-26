@@ -5,7 +5,12 @@ import { Nav } from "@/components/nav";
 
 export const metadata = {
   title: "Teilekiste Inventory",
-  description: "Werkstatt-Inventarverwaltung"
+  description: "Werkstatt-Inventarverwaltung",
+  icons: {
+    icon: "/logo-refined.svg",
+    shortcut: "/logo-refined.svg",
+    apple: "/logo-refined.svg"
+  }
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

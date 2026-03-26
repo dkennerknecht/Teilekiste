@@ -61,6 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const targetLocationId = parsed.data.storageLocationId || existing.storageLocationId;
+  if (allowedLocationIds && !allowedLocationIds.includes(targetLocationId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   let labelCode = existing.labelCode;
   const config = await prisma.labelConfig.findUnique({ where: { id: "default" } });

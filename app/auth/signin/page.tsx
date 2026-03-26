@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
+import { Brand } from "@/components/brand";
 
 export default function SignInPage() {
   const [email, setEmail] = useState("admin@local");
@@ -10,7 +12,17 @@ export default function SignInPage() {
 
   return (
     <div className="mx-auto mt-12 max-w-md card">
-      <h1 className="mb-4 text-xl font-semibold">Anmelden</h1>
+      <div className="mb-6 flex flex-col items-center gap-4">
+        <Link href="/" className="text-workshop-800 dark:text-[#e6ebf2]">
+          <Brand
+            stacked
+            showSubtitle
+            logoClassName="h-20 w-20"
+            textClassName="text-2xl font-semibold text-workshop-800 dark:text-[#e6ebf2]"
+          />
+        </Link>
+        <h1 className="text-xl font-semibold">Anmelden</h1>
+      </div>
       <form
         className="space-y-3"
         onSubmit={async (e) => {

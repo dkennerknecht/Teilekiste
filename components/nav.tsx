@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Brand } from "@/components/brand";
 
 export async function Nav() {
   const user = await getSessionUser();
@@ -17,8 +18,8 @@ export async function Nav() {
   return (
     <header className="border-b border-workshop-200 bg-white dark:border-[#2a313d] dark:bg-[#121822]">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
-        <Link href="/" className="text-lg font-semibold text-workshop-800 dark:text-[#e6ebf2]">
-          Teilekiste
+        <Link href="/" className="text-workshop-800 dark:text-[#e6ebf2]">
+          <Brand textClassName="text-lg font-semibold text-workshop-800 dark:text-[#e6ebf2]" />
         </Link>
         <Link className="btn-secondary" href="/items/new">
           Neues Item
