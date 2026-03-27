@@ -57,7 +57,7 @@ export function ItemImageGallery(props: {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-[#d7d7dc] bg-white dark:border-[#2a313d] dark:bg-[#171d26]">
+      <div className="overflow-hidden rounded-2xl border border-workshop-200 bg-[var(--app-surface)]">
         {primaryImage ? (
           <button type="button" className="relative block h-[280px] w-full cursor-zoom-in sm:h-[360px] lg:h-[460px]" onClick={() => setPreviewImage(primaryImage)}>
             <Image
@@ -70,7 +70,7 @@ export function ItemImageGallery(props: {
             />
           </button>
         ) : (
-          <div className="flex h-[460px] items-center justify-center text-[#6a6d79] dark:text-[#a6b0c2]">Kein Bild vorhanden</div>
+          <div className="theme-muted flex h-[460px] items-center justify-center">Kein Bild vorhanden</div>
         )}
       </div>
 
@@ -97,7 +97,7 @@ export function ItemImageGallery(props: {
           >
             <button
               type="button"
-              className={`relative block h-[72px] w-[72px] cursor-zoom-in overflow-hidden rounded-xl border sm:h-[88px] sm:w-[88px] ${index === 0 ? "border-[#0f1535]" : "border-[#d7d7dc]"}`}
+              className={`relative block h-[72px] w-[72px] cursor-zoom-in overflow-hidden rounded-xl border sm:h-[88px] sm:w-[88px] ${index === 0 ? "border-[var(--app-primary)]" : "border-workshop-200"}`}
               onClick={() => setPreviewImage(img)}
             >
               <Image

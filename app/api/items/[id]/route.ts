@@ -7,6 +7,8 @@ import { summarizeAuditEntry } from "@/lib/audit-view";
 import { assignNextLabelCode } from "@/lib/label-code";
 import { loadItemBom } from "@/lib/item-bom";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canSetStock, getAvailableQty, getReservedQty } from "@/lib/stock";
+import { prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { parseJson } from "@/lib/http";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -59,7 +61,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     create: { userId: auth.user!.id, itemId: item.id }
   });
 
-  const reservedQty = item.reservations.reduce((sum, r) => sum + r.reservedQty, 0);
+  const reservedQty = getReservedQty(item.reservations);
   return NextResponse.json({
     ...item,
     bomChildren,
@@ -75,7 +77,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     })),
     primaryImage: item.images[0] ?? null,
     reservedQty,
-    availableStock: item.stock - reservedQty
+    availableStock: getAvailableQty(item.stock, reservedQty)
   });
 }
 
@@ -89,6 +91,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const existing = await prisma.item.findUnique({ where: { id: params.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const reservedQtyResult = await prisma.reservation.aggregate({
+    where: { itemId: params.id },
+    _sum: { reservedQty: true }
+  });
+  const reservedQty = reservedQtyResult._sum.reservedQty || 0;
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   if (allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
@@ -98,6 +105,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (allowedLocationIds && !allowedLocationIds.includes(targetLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  if (body.stock !== undefined && !canSetStock(body.stock, reservedQty)) {
+    return NextResponse.json({ error: "Bestand darf nicht unter die reservierte Menge fallen" }, { status: 400 });
+  }
 
   let labelCode = existing.labelCode;
   const config = await prisma.labelConfig.findUnique({ where: { id: "default" } });
@@ -105,22 +115,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (hasManualCode) {
     labelCode = body.labelCode!;
   }
-  if (!hasManualCode && body.areaId && body.typeId) {
+  if (!hasManualCode && body.typeId) {
     if (config?.regenerateOnType) {
-      labelCode = await assignNextLabelCode(body.areaId, body.typeId);
+      labelCode = await assignNextLabelCode(body.categoryId || existing.categoryId, body.typeId);
     }
   }
 
-  const { tagIds, ...itemData } = body;
+  const {
+    tagIds,
+    customValues: _customValues,
+    typeId: _typeId,
+    categoryId,
+    storageLocationId,
+    ...itemData
+  } = body;
+  const nextCategoryId = body.categoryId || existing.categoryId;
+  const nextTypeId = body.typeId || null;
 
   const item = await prisma.item.update({
     where: { id: params.id },
     data: {
       ...itemData,
       labelCode,
+      ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
+      ...(storageLocationId ? { storageLocation: { connect: { id: storageLocationId } } } : {}),
       storageArea: itemData.storageArea || undefined,
       bin: itemData.bin || undefined,
       minStock: itemData.minStock || undefined,
+      manufacturer: itemData.manufacturer || null,
+      mpn: itemData.mpn || null,
+      barcodeEan: itemData.barcodeEan || null,
       ...(tagIds
         ? {
             tags: {
@@ -133,15 +157,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
 
   if (body.customValues) {
+    const customFieldWrites = await prepareCustomFieldValueWrites(prisma, {
+      rawValues: body.customValues,
+      categoryId: nextCategoryId,
+      typeId: nextTypeId
+    });
     await Promise.all(
-      Object.entries(body.customValues).map(([fieldId, value]) =>
+      customFieldWrites.upserts.map((entry) =>
         prisma.itemCustomFieldValue.upsert({
-          where: { itemId_customFieldId: { itemId: item.id, customFieldId: fieldId } },
-          update: { valueJson: JSON.stringify(value) },
-          create: { itemId: item.id, customFieldId: fieldId, valueJson: JSON.stringify(value) }
+          where: { itemId_customFieldId: { itemId: item.id, customFieldId: entry.customFieldId } },
+          update: { valueJson: entry.valueJson },
+          create: { itemId: item.id, customFieldId: entry.customFieldId, valueJson: entry.valueJson }
         })
       )
     );
+    if (customFieldWrites.deletions.length) {
+      await prisma.itemCustomFieldValue.deleteMany({
+        where: {
+          itemId: item.id,
+          customFieldId: { in: customFieldWrites.deletions }
+        }
+      });
+    }
   }
 
   await auditLog({

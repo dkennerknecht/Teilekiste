@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireWriteAccess } from "@/lib/api";
+import { auditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { assignNextLabelCode, previewBulkLabelCodes } from "@/lib/label-code";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
@@ -14,6 +15,11 @@ export async function POST(req: NextRequest) {
   if ("error" in parsed) return parsed.error;
   const body = parsed.data as ReturnType<typeof bulkItemSchema.parse>;
   const itemIds = body.itemIds;
+  const actionFlags = [body.deleteItems, body.archiveItems, body.unarchiveItems].filter(Boolean).length;
+
+  if (actionFlags > 1) {
+    return NextResponse.json({ error: "Nur eine Bulk-Aktion gleichzeitig erlaubt" }, { status: 400 });
+  }
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   const items = await prisma.item.findMany({ where: { id: { in: itemIds } } });
@@ -28,8 +34,8 @@ export async function POST(req: NextRequest) {
 
   const previewCodes: Array<{ itemId: string; oldCode: string; newCode: string }> = [];
 
-  if (body.areaId && body.typeId) {
-    const preview = await previewBulkLabelCodes(body.areaId, body.typeId, items.length);
+  if (body.categoryId && body.typeId) {
+    const preview = await previewBulkLabelCodes(body.categoryId, body.typeId, items.length);
     for (let idx = 0; idx < items.length; idx += 1) {
       previewCodes.push({ itemId: items[idx].id, oldCode: items[idx].labelCode, newCode: preview[idx] });
     }
@@ -45,10 +51,70 @@ export async function POST(req: NextRequest) {
 
   await prisma.$transaction(async (tx) => {
     for (const item of items) {
+      if (body.deleteItems) {
+        const deletedItem = await tx.item.update({
+          where: { id: item.id },
+          data: { deletedAt: new Date() }
+        });
+
+        await auditLog(
+          {
+            userId: auth.user!.id,
+            action: "ITEM_SOFT_DELETE",
+            entity: "Item",
+            entityId: item.id,
+            before: item,
+            after: deletedItem
+          },
+          tx
+        );
+        continue;
+      }
+
+      if (body.archiveItems) {
+        const archivedItem = await tx.item.update({
+          where: { id: item.id },
+          data: { isArchived: true }
+        });
+
+        await auditLog(
+          {
+            userId: auth.user!.id,
+            action: "ITEM_ARCHIVE",
+            entity: "Item",
+            entityId: item.id,
+            before: item,
+            after: archivedItem
+          },
+          tx
+        );
+        continue;
+      }
+
+      if (body.unarchiveItems) {
+        const restoredItem = await tx.item.update({
+          where: { id: item.id },
+          data: { isArchived: false }
+        });
+
+        await auditLog(
+          {
+            userId: auth.user!.id,
+            action: "ITEM_UNARCHIVE",
+            entity: "Item",
+            entityId: item.id,
+            before: item,
+            after: restoredItem
+          },
+          tx
+        );
+        continue;
+      }
+
       const codeRow = previewCodes.find((row) => row.itemId === item.id);
       let labelCode: string | undefined;
-      if (codeRow && body.areaId && body.typeId) {
-        labelCode = await assignNextLabelCode(body.areaId, body.typeId, tx);
+      if (codeRow && body.categoryId && body.typeId) {
+        labelCode = await assignNextLabelCode(body.categoryId, body.typeId, tx);
       }
       await tx.item.update({
         where: { id: item.id },
@@ -63,18 +129,28 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      if (body.addTagIds?.length) {
-        for (const tagId of body.addTagIds) {
-          await tx.itemTag.upsert({
-            where: { itemId_tagId: { itemId: item.id, tagId } },
-            update: {},
-            create: { itemId: item.id, tagId }
+      if (body.setTagIds) {
+        await tx.itemTag.deleteMany({ where: { itemId: item.id } });
+
+        if (body.setTagIds.length) {
+          await tx.itemTag.createMany({
+            data: body.setTagIds.map((tagId) => ({ itemId: item.id, tagId }))
           });
         }
-      }
+      } else {
+        if (body.addTagIds?.length) {
+          for (const tagId of body.addTagIds) {
+            await tx.itemTag.upsert({
+              where: { itemId_tagId: { itemId: item.id, tagId } },
+              update: {},
+              create: { itemId: item.id, tagId }
+            });
+          }
+        }
 
-      if (body.removeTagIds?.length) {
-        await tx.itemTag.deleteMany({ where: { itemId: item.id, tagId: { in: body.removeTagIds } } });
+        if (body.removeTagIds?.length) {
+          await tx.itemTag.deleteMany({ where: { itemId: item.id, tagId: { in: body.removeTagIds } } });
+        }
       }
     }
   });

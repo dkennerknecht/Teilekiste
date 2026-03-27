@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CustomFieldsEditor } from "@/components/custom-fields-editor";
+import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 
-type Option = { id: string; name: string; code?: string; areaId?: string; codeLabel?: string };
+type Option = { id: string; name: string; code?: string; codeLabel?: string };
+type ShelfOption = { id: string; name: string; storageLocationId: string };
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -20,15 +23,17 @@ export default function NewItemPage() {
   const router = useRouter();
   const [categories, setCategories] = useState<Option[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
-  const [areas, setAreas] = useState<Option[]>([]);
+  const [shelves, setShelves] = useState<ShelfOption[]>([]);
   const [types, setTypes] = useState<Option[]>([]);
   const [tags, setTags] = useState<Option[]>([]);
+  const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
   const [labelPreview, setLabelPreview] = useState("");
   const [duplicates, setDuplicates] = useState<Array<{ id: string; labelCode: string; name: string }>>([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const hasRequiredMeta = categories.length > 0 && locations.length > 0 && types.length > 0;
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -42,36 +47,43 @@ export default function NewItemPage() {
     manufacturer: "",
     mpn: "",
     barcodeEan: "",
-    areaId: "",
     typeId: "",
-    tagIds: [] as string[]
+    tagIds: [] as string[],
+    customValues: {} as CustomFieldValueMap
   });
 
   useEffect(() => {
     const load = async () => {
-      const { categories: cat, locations: loc, areas: ar, types: ty, tags: tg } = await fetch("/api/meta").then((r) => r.json());
+      const { categories: cat, locations: loc, shelves: sh, types: ty, tags: tg, customFields: cf } = await fetch("/api/meta").then((r) => r.json());
       setCategories(cat);
       setLocations(loc);
-      setAreas(ar);
+      setShelves(sh || []);
       setTypes(ty);
       setTags(tg || []);
+      setCustomFields(cf || []);
       if (cat[0]) setForm((f) => ({ ...f, categoryId: cat[0].id }));
       if (loc[0]) setForm((f) => ({ ...f, storageLocationId: loc[0].id }));
-      if (ar[0]) {
-        setForm((f) => ({ ...f, areaId: ar[0].id }));
-        const t = ty.find((x: Option) => x.areaId === ar[0].id);
-        if (t) setForm((f) => ({ ...f, typeId: t.id }));
-      }
+      if (ty[0]) setForm((f) => ({ ...f, typeId: ty[0].id }));
     };
     load();
   }, []);
 
   useEffect(() => {
-    if (!form.areaId || !form.typeId) return;
-    fetch(`/api/label/preview?areaId=${form.areaId}&typeId=${form.typeId}`)
+    if (!form.storageLocationId) return;
+    const hasShelf = shelves.some((shelf) => shelf.storageLocationId === form.storageLocationId && shelf.name === form.storageArea);
+    if (form.storageArea && !hasShelf) {
+      setForm((prev) => ({ ...prev, storageArea: "" }));
+    }
+  }, [form.storageArea, form.storageLocationId, shelves]);
+
+  const availableShelves = shelves.filter((shelf) => shelf.storageLocationId === form.storageLocationId);
+
+  useEffect(() => {
+    if (!form.categoryId || !form.typeId) return;
+    fetch(`/api/label/preview?categoryId=${form.categoryId}&typeId=${form.typeId}`)
       .then((r) => r.json())
       .then((d) => setLabelPreview(d.preview || ""));
-  }, [form.areaId, form.typeId]);
+  }, [form.categoryId, form.typeId]);
 
   useEffect(() => {
     if (!form.name && !form.mpn && !form.barcodeEan) return;
@@ -108,15 +120,6 @@ export default function NewItemPage() {
     setNewTagName("");
   }
 
-  function handleAreaChange(areaId: string) {
-    const nextType = types.find((type) => type.areaId === areaId);
-    setForm((prev) => ({
-      ...prev,
-      areaId,
-      typeId: nextType?.id || ""
-    }));
-  }
-
   function handleImageSelection(files: FileList | null) {
     if (!files?.length) return;
 
@@ -140,6 +143,11 @@ export default function NewItemPage() {
         <div className="mb-2 text-sm text-workshop-700">
           Code-Vorschau: <span className="font-mono">{labelPreview || "-"}</span>
         </div>
+        {!hasRequiredMeta && (
+          <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
+            Fuer neue Items wird mindestens eine Kategorie, ein Type und ein Lagerort benoetigt. Fehlende Lagerorte kannst du unter Admin anlegen.
+          </div>
+        )}
         {duplicates.length > 0 && (
           <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
             Moegliche Duplikate: {duplicates.map((d) => `${d.labelCode} (${d.name})`).join(", ")}
@@ -200,30 +208,31 @@ export default function NewItemPage() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
+              disabled={!hasRequiredMeta}
             />
           </label>
 
           <label className="text-sm">
             Hersteller
-            <input className="input mt-1" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} />
+            <input className="input mt-1" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} disabled={!hasRequiredMeta} />
           </label>
 
           <label className="text-sm">
             MPN
-            <input className="input mt-1" value={form.mpn} onChange={(e) => setForm({ ...form, mpn: e.target.value })} />
+            <input className="input mt-1" value={form.mpn} onChange={(e) => setForm({ ...form, mpn: e.target.value })} disabled={!hasRequiredMeta} />
           </label>
 
           <label className="text-sm">
             EAN / Barcode
-            <input className="input mt-1" value={form.barcodeEan} onChange={(e) => setForm({ ...form, barcodeEan: e.target.value })} />
+            <input className="input mt-1" value={form.barcodeEan} onChange={(e) => setForm({ ...form, barcodeEan: e.target.value })} disabled={!hasRequiredMeta} />
           </label>
 
           <label className="text-sm">
             Kategorie
-            <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
+            <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.code ? `${c.code} - ${c.name}` : c.name}
                 </option>
               ))}
             </select>
@@ -231,7 +240,13 @@ export default function NewItemPage() {
 
           <label className="text-sm">
             Lagerort
-            <select className="input mt-1" value={form.storageLocationId} onChange={(e) => setForm({ ...form, storageLocationId: e.target.value })}>
+            <select
+              className="input mt-1"
+              value={form.storageLocationId}
+              onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "" })}
+              disabled={!hasRequiredMeta}
+              required
+            >
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -241,37 +256,36 @@ export default function NewItemPage() {
           </label>
 
           <label className="text-sm">
-            Area (Label)
-            <select className="input mt-1" value={form.areaId} onChange={(e) => handleAreaChange(e.target.value)}>
-              {areas.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} - {a.name}
+            Type (Label)
+            <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })} disabled={!hasRequiredMeta} required>
+              {types.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code} - {t.name}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="text-sm">
-            Type (Label)
-            <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })}>
-              {types
-                .filter((t) => !form.areaId || t.areaId === form.areaId)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.code} - {t.name}
-                  </option>
-                ))}
+            Regal / Bereich
+            <select
+              className="input mt-1"
+              value={form.storageArea}
+              onChange={(e) => setForm({ ...form, storageArea: e.target.value })}
+              disabled={!hasRequiredMeta || !form.storageLocationId || availableShelves.length === 0}
+            >
+              <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+              {availableShelves.map((shelf) => (
+                <option key={shelf.id} value={shelf.name}>
+                  {shelf.name}
+                </option>
+              ))}
             </select>
           </label>
 
           <label className="text-sm">
-            Regal / Bereich
-            <input className="input mt-1" value={form.storageArea} onChange={(e) => setForm({ ...form, storageArea: e.target.value })} />
-          </label>
-
-          <label className="text-sm">
             Fach / Bin
-            <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} />
+            <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta} />
           </label>
 
           <label className="text-sm">
@@ -281,6 +295,7 @@ export default function NewItemPage() {
               type="number"
               value={form.stock}
               onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
+              disabled={!hasRequiredMeta}
             />
           </label>
 
@@ -292,12 +307,13 @@ export default function NewItemPage() {
               value={form.minStock}
               onChange={(e) => setForm({ ...form, minStock: e.target.value })}
               placeholder="leer = kein Mindestbestand"
+              disabled={!hasRequiredMeta}
             />
           </label>
 
           <label className="text-sm">
             Einheit
-            <select className="input mt-1" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
+            <select className="input mt-1" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} disabled={!hasRequiredMeta}>
               <option value="STK">Stk</option>
               <option value="M">m</option>
               <option value="SET">Set</option>
@@ -311,8 +327,18 @@ export default function NewItemPage() {
               className="input mt-1 min-h-28"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
+              disabled={!hasRequiredMeta}
             />
           </label>
+
+          <CustomFieldsEditor
+            fields={customFields}
+            values={form.customValues}
+            categoryId={form.categoryId}
+            typeId={form.typeId}
+            disabled={!hasRequiredMeta}
+            onChange={(customValues) => setForm((prev) => ({ ...prev, customValues }))}
+          />
 
           <fieldset className="text-sm md:col-span-2">
             <legend className="mb-1">Tags</legend>
@@ -325,6 +351,7 @@ export default function NewItemPage() {
                     <input
                       type="checkbox"
                       checked={form.tagIds.includes(tag.id)}
+                      disabled={!hasRequiredMeta}
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
@@ -346,8 +373,9 @@ export default function NewItemPage() {
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 placeholder="Neuen Tag anlegen"
+                disabled={!hasRequiredMeta}
               />
-              <button type="button" className="btn-secondary" onClick={createTag} disabled={creatingTag || !newTagName.trim()}>
+              <button type="button" className="btn-secondary" onClick={createTag} disabled={!hasRequiredMeta || creatingTag || !newTagName.trim()}>
                 {creatingTag ? "Tag wird angelegt..." : "Tag anlegen"}
               </button>
             </div>
@@ -361,6 +389,7 @@ export default function NewItemPage() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               multiple
+              disabled={!hasRequiredMeta}
               onChange={(e) => {
                 handleImageSelection(e.target.files);
                 e.currentTarget.value = "";
@@ -389,7 +418,7 @@ export default function NewItemPage() {
             )}
           </fieldset>
 
-          <button className="btn md:col-span-2" type="submit" disabled={submitting}>
+          <button className="btn md:col-span-2" type="submit" disabled={submitting || !hasRequiredMeta}>
             {submitting ? "Speichere..." : "Speichern"}
           </button>
         </form>

@@ -21,7 +21,7 @@ export function Brand({ textClassName = "", logoClassName = "", stacked = false,
       <span className={`min-w-0 ${stacked ? "space-y-1" : ""}`}>
         <span className={`block leading-none ${textClassName}`.trim()}>Teilekiste</span>
         {showSubtitle ? (
-          <span className="block text-xs font-medium uppercase tracking-[0.18em] text-workshop-500 dark:text-[#8ea27d]">
+          <span className="block text-xs font-medium uppercase tracking-[0.18em] text-workshop-500">
             Werkstatt Inventory
           </span>
         ) : null}

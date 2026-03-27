@@ -4,6 +4,7 @@ import { requireWriteAccess } from "@/lib/api";
 import { stockMovementSchema } from "@/lib/validation";
 import { auditLog } from "@/lib/audit";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canSetStock } from "@/lib/stock";
 import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -20,6 +21,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const reservedQtyResult = await prisma.reservation.aggregate({
+    where: { itemId: item.id },
+    _sum: { reservedQty: true }
+  });
+  const reservedQty = reservedQtyResult._sum.reservedQty || 0;
+  const nextStock = item.stock + body.delta;
+
+  if (!canSetStock(nextStock, reservedQty)) {
+    return NextResponse.json({ error: "Bestand darf nicht unter die reservierte Menge fallen" }, { status: 400 });
   }
 
   const updated = await prisma.$transaction(async (tx) => {

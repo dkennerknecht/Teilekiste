@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   if (auth.error) return auth.error;
 
   const [items, lowStock, users, locations] = await Promise.all([
-    prisma.item.count({ where: { deletedAt: null } }),
-    prisma.item.findMany({ where: { deletedAt: null, minStock: { not: null } }, select: { stock: true, minStock: true } }).then((rows) => rows.filter((r) => r.minStock !== null && r.stock <= r.minStock).length),
+    prisma.item.count({ where: { deletedAt: null, isArchived: false } }),
+    prisma.item.findMany({ where: { deletedAt: null, isArchived: false, minStock: { not: null } }, select: { stock: true, minStock: true } }).then((rows) => rows.filter((r) => r.minStock !== null && r.stock <= r.minStock).length),
     prisma.user.count(),
     prisma.storageLocation.count()
   ]);

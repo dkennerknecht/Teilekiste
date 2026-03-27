@@ -21,4 +21,4 @@ COPY --from=builder /app .
 RUN mkdir -p /data/sqlite /data/uploads /data/attachments /data/backups && chown -R app:nodejs /data /app
 USER app
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && if [ \"$RUN_SEED_ON_STARTUP\" = \"1\" ]; then npm run prisma:seed; fi && npm run start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run label:sync && if [ \"$RUN_SEED_ON_STARTUP\" = \"1\" ]; then npm run prisma:seed; fi && npm run start"]

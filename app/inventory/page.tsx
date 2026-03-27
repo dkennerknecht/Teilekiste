@@ -25,6 +25,18 @@ export default function InventoryPage() {
     [rows, counted]
   );
 
+  function getCountedValue(rowId: string, fallback: number) {
+    return typeof counted[rowId] === "number" ? counted[rowId] : fallback;
+  }
+
+  function setCountedValue(rowId: string, value: number) {
+    setCounted((prev) => ({ ...prev, [rowId]: value }));
+  }
+
+  function adjustCountedValue(rowId: string, fallback: number, delta: number) {
+    setCountedValue(rowId, getCountedValue(rowId, fallback) + delta);
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Inventur-Modus</h1>
@@ -38,20 +50,39 @@ export default function InventoryPage() {
                 {r.storageArea || "-"} / {r.bin || "-"}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg bg-workshop-50 p-3">
-                <p className="text-workshop-700">Soll</p>
-                <p className="mt-1 text-lg font-semibold">{r.stock}</p>
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-workshop-50 px-3 py-2 text-sm">
+              <p className="whitespace-nowrap text-workshop-700">
+                Soll: <span className="font-semibold text-workshop-900">{r.stock}</span>
+              </p>
+              <div className="ml-auto flex items-center gap-2">
+                <label className="flex items-center gap-1 whitespace-nowrap text-workshop-700">
+                  <span>Ist:</span>
+                  <input
+                    className="input h-10 w-20 min-h-0 px-2 py-1 text-center"
+                    type="number"
+                    value={getCountedValue(r.id, r.stock)}
+                    onChange={(e) => setCountedValue(r.id, Number(e.target.value))}
+                  />
+                </label>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    className="inline-flex h-4 w-7 items-center justify-center rounded border border-workshop-300 bg-white text-xs font-semibold text-workshop-800"
+                    onClick={() => adjustCountedValue(r.id, r.stock, 1)}
+                    aria-label={`${r.name} Ist-Bestand erhoehen`}
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-4 w-7 items-center justify-center rounded border border-workshop-300 bg-white text-xs font-semibold text-workshop-800"
+                    onClick={() => adjustCountedValue(r.id, r.stock, -1)}
+                    aria-label={`${r.name} Ist-Bestand verringern`}
+                  >
+                    -
+                  </button>
+                </div>
               </div>
-              <label className="rounded-lg bg-workshop-50 p-3">
-                <span className="text-workshop-700">Ist</span>
-                <input
-                  className="input mt-2"
-                  type="number"
-                  defaultValue={r.stock}
-                  onChange={(e) => setCounted((v) => ({ ...v, [r.id]: Number(e.target.value) }))}
-                />
-              </label>
             </div>
           </div>
         ))}
@@ -81,8 +112,8 @@ export default function InventoryPage() {
                   <input
                     className="input"
                     type="number"
-                    defaultValue={r.stock}
-                    onChange={(e) => setCounted((v) => ({ ...v, [r.id]: Number(e.target.value) }))}
+                    value={getCountedValue(r.id, r.stock)}
+                    onChange={(e) => setCountedValue(r.id, Number(e.target.value))}
                   />
                 </td>
               </tr>

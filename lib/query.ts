@@ -12,11 +12,14 @@ export function buildItemFilter(params: URLSearchParams, allowedLocationIds: str
   const area = params.get("storageArea");
   const bin = params.get("bin");
   const includeDeleted = params.get("includeDeleted") === "1";
+  const includeArchived = params.get("includeArchived") === "1";
+  const archivedOnly = params.get("archived") === "1";
   const customFieldId = params.get("customFieldId");
   const customValue = params.get("customValue");
 
   const where: Prisma.ItemWhereInput = {
-    deletedAt: includeDeleted ? undefined : null
+    deletedAt: includeDeleted ? undefined : null,
+    isArchived: includeArchived ? undefined : archivedOnly ? true : false
   };
 
   if (q) {

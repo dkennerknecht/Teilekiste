@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import type { AppRole } from "@/lib/permissions";
 
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
@@ -25,7 +26,7 @@ export const authOptions = {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role
+          role: user.role as AppRole
         };
       }
     })
@@ -38,7 +39,7 @@ export const authOptions = {
     async session({ session, token }: { session: any; token: any }) {
       if (session.user) {
         session.user.id = token.sub || "";
-        session.user.role = (token.role as string) || "READ";
+        session.user.role = (token.role as AppRole) || "READ";
       }
       return session;
     }
@@ -48,9 +49,24 @@ export const authOptions = {
 export async function getSessionUser() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id || !session.user.email) return null;
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [{ id: session.user.id }, { email: session.user.email }],
+      isActive: true
+    },
+    select: {
+      id: true,
+      email: true,
+      role: true
+    }
+  });
+
+  if (!user) return null;
+
   return {
-    id: session.user.id,
-    email: session.user.email,
-    role: session.user.role
+    id: user.id,
+    email: user.email,
+    role: user.role as AppRole
   };
 }

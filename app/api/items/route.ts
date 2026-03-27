@@ -6,6 +6,8 @@ import { itemSchema } from "@/lib/validation";
 import { assignNextLabelCode } from "@/lib/label-code";
 import { auditLog } from "@/lib/audit";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { getAvailableQty, getReservedQty } from "@/lib/stock";
+import { prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { parseJson, parsePagination, serverError } from "@/lib/http";
 
 export async function GET(req: NextRequest) {
@@ -48,13 +50,17 @@ export async function GET(req: NextRequest) {
 
   const lowStock = req.nextUrl.searchParams.get("lowStock") === "1";
   const shaped = items
-    .map((item) => ({
-      ...item,
-      primaryImage: item.images[0] ?? null,
-      reservedQty: item.reservations.reduce((sum, r) => sum + r.reservedQty, 0),
-      availableStock: item.stock - item.reservations.reduce((sum, r) => sum + r.reservedQty, 0)
-    }))
-    .filter((item) => (lowStock ? item.minStock !== null && item.stock <= item.minStock : true));
+    .map((item) => {
+      const reservedQty = getReservedQty(item.reservations);
+      const availableStock = getAvailableQty(item.stock, reservedQty);
+      return {
+        ...item,
+        primaryImage: item.images[0] ?? null,
+        reservedQty,
+        availableStock
+      };
+    })
+    .filter((item) => (lowStock ? item.minStock !== null && item.availableStock <= item.minStock : true));
 
   return NextResponse.json({ items: shaped, total, limit, offset });
 }
@@ -77,7 +83,12 @@ export async function POST(req: NextRequest) {
     attempts += 1;
     try {
       const item = await prisma.$transaction(async (tx) => {
-        const labelCode = await assignNextLabelCode(parsed.data.areaId, parsed.data.typeId, tx);
+        const labelCode = await assignNextLabelCode(parsed.data.categoryId, parsed.data.typeId, tx);
+        const customFieldWrites = await prepareCustomFieldValueWrites(tx, {
+          rawValues: parsed.data.customValues,
+          categoryId: parsed.data.categoryId,
+          typeId: parsed.data.typeId
+        });
 
         const createdItem = await tx.item.create({
           data: {
@@ -103,11 +114,11 @@ export async function POST(req: NextRequest) {
         });
 
         await Promise.all(
-          Object.entries(parsed.data.customValues || {}).map(([fieldId, value]) =>
+          customFieldWrites.upserts.map((entry) =>
             tx.itemCustomFieldValue.upsert({
-              where: { itemId_customFieldId: { itemId: createdItem.id, customFieldId: fieldId } },
-              update: { valueJson: JSON.stringify(value) },
-              create: { itemId: createdItem.id, customFieldId: fieldId, valueJson: JSON.stringify(value) }
+              where: { itemId_customFieldId: { itemId: createdItem.id, customFieldId: entry.customFieldId } },
+              update: { valueJson: entry.valueJson },
+              create: { itemId: createdItem.id, customFieldId: entry.customFieldId, valueJson: entry.valueJson }
             })
           )
         );

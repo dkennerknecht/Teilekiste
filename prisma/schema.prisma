@@ -40,12 +40,14 @@ model UserLocation {
 }
 
 model Category {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  items     Item[]
-  customFields CustomField[]
+  id            String            @id @default(uuid())
+  name          String            @unique
+  code          String?           @unique
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  items         Item[]
+  customFields  CustomField[]
+  labelCounters CategoryTypeCounter[]
 }
 
 model Tag {
@@ -64,6 +66,19 @@ model StorageLocation {
   updatedAt DateTime       @updatedAt
   items     Item[]
   scopes    UserLocation[]
+  shelves   StorageShelf[]
+}
+
+model StorageShelf {
+  id                String          @id @default(uuid())
+  storageLocationId String
+  name              String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([storageLocationId, name])
+  @@index([storageLocationId])
 }
 
 model Area {
@@ -80,15 +95,17 @@ model Area {
 }
 
 model LabelType {
-  id        String            @id @default(uuid())
-  areaId    String
-  code      String
-  name      String
-  active    Boolean           @default(true)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  area      Area              @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  counters  SequenceCounter[]
+  id               String              @id @default(uuid())
+  areaId           String
+  code             String
+  name             String
+  active           Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  area             Area                @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  counters         SequenceCounter[]
+  customFields     CustomField[]
+  categoryCounters CategoryTypeCounter[]
 
   @@unique([areaId, code])
 }
@@ -102,6 +119,18 @@ model SequenceCounter {
   type       LabelType @relation(fields: [typeId], references: [id], onDelete: Cascade)
 
   @@unique([areaId, typeId])
+}
+
+model CategoryTypeCounter {
+  id         String    @id @default(uuid())
+  categoryId String
+  typeId     String
+  nextNumber Int       @default(1)
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  type       LabelType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, typeId])
+  @@index([typeId])
 }
 
 model LabelConfig {
@@ -246,16 +275,20 @@ model CustomField {
   name         String
   key          String           @unique
   type         String
+  unit         String?
   options      String?
   required     Boolean          @default(false)
   categoryId   String?
+  typeId       String?
   isActive     Boolean          @default(true)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  labelType    LabelType?       @relation(fields: [typeId], references: [id], onDelete: SetNull)
   values       ItemCustomFieldValue[]
 
-  @@unique([name, categoryId])
+  @@unique([name, categoryId, typeId])
+  @@index([typeId])
 }
 
 model ItemCustomFieldValue {

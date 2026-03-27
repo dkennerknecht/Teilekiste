@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
   const items = await prisma.item.findMany({
     where: {
       deletedAt: null,
+      isArchived: false,
       OR: [
         { labelCode: { equals: q } },
         { labelCode: { contains: q } },

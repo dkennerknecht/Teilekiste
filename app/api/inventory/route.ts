@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { inventoryUpdateSchema } from "@/lib/validation";
+import { canSetStock } from "@/lib/stock";
 import { parseJson } from "@/lib/http";
 
 export async function GET(req: NextRequest) {
@@ -16,6 +17,7 @@ export async function GET(req: NextRequest) {
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   const where = {
     deletedAt: null,
+    isArchived: false,
     storageLocationId: allowedLocationIds
       ? { in: locationId ? [locationId].filter((id) => allowedLocationIds.includes(id)) : allowedLocationIds.length ? allowedLocationIds : ["__none__"] }
       : locationId,
@@ -46,6 +48,14 @@ export async function POST(req: NextRequest) {
         if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
           throw new Error("FORBIDDEN");
         }
+        const reservedQtyResult = await tx.reservation.aggregate({
+          where: { itemId: item.id },
+          _sum: { reservedQty: true }
+        });
+        const reservedQty = reservedQtyResult._sum.reservedQty || 0;
+        if (!canSetStock(update.countedStock, reservedQty)) {
+          throw new Error("RESERVED_BELOW_STOCK");
+        }
         const delta = update.countedStock - item.stock;
         if (delta === 0) continue;
 
@@ -74,6 +84,9 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if ((error as Error).message === "FORBIDDEN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if ((error as Error).message === "RESERVED_BELOW_STOCK") {
+      return NextResponse.json({ error: "Bestand darf nicht unter die reservierte Menge fallen" }, { status: 400 });
     }
     throw error;
   }

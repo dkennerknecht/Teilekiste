@@ -5,6 +5,7 @@ const requireAuthMock = vi.fn();
 const requireWriteAccessMock = vi.fn();
 const resolveAllowedLocationIdsMock = vi.fn();
 const findUniqueMock = vi.fn();
+const reservationAggregateMock = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   requireAuth: requireAuthMock,
@@ -19,6 +20,9 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     item: {
       findUnique: findUniqueMock
+    },
+    reservation: {
+      aggregate: reservationAggregateMock
     },
     labelConfig: {
       findUnique: vi.fn()
@@ -53,6 +57,7 @@ describe("Item scope enforcement", () => {
       labelCode: "EL-KB-001",
       storageLocationId: allowedLocationId
     });
+    reservationAggregateMock.mockResolvedValue({ _sum: { reservedQty: 0 } });
 
     const { PATCH } = await import("@/app/api/items/[id]/route");
     const request = {

@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   const results = await prisma.item.findMany({
     where: {
       deletedAt: null,
+      isArchived: false,
       OR: clauses as never
     },
     take: 10

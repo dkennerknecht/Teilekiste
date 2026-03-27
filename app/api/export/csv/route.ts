@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { toCsv } from "@/lib/csv";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { getAvailableQty, getReservedQty } from "@/lib/stock";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest) {
   const items = await prisma.item.findMany({
     where: {
       deletedAt: null,
+      isArchived: false,
       storageLocationId: allowedLocationIds ? { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } : undefined
     },
     include: { category: true, storageLocation: true, tags: { include: { tag: true } }, reservations: true }
@@ -21,7 +23,7 @@ export async function GET(req: NextRequest) {
   const lowStockOnly = req.nextUrl.searchParams.get("lowStock") === "1";
   const csv = toCsv(
     items.map((item) => {
-      const reserved = item.reservations.reduce((sum, r) => sum + r.reservedQty, 0);
+      const reserved = getReservedQty(item.reservations);
       return {
         id: item.id,
         labelCode: item.labelCode,
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
         storageArea: item.storageArea,
         bin: item.bin,
         stock: item.stock,
-        available: item.stock - reserved,
+        available: getAvailableQty(item.stock, reserved),
         unit: item.unit,
         minStock: item.minStock,
         manufacturer: item.manufacturer,

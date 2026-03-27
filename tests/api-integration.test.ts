@@ -70,11 +70,11 @@ describe("API Integration", () => {
     const { GET } = await import("@/app/api/label/preview/route");
     const server = createRouteServer(GET);
     try {
-      const res = await request(server).get("/api/label/preview?areaId=a1&typeId=t1");
+      const res = await request(server).get("/api/label/preview?categoryId=c1&typeId=t1");
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ preview: "EL-KB-120" });
-      expect(previewLabelCodeMock).toHaveBeenCalledWith("a1", "t1");
+      expect(previewLabelCodeMock).toHaveBeenCalledWith("c1", "t1");
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

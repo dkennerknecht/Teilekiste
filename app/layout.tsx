@@ -1,5 +1,6 @@
 import "@/styles/globals.css";
 import { ReactNode } from "react";
+import { BuildVersionWatcher } from "@/components/build-version-watcher";
 import { Providers } from "@/components/providers";
 import { Nav } from "@/components/nav";
 
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           }}
         />
         <Providers>
+          <BuildVersionWatcher />
           <Nav />
           <main className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">{children}</main>
         </Providers>

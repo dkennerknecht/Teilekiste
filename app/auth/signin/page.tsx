@@ -14,12 +14,12 @@ export default function SignInPage() {
     <div className="mx-auto mt-6 max-w-md px-1 sm:mt-12">
       <div className="card">
         <div className="mb-6 flex flex-col items-center gap-4">
-          <Link href="/" className="text-workshop-800 dark:text-[#e6ebf2]">
+          <Link href="/" className="text-workshop-800">
             <Brand
               stacked
               showSubtitle
               logoClassName="h-16 w-16 sm:h-20 sm:w-20"
-              textClassName="text-xl font-semibold text-workshop-800 sm:text-2xl dark:text-[#e6ebf2]"
+              textClassName="text-xl font-semibold text-workshop-800 sm:text-2xl"
             />
           </Link>
           <h1 className="text-xl font-semibold">Anmelden</h1>
@@ -44,7 +44,7 @@ export default function SignInPage() {
             type="password"
             placeholder="Passwort"
           />
-          {error && <p className="text-sm text-red-700">{error}</p>}
+          {error && <p className="text-sm [color:var(--app-danger-text)]">{error}</p>}
           <button className="btn w-full" type="submit">
             Login
           </button>

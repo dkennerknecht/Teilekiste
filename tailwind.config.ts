@@ -11,16 +11,16 @@ const config: Config = {
     extend: {
       colors: {
         workshop: {
-          50: "#f4f6f1",
-          100: "#e6ecdf",
-          200: "#cbd7bd",
-          300: "#a7ba8f",
-          400: "#82985f",
-          500: "#627a40",
-          600: "#4e6233",
-          700: "#3f4d2b",
-          800: "#343f25",
-          900: "#2d3521"
+          50: "rgb(var(--workshop-50) / <alpha-value>)",
+          100: "rgb(var(--workshop-100) / <alpha-value>)",
+          200: "rgb(var(--workshop-200) / <alpha-value>)",
+          300: "rgb(var(--workshop-300) / <alpha-value>)",
+          400: "rgb(var(--workshop-400) / <alpha-value>)",
+          500: "rgb(var(--workshop-500) / <alpha-value>)",
+          600: "rgb(var(--workshop-600) / <alpha-value>)",
+          700: "rgb(var(--workshop-700) / <alpha-value>)",
+          800: "rgb(var(--workshop-800) / <alpha-value>)",
+          900: "rgb(var(--workshop-900) / <alpha-value>)"
         }
       }
     }

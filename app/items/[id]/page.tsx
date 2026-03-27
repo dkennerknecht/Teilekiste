@@ -24,11 +24,34 @@ import {
 import { ItemImageGallery } from "@/components/item-image-gallery";
 import { ItemBomSection } from "@/components/item-bom-section";
 import { ItemAuditSection } from "@/components/item-audit-section";
+import { resolveCategoryCode } from "@/lib/label-catalog";
+import { CustomFieldsEditor } from "@/components/custom-fields-editor";
+import { buildCustomValueMap, formatCustomFieldValue, parseStoredCustomFieldValue, type CustomFieldRow } from "@/lib/custom-fields";
 
 type TagOption = { id: string; name: string };
-type CategoryOption = { id: string; name: string };
-type AreaOption = { id: string; code: string; name: string };
-type TypeOption = { id: string; areaId: string; code: string; name: string };
+type CategoryOption = { id: string; name: string; code?: string | null };
+type LocationOption = { id: string; name: string; code?: string | null };
+type ShelfOption = { id: string; name: string; storageLocationId: string };
+type TypeOption = { id: string; code: string; name: string };
+
+function buildItemFormState(data: any) {
+  return {
+    name: data.name || "",
+    description: data.description || "",
+    categoryId: data.categoryId || "",
+    storageLocationId: data.storageLocationId || "",
+    storageArea: data.storageArea || "",
+    bin: data.bin || "",
+    minStock: data.minStock ?? "",
+    manufacturer: data.manufacturer || "",
+    mpn: data.mpn || "",
+    barcodeEan: data.barcodeEan || "",
+    tagIds: (data.tags || []).map((t: any) => t.tagId),
+    typeId: "",
+    labelNumber: "",
+    customValues: buildCustomValueMap(data.customValues || [])
+  };
+}
 
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [item, setItem] = useState<any>(null);
@@ -36,8 +59,10 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [form, setForm] = useState<any>(null);
   const [tags, setTags] = useState<TagOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [areas, setAreas] = useState<AreaOption[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [shelves, setShelves] = useState<ShelfOption[]>([]);
   const [types, setTypes] = useState<TypeOption[]>([]);
+  const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
   const [labelCfg, setLabelCfg] = useState({ separator: "-", digits: 3 });
   const [delta, setDelta] = useState(1);
   const [reason, setReason] = useState("PURCHASE");
@@ -46,26 +71,16 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [reservedFor, setReservedFor] = useState("");
   const [newTagName, setNewTagName] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saveBusy, setSaveBusy] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/items/${params.id}`, { cache: "no-store" });
     const data = await res.json();
     setItem(data);
-    setForm({
-      name: data.name || "",
-      description: data.description || "",
-      categoryId: data.categoryId || "",
-      storageArea: data.storageArea || "",
-      bin: data.bin || "",
-      minStock: data.minStock ?? "",
-      manufacturer: data.manufacturer || "",
-      mpn: data.mpn || "",
-      barcodeEan: data.barcodeEan || "",
-      tagIds: (data.tags || []).map((t: any) => t.tagId),
-      areaId: "",
-      typeId: "",
-      labelNumber: ""
-    });
+    setForm(buildItemFormState(data));
   }, [params.id]);
 
   useEffect(() => {
@@ -79,8 +94,10 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       .then((meta) => {
         setTags(meta.tags || []);
         setCategories(meta.categories || []);
-        setAreas(meta.areas || []);
+        setLocations(meta.locations || []);
+        setShelves(meta.shelves || []);
         setTypes(meta.types || []);
+        setCustomFields(meta.customFields || []);
       });
     fetch("/api/admin/label-config", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
@@ -96,24 +113,20 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   }, [editMode]);
 
   useEffect(() => {
-    if (!editMode || !item || !areas.length || !types.length) return;
-    if (form.areaId && form.typeId) return;
+    if (!editMode || !item || !types.length) return;
+    if (form.typeId) return;
 
     const parts = String(item.labelCode || "").split(labelCfg.separator);
-    if (parts.length < 3) return;
-    const areaCode = parts[parts.length - 3];
+    if (parts.length < 2) return;
     const typeCode = parts[parts.length - 2];
     const numPart = parts[parts.length - 1];
-
-    const area = areas.find((a) => a.code === areaCode);
-    const type = types.find((t) => t.code === typeCode && (!area || t.areaId === area.id));
+    const type = types.find((t) => t.code === typeCode);
     setForm((prev: any) => ({
       ...prev,
-      areaId: area?.id || prev.areaId,
       typeId: type?.id || prev.typeId,
       labelNumber: /^\\d+$/.test(numPart) ? numPart : prev.labelNumber
     }));
-  }, [editMode, item, areas, types, labelCfg.separator, form?.areaId, form?.typeId]);
+  }, [editMode, item, types, labelCfg.separator, form?.typeId]);
 
   const history = useMemo(() => {
     if (!item) return [];
@@ -131,6 +144,25 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [item]);
+
+  const availableShelves = useMemo(() => {
+    const currentLocationId = form?.storageLocationId || "";
+    const currentStorageArea = form?.storageArea || "";
+    const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
+    if (!currentStorageArea || filtered.some((shelf) => shelf.name === currentStorageArea)) {
+      return filtered;
+    }
+    return [{ id: `legacy-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
+  }, [form?.storageArea, form?.storageLocationId, shelves]);
+
+  const itemCustomValues = useMemo(
+    () =>
+      (item?.customValues || []).filter((entry: any) => {
+        const parsed = parseStoredCustomFieldValue(entry.valueJson);
+        return !(parsed === null || parsed === undefined || parsed === "" || (Array.isArray(parsed) && parsed.length === 0));
+      }),
+    [item]
+  );
 
   if (!item || !form) return <p>Lade...</p>;
 
@@ -170,92 +202,134 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     setNewTagName("");
   }
 
+  async function setArchiveState(nextArchived: boolean) {
+    setArchiveBusy(true);
+    setArchiveError("");
+
+    const res = await fetch("/api/items/bulk", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        itemIds: [item.id],
+        ...(nextArchived ? { archiveItems: true } : { unarchiveItems: true })
+      })
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setArchiveError(data?.error || "Der Archiv-Status konnte nicht aktualisiert werden.");
+      setArchiveBusy(false);
+      return;
+    }
+
+    setEditMode(false);
+    setArchiveBusy(false);
+    await load();
+  }
+
   return (
-    <div className="space-y-4 text-[#171922] dark:text-[#e6ebf2]">
-      <div className="rounded-xl border border-[#d7d7dc] bg-[#f4f4f6] px-3 py-3 sm:px-4 dark:border-[#2a313d] dark:bg-[#1a212d]">
+    <div className="space-y-4 text-[var(--app-text)]">
+      <div className="rounded-xl border border-workshop-200 bg-workshop-50 px-3 py-3 sm:px-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
-            <button className="mt-0.5 text-[#33343b] dark:text-[#dce2ee]" onClick={() => window.history.back()}>
+            <button className="mt-0.5 text-workshop-800" onClick={() => window.history.back()}>
               <ArrowLeft size={22} />
             </button>
             <div>
-              <p className="text-sm text-[#6a6d79] dark:text-[#a6b0c2]">Inventar / {item.category?.name || "Item"}</p>
-              <h1 className="text-xl font-semibold leading-6 text-[#15161a] dark:text-[#e6ebf2]">{editMode ? "Item bearbeiten" : "Item Details"}</h1>
+              <p className="theme-muted text-sm">Inventar / {item.category?.name || "Item"}</p>
+              <h1 className="text-xl font-semibold leading-6 text-[var(--app-text)]">{editMode ? "Item bearbeiten" : "Item Details"}</h1>
+              {item.isArchived && (
+                <span className="theme-status-warning mt-2 inline-flex rounded-full border border-transparent px-3 py-1 text-xs font-medium">
+                  Archiviert
+                </span>
+              )}
             </div>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             {editMode ? (
               <>
                 <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#bfc2cc] bg-white px-4 py-2 text-sm font-medium text-[#22242b] sm:w-auto dark:border-[#3a4458] dark:bg-[#202837] dark:text-[#e6ebf2]"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-workshop-300 bg-[var(--app-surface)] px-4 py-2 text-sm font-medium text-[var(--app-text)] sm:w-auto"
                   onClick={() => {
                     setEditMode(false);
-                    setForm({
-                      name: item.name || "",
-                      description: item.description || "",
-                      categoryId: item.categoryId || "",
-                      storageArea: item.storageArea || "",
-                      bin: item.bin || "",
-                      minStock: item.minStock ?? "",
-                      manufacturer: item.manufacturer || "",
-                      mpn: item.mpn || "",
-                      barcodeEan: item.barcodeEan || "",
-                      tagIds: (item.tags || []).map((t: any) => t.tagId),
-                      areaId: "",
-                      typeId: "",
-                      labelNumber: ""
-                    });
+                    setSaveError("");
+                    setForm(buildItemFormState(item));
                   }}
                 >
                   <X size={16} /> Abbrechen
                 </button>
                 <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#05082b] px-4 py-2 text-sm font-medium text-white sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--app-primary)] px-4 py-2 text-sm font-medium text-[var(--app-on-primary)] sm:w-auto"
+                  disabled={saveBusy}
                   onClick={async () => {
-                    const selectedArea = areas.find((a) => a.id === form.areaId);
-                    const selectedType = types.find((t) => t.id === form.typeId);
-                    const nextLabelCode =
-                      selectedArea && selectedType && String(form.labelNumber || "").trim()
-                        ? `${selectedArea.code}${labelCfg.separator}${selectedType.code}${labelCfg.separator}${String(form.labelNumber).padStart(labelCfg.digits, "0")}`
-                        : undefined;
-                    const payload = {
-                      name: form.name,
-                      description: form.description,
-                      categoryId: form.categoryId,
-                      storageArea: form.storageArea,
-                      bin: form.bin,
-                      manufacturer: form.manufacturer,
-                      mpn: form.mpn,
-                      barcodeEan: form.barcodeEan,
-                      tagIds: form.tagIds,
-                      minStock: form.minStock === "" ? null : Number(form.minStock),
-                      ...(selectedArea && selectedType ? { areaId: selectedArea.id, typeId: selectedType.id } : {}),
-                      ...(nextLabelCode ? { labelCode: nextLabelCode } : {})
-                    };
-                    const res = await fetch(`/api/items/${item.id}`, {
-                      method: "PATCH",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify(payload)
-                    });
-                    if (res.ok) {
-                      setEditMode(false);
-                      await load();
+                    setSaveBusy(true);
+                    setSaveError("");
+                    try {
+                      const selectedCategory = categories.find((c) => c.id === form.categoryId);
+                      const selectedType = types.find((t) => t.id === form.typeId);
+                      const nextLabelCode =
+                        selectedCategory && selectedType && String(form.labelNumber || "").trim()
+                          ? `${resolveCategoryCode(selectedCategory)}${labelCfg.separator}${selectedType.code}${labelCfg.separator}${String(form.labelNumber).padStart(labelCfg.digits, "0")}`
+                          : undefined;
+                      const payload = {
+                        name: form.name,
+                        description: form.description,
+                        categoryId: form.categoryId,
+                        storageLocationId: form.storageLocationId,
+                        storageArea: form.storageArea,
+                        bin: form.bin,
+                        manufacturer: form.manufacturer,
+                        mpn: form.mpn,
+                        barcodeEan: form.barcodeEan,
+                        tagIds: form.tagIds,
+                        minStock: form.minStock === "" ? null : Number(form.minStock),
+                        customValues: form.customValues,
+                        ...(selectedType ? { typeId: selectedType.id } : {}),
+                        ...(nextLabelCode ? { labelCode: nextLabelCode } : {})
+                      };
+                      const res = await fetch(`/api/items/${item.id}`, {
+                        method: "PATCH",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify(payload)
+                      });
+                      if (res.ok) {
+                        setEditMode(false);
+                        await load();
+                        return;
+                      }
+                      const data = await res.json().catch(() => null);
+                      setSaveError(data?.error || "Speichern fehlgeschlagen.");
+                    } catch {
+                      setSaveError("Speichern fehlgeschlagen.");
+                    } finally {
+                      setSaveBusy(false);
                     }
                   }}
                 >
-                  <Save size={16} /> Speichern
+                  <Save size={16} /> {saveBusy ? "Speichert..." : "Speichern"}
                 </button>
               </>
             ) : (
-              <button
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#05082b] px-4 py-2 text-sm font-medium text-white sm:w-auto"
-                onClick={() => setEditMode(true)}
-              >
-                <PencilLine size={16} /> Bearbeiten
-              </button>
+              <>
+                <button
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-workshop-300 bg-[var(--app-surface)] px-4 py-2 text-sm font-medium text-[var(--app-text)] sm:w-auto"
+                  onClick={() => setArchiveState(!item.isArchived)}
+                  disabled={archiveBusy}
+                >
+                  {archiveBusy ? (item.isArchived ? "Stellt wieder her..." : "Archiviert...") : item.isArchived ? "Wiederherstellen" : "Archivieren"}
+                </button>
+                <button
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--app-primary)] px-4 py-2 text-sm font-medium text-[var(--app-on-primary)] sm:w-auto"
+                  onClick={() => setEditMode(true)}
+                >
+                  <PencilLine size={16} /> Bearbeiten
+                </button>
+              </>
             )}
           </div>
         </div>
+        {archiveError && <p className="mt-3 text-sm text-red-700">{archiveError}</p>}
+        {saveError && <p className="mt-3 text-sm text-red-700">{saveError}</p>}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
@@ -270,18 +344,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         </section>
 
         <section className="space-y-3">
-          <div className="grid grid-cols-1 gap-2 rounded-xl border border-[#d7d7dc] bg-[#f4f4f6] p-3 text-sm text-[#555869] sm:text-[16px] dark:border-[#2a313d] dark:bg-[#1a212d] dark:text-[#b4bdce] md:grid-cols-3">
+          <div className="theme-muted grid grid-cols-1 gap-2 rounded-xl border border-workshop-200 bg-workshop-50 p-3 text-sm sm:text-[16px] md:grid-cols-3">
             <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> Erstellt: {new Date(item.createdAt).toLocaleDateString("de-DE")}</div>
             <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> Zuletzt bearbeitet: {new Date(item.updatedAt).toLocaleDateString("de-DE")}</div>
             <div className="inline-flex items-center gap-2"><User size={15} /> von {owner}</div>
           </div>
 
-          <div className="rounded-xl border border-[#d7d7dc] bg-white p-4 dark:border-[#2a313d] dark:bg-[#171d26]">
-            <h2 className="mb-4 inline-flex items-center gap-2 text-[26px] font-semibold text-[#1b1d24] sm:text-[34px] dark:text-[#e6ebf2]"><FolderOpen size={18} /> Details</h2>
+          <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
+            <h2 className="mb-4 inline-flex items-center gap-2 text-[26px] font-semibold text-[var(--app-text)] sm:text-[34px]"><FolderOpen size={18} /> Details</h2>
 
-            <div className="space-y-4 text-[#171922]">
+            <div className="space-y-4 text-[var(--app-text)]">
               <div>
-                <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Name</p>
+                <p className="theme-muted mb-1 text-[18px] font-medium">Name</p>
                 {editMode ? (
                   <input className="input text-lg" value={form.name} onChange={(e) => setForm((v: any) => ({ ...v, name: e.target.value }))} />
                 ) : (
@@ -290,38 +364,17 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               </div>
 
               <div>
-                <p className="mb-1 text-[18px] font-medium text-[#6d7080]"># ID</p>
+                <p className="theme-muted mb-1 text-[18px] font-medium"># ID</p>
                 {editMode ? (
                   <div className="space-y-2">
-                    <div className="grid gap-2 md:grid-cols-3">
-                      <select
-                        className="input"
-                        value={form.areaId}
-                        onChange={(e) => {
-                          const nextAreaId = e.target.value;
-                          setForm((v: any) => ({
-                            ...v,
-                            areaId: nextAreaId,
-                            typeId: types.find((t) => t.areaId === nextAreaId)?.id || ""
-                          }));
-                        }}
-                      >
-                        <option value="">Area (Label)</option>
-                        {areas.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.code} - {a.name}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="grid gap-2 md:grid-cols-2">
                       <select className="input" value={form.typeId} onChange={(e) => setForm((v: any) => ({ ...v, typeId: e.target.value }))}>
                         <option value="">Type (Label)</option>
-                        {types
-                          .filter((t) => !form.areaId || t.areaId === form.areaId)
-                          .map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.code} - {t.name}
-                            </option>
-                          ))}
+                        {types.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.code} - {t.name}
+                          </option>
+                        ))}
                       </select>
                       <input
                         className="input"
@@ -332,13 +385,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         onChange={(e) => setForm((v: any) => ({ ...v, labelNumber: e.target.value }))}
                       />
                     </div>
-                    <p className="text-sm font-mono text-[#4a4d5c]">
+                    <p className="theme-muted text-sm font-mono">
                       Vorschau:{" "}
                       {(() => {
-                        const selectedArea = areas.find((a) => a.id === form.areaId);
+                        const selectedCategory = categories.find((c) => c.id === form.categoryId);
                         const selectedType = types.find((t) => t.id === form.typeId);
-                        if (!selectedArea || !selectedType || !String(form.labelNumber || "").trim()) return item.labelCode;
-                        return `${selectedArea.code}${labelCfg.separator}${selectedType.code}${labelCfg.separator}${String(form.labelNumber).padStart(labelCfg.digits, "0")}`;
+                        if (!selectedCategory || !selectedType || !String(form.labelNumber || "").trim()) return item.labelCode;
+                        return `${resolveCategoryCode(selectedCategory)}${labelCfg.separator}${selectedType.code}${labelCfg.separator}${String(form.labelNumber).padStart(labelCfg.digits, "0")}`;
                       })()}
                     </p>
                   </div>
@@ -348,19 +401,19 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               </div>
 
               <div>
-                <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Beschreibung</p>
+                <p className="theme-muted mb-1 text-[18px] font-medium">Beschreibung</p>
                 {editMode ? (
                   <textarea className="input min-h-28" value={form.description} onChange={(e) => setForm((v: any) => ({ ...v, description: e.target.value }))} />
                 ) : (
-                  <div className="text-lg leading-8 text-[#2a2d36] dark:text-[#d7deeb]">
+                  <div className="text-lg leading-8 text-[var(--app-text)]">
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{item.description || "-"}</ReactMarkdown>
                   </div>
                 )}
               </div>
 
-              <div className="grid gap-4 border-t border-[#e6e6eb] pt-4 md:grid-cols-2">
+              <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
                 <div>
-                  <p className="mb-1 inline-flex items-center gap-2 text-[18px] font-medium text-[#6d7080]"><Layers size={15} /> Kategorie</p>
+                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><Layers size={15} /> Kategorie</p>
                   {editMode ? (
                     <select className="input" value={form.categoryId} onChange={(e) => setForm((v: any) => ({ ...v, categoryId: e.target.value }))}>
                       {categories.map((c) => (
@@ -368,59 +421,85 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                       ))}
                     </select>
                   ) : (
-                    <p className="text-lg font-medium">{item.category?.name || "-"}</p>
+                    <p className="text-lg font-medium text-[var(--app-text)]">{item.category?.name || "-"}</p>
                   )}
                 </div>
 
                 <div>
-                  <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Hersteller</p>
+                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> Ort</p>
+                  {editMode ? (
+                    <select
+                      className="input"
+                      value={form.storageLocationId}
+                      onChange={(e) => setForm((v: any) => ({ ...v, storageLocationId: e.target.value, storageArea: "" }))}
+                    >
+                      {locations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name} ({location.code || "--"})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-lg font-medium text-[var(--app-text)]">{item.storageLocation?.name || "-"}</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
                   {editMode ? (
                     <input className="input" value={form.manufacturer} onChange={(e) => setForm((v: any) => ({ ...v, manufacturer: e.target.value }))} />
                   ) : (
-                    <p className="text-lg font-medium">{item.manufacturer || "-"}</p>
+                    <p className="text-lg font-medium text-[var(--app-text)]">{item.manufacturer || "-"}</p>
                   )}
                 </div>
 
                 <div>
-                  <p className="mb-1 text-[18px] font-medium text-[#6d7080]">MPN</p>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">MPN</p>
                   {editMode ? (
                     <input className="input" value={form.mpn} onChange={(e) => setForm((v: any) => ({ ...v, mpn: e.target.value }))} />
                   ) : (
-                    <p className="text-lg font-mono">{item.mpn || "-"}</p>
-                  )}
-                </div>
+                  <p className="text-lg font-mono text-[var(--app-text)]">{item.mpn || "-"}</p>
+                )}
+              </div>
 
-                <div>
-                  <p className="mb-1 inline-flex items-center gap-2 text-[18px] font-medium text-[#6d7080]"><Barcode size={15} /> EAN</p>
+              <div>
+                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><Barcode size={15} /> EAN</p>
                   {editMode ? (
                     <input className="input" value={form.barcodeEan} onChange={(e) => setForm((v: any) => ({ ...v, barcodeEan: e.target.value }))} />
                   ) : (
-                    <p className="text-lg font-mono">{item.barcodeEan || "-"}</p>
+                    <p className="text-lg font-mono text-[var(--app-text)]">{item.barcodeEan || "-"}</p>
                   )}
                 </div>
               </div>
 
-              <div className="grid gap-4 border-t border-[#e6e6eb] pt-4 md:grid-cols-2">
+              <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
                 <div>
-                  <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Regal / Bereich</p>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">Regal / Bereich</p>
                   {editMode ? (
-                    <input className="input" value={form.storageArea} onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))} />
+                    <select className="input" value={form.storageArea} onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}>
+                      <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+                      {availableShelves.map((shelf) => (
+                        <option key={shelf.id} value={shelf.name}>
+                          {shelf.name}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
-                    <p className="text-lg">{item.storageArea || "-"}</p>
+                    <p className="text-lg text-[var(--app-text)]">{item.storageArea || "-"}</p>
                   )}
                 </div>
                 <div>
-                  <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Fach / Bin</p>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">Fach / Bin</p>
                   {editMode ? (
                     <input className="input" value={form.bin} onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))} />
                   ) : (
-                    <p className="text-lg">{item.bin || "-"}</p>
+                    <p className="text-lg text-[var(--app-text)]">{item.bin || "-"}</p>
                   )}
                 </div>
               </div>
 
-              <div className="border-t border-[#e6e6eb] pt-4">
-                <p className="mb-2 inline-flex items-center gap-2 text-[18px] font-medium text-[#6d7080]"><Tag size={15} /> Tags</p>
+              <div className="border-t border-workshop-200 pt-4">
+                <p className="theme-muted mb-2 inline-flex items-center gap-2 text-[18px] font-medium"><Tag size={15} /> Tags</p>
                 {editMode ? (
                   <div className="space-y-2">
                     <div className="flex flex-wrap gap-2">
@@ -430,8 +509,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                           type="button"
                           className={`rounded-full border px-3 py-1 text-sm ${
                             form.tagIds.includes(tag.id)
-                              ? "border-[#0f1535] bg-[#0f1535] text-white"
-                              : "border-[#d0d3dc] bg-white text-[#2f3240]"
+                              ? "border-[var(--app-primary)] bg-[var(--app-primary)] text-[var(--app-on-primary)]"
+                              : "border-workshop-200 bg-[var(--app-surface)] text-[var(--app-text)]"
                           }`}
                           onClick={() =>
                             setForm((prev: any) => ({
@@ -462,29 +541,61 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   <div className="flex flex-wrap gap-2">
                     {(item.tags || []).length ? (
                       item.tags.map((t: any) => (
-                        <span key={t.tag.id} className="rounded-full border border-[#d0d3dc] bg-[#f3f4f8] px-3 py-1 text-sm font-medium">
+                        <span key={t.tag.id} className="rounded-full border border-workshop-200 bg-workshop-50 px-3 py-1 text-sm font-medium">
                           {t.tag.name}
                         </span>
                       ))
                     ) : (
-                      <span className="text-sm text-[#6d7080]">Keine Tags</span>
+                      <span className="theme-muted text-sm">Keine Tags</span>
                     )}
                   </div>
                 )}
               </div>
 
-              <div className="grid gap-4 border-t border-[#e6e6eb] pt-4 md:grid-cols-3">
+              <div className="border-t border-workshop-200 pt-4">
+                <p className="theme-muted mb-2 text-[18px] font-medium">Custom Fields</p>
+                {editMode ? (
+                  <CustomFieldsEditor
+                    fields={customFields}
+                    values={form.customValues || {}}
+                    categoryId={form.categoryId}
+                    typeId={form.typeId}
+                    onChange={(customValues) => setForm((prev: any) => ({ ...prev, customValues }))}
+                  />
+                ) : itemCustomValues.length ? (
+                  <dl className="grid gap-3 md:grid-cols-2">
+                    {itemCustomValues.map((entry: any) => {
+                      const parsedValue = parseStoredCustomFieldValue(entry.valueJson);
+                      return (
+                        <div key={entry.id} className="rounded-lg border border-workshop-200 px-3 py-2">
+                          <dt className="theme-muted text-sm">
+                            {entry.customField?.name}
+                            {entry.customField?.unit ? ` (${entry.customField.unit})` : ""}
+                          </dt>
+                          <dd className="font-medium text-[var(--app-text)]">
+                            {formatCustomFieldValue(entry.customField, parsedValue)}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                ) : (
+                  <p className="theme-muted text-sm">Keine Custom Fields gepflegt.</p>
+                )}
+              </div>
+
+              <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-3">
                 <div>
-                  <p className="mb-1 inline-flex items-center gap-2 text-[18px] font-medium text-[#6d7080]"><MapPin size={15} /> Ort</p>
-                  <p className="text-lg">{item.storageLocation?.name || "-"}</p>
+                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> Ort</p>
+                  <p className="text-lg text-[var(--app-text)]">{item.storageLocation?.name || "-"}</p>
                 </div>
                 <div>
-                  <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Regal</p>
-                  <p className="text-lg">{item.storageArea || "-"}</p>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">Regal</p>
+                  <p className="text-lg text-[var(--app-text)]">{item.storageArea || "-"}</p>
                 </div>
                 <div>
-                  <p className="mb-1 text-[18px] font-medium text-[#6d7080]">Fach</p>
-                  <p className="text-lg">{item.bin || "-"}</p>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">Fach</p>
+                  <p className="text-lg text-[var(--app-text)]">{item.bin || "-"}</p>
                 </div>
               </div>
             </div>
@@ -492,39 +603,41 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         </section>
       </div>
 
-      <section className="rounded-xl border border-[#d7d7dc] bg-white p-4 dark:border-[#2a313d] dark:bg-[#171d26]">
+      <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[#1b1d24] dark:text-[#e6ebf2]"><Package2 size={18} /> Bestandsverwaltung</h3>
-          <span className="rounded-full bg-[#d4eee1] px-3 py-1 text-sm font-medium text-[#0a7a4d]">Auf Lager</span>
+          <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[var(--app-text)]"><Package2 size={18} /> Bestandsverwaltung</h3>
+          <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.isArchived ? "theme-status-warning" : "theme-status-success"}`}>
+            {item.isArchived ? "Archiviert" : "Auf Lager"}
+          </span>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-[#f2f2f5] p-4 text-center dark:bg-[#202734]">
-            <p className="text-sm text-[#6d7080] dark:text-[#aab4c7]">Gesamtbestand</p>
+          <div className="theme-surface-tonal rounded-xl p-4 text-center">
+            <p className="theme-muted text-sm">Gesamtbestand</p>
             <div className="mt-2 flex items-center justify-center gap-3">
-              <button type="button" className="rounded-lg border border-[#d0d3dc] bg-white p-2 dark:border-[#3a4458] dark:bg-[#121824]" onClick={() => quickStockAdjust(-1)}>
+              <button type="button" className="rounded-lg border border-workshop-300 bg-[var(--app-surface)] p-2" onClick={() => quickStockAdjust(-1)}>
                 <Minus size={14} />
               </button>
               <span className="text-4xl font-semibold">{item.stock}</span>
-              <button type="button" className="rounded-lg border border-[#d0d3dc] bg-white p-2 dark:border-[#3a4458] dark:bg-[#121824]" onClick={() => quickStockAdjust(1)}>
+              <button type="button" className="rounded-lg border border-workshop-300 bg-[var(--app-surface)] p-2" onClick={() => quickStockAdjust(1)}>
                 <Plus size={14} />
               </button>
             </div>
           </div>
 
-          <div className="rounded-xl bg-[#f2ecdd] p-4 text-center dark:bg-[#3a3020]">
-            <p className="text-sm text-[#b05300]">Reserviert</p>
-            <p className="mt-2 text-4xl font-semibold text-[#b05300]">{item.reservedQty}</p>
+          <div className="theme-status-warning rounded-xl p-4 text-center">
+            <p className="text-sm">Reserviert</p>
+            <p className="mt-2 text-4xl font-semibold">{item.reservedQty}</p>
           </div>
 
-          <div className="rounded-xl bg-[#dceee7] p-4 text-center dark:bg-[#1c3a33]">
-            <p className="text-sm text-[#0a7a4d]">Verfügbar</p>
-            <p className="mt-2 text-4xl font-semibold text-[#0a7a4d]">{item.availableStock}</p>
+          <div className="theme-status-success rounded-xl p-4 text-center">
+            <p className="text-sm">Verfügbar</p>
+            <p className="mt-2 text-4xl font-semibold">{item.availableStock}</p>
           </div>
         </div>
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-lg text-[#616474] dark:text-[#aab4c7]">Mindestbestand: <b>{item.minStock ?? "-"}</b> Stück</p>
+          <p className="theme-muted text-lg">Mindestbestand: <b>{item.minStock ?? "-"}</b> Stück</p>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             <input className="input w-full sm:w-24" type="number" value={reservedQty} onChange={(e) => setReservedQty(Number(e.target.value))} />
             <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Projekt/Person" value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />
@@ -545,18 +658,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        <div className="mt-4 border-t border-[#e6e6eb] pt-3">
-          <p className="mb-2 text-lg font-medium text-[#616474] dark:text-[#aab4c7]">Aktive Reservierungen</p>
+        <div className="mt-4 border-t border-workshop-200 pt-3">
+          <p className="theme-muted mb-2 text-lg font-medium">Aktive Reservierungen</p>
           <ul className="space-y-2">
             {(item.reservations || []).map((r: any) => (
-              <li key={r.id} className="flex flex-col gap-3 rounded-xl border border-[#e6e6eb] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-[#2f3746]">
+              <li key={r.id} className="flex flex-col gap-3 rounded-xl border border-workshop-200 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="font-medium">{r.reservedFor}</p>
-                  <p className="text-sm text-[#616474] dark:text-[#aab4c7]">{r.reservedQty}x • {new Date(r.createdAt).toLocaleDateString("de-DE")}</p>
+                  <p className="theme-muted text-sm">{r.reservedQty}x • {new Date(r.createdAt).toLocaleDateString("de-DE")}</p>
                 </div>
                 <button
                   type="button"
-                  className="text-[#7c7f8f] hover:text-[#373b49] dark:text-[#aab4c7] dark:hover:text-[#e6ebf2]"
+                  className="theme-muted hover:text-[var(--app-text)]"
                   onClick={async () => {
                     await fetch(`/api/reservations/${r.id}`, { method: "DELETE" });
                     await load();
@@ -566,11 +679,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 </button>
               </li>
             ))}
-            {item.reservations?.length === 0 && <li className="text-sm text-[#616474] dark:text-[#aab4c7]">Keine aktiven Reservierungen</li>}
+            {item.reservations?.length === 0 && <li className="theme-muted text-sm">Keine aktiven Reservierungen</li>}
           </ul>
         </div>
 
-        <div className="mt-4 border-t border-[#e6e6eb] pt-3">
+        <div className="mt-4 border-t border-workshop-200 pt-3">
           <p className="mb-2 text-sm font-semibold">Bestandsbuchung</p>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <input className="input w-full sm:w-28" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} />
@@ -600,11 +713,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-[#d7d7dc] bg-white p-4 dark:border-[#2a313d] dark:bg-[#171d26]">
-        <h3 className="mb-3 text-lg font-semibold text-[#1b1d24] dark:text-[#e6ebf2]">Historie</h3>
+      <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
+        <h3 className="mb-3 text-lg font-semibold text-[var(--app-text)]">Historie</h3>
         <ul className="space-y-1 text-sm">
           {history.map((entry) => (
-            <li key={entry.id} className="rounded-lg border border-[#e6e6eb] p-2">
+            <li key={entry.id} className="rounded-lg border border-workshop-200 p-2">
               {new Date(entry.createdAt).toLocaleString("de-DE")}: {entry.text}
             </li>
           ))}

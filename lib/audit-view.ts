@@ -29,6 +29,7 @@ function humanFieldName(field: string) {
     manufacturer: "Hersteller",
     mpn: "MPN",
     barcodeEan: "EAN",
+    isArchived: "Archiviert",
     qty: "Menge",
     childItemId: "Komponente"
   };
@@ -61,6 +62,10 @@ export function summarizeAuditEntry(entry: AuditLike) {
       return summarizeDiff(before, after);
     case "ITEM_SOFT_DELETE":
       return "Item in den Papierkorb verschoben";
+    case "ITEM_ARCHIVE":
+      return "Item archiviert";
+    case "ITEM_UNARCHIVE":
+      return "Item aus dem Archiv wiederhergestellt";
     case "STOCK_MOVEMENT": {
       const previous = typeof before?.stock === "number" ? before.stock : null;
       const next = typeof after?.stock === "number" ? after.stock : null;

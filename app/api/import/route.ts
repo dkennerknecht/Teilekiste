@@ -14,20 +14,16 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file");
   const dryRun = String(form.get("dryRun") || "1") !== "0";
-  const areaId = String(form.get("areaId") || "");
   const typeId = String(form.get("typeId") || "");
 
   if (!(file instanceof File)) return NextResponse.json({ error: "CSV file missing" }, { status: 400 });
-  if (!dryRun && (!areaId || !typeId)) {
-    return NextResponse.json({ error: "areaId and typeId required when dryRun=0" }, { status: 400 });
+  if (!dryRun && !typeId) {
+    return NextResponse.json({ error: "typeId required when dryRun=0" }, { status: 400 });
   }
   if (!dryRun) {
-    const [area, type] = await Promise.all([
-      prisma.area.findUnique({ where: { id: areaId } }),
-      prisma.labelType.findUnique({ where: { id: typeId } })
-    ]);
-    if (!area || !type || type.areaId !== area.id) {
-      return NextResponse.json({ error: "Invalid area/type combination" }, { status: 400 });
+    const type = await prisma.labelType.findUnique({ where: { id: typeId } });
+    if (!type) {
+      return NextResponse.json({ error: "Invalid type selection" }, { status: 400 });
     }
   }
   const text = await file.text();
@@ -49,6 +45,7 @@ export async function POST(req: NextRequest) {
     ? await prisma.item.findMany({
         where: {
           deletedAt: null,
+          isArchived: false,
           OR: duplicateValues.flatMap((value) => [
             { name: { equals: value } },
             { mpn: { equals: value } },
@@ -94,7 +91,7 @@ export async function POST(req: NextRequest) {
       const created: Array<{ id: string; labelCode: string; name: string }> = [];
 
       for (const row of report.readyRows) {
-        const labelCode = await assignNextLabelCode(areaId, typeId, tx);
+        const labelCode = await assignNextLabelCode(row.input.categoryId, typeId, tx);
         const item = await tx.item.create({
           data: {
             labelCode,

@@ -5,9 +5,9 @@ import { previewLabelCode } from "@/lib/label-code";
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth.error) return auth.error;
-  const areaId = req.nextUrl.searchParams.get("areaId");
+  const categoryId = req.nextUrl.searchParams.get("categoryId");
   const typeId = req.nextUrl.searchParams.get("typeId");
-  if (!areaId || !typeId) return NextResponse.json({ error: "areaId/typeId required" }, { status: 400 });
-  const preview = await previewLabelCode(areaId, typeId);
+  if (!categoryId || !typeId) return NextResponse.json({ error: "categoryId/typeId required" }, { status: 400 });
+  const preview = await previewLabelCode(categoryId, typeId);
   return NextResponse.json({ preview });
 }

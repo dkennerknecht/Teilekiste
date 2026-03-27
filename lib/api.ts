@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
+import type { AppRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { hashApiToken } from "@/lib/token";
+import { purgeExpiredDeletedItems } from "@/lib/trash";
 
 function extractToken(req: NextRequest) {
   const fromHeader = req.headers.get("x-api-token");
@@ -32,19 +34,23 @@ async function authViaApiToken(req: NextRequest) {
   return {
     id: token.user.id,
     email: token.user.email,
-    role: token.user.role,
+    role: token.user.role as AppRole,
     authType: "token" as const
   };
 }
 
 export async function requireAuth(req?: NextRequest) {
   const tokenUser = req ? await authViaApiToken(req) : null;
-  if (tokenUser) return { user: tokenUser };
+  if (tokenUser) {
+    await purgeExpiredDeletedItems().catch(() => 0);
+    return { user: tokenUser };
+  }
 
   const user = await getSessionUser();
   if (!user) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) } as const;
   }
+  await purgeExpiredDeletedItems().catch(() => 0);
   return { user: { ...user, authType: "session" as const } } as const;
 }
 

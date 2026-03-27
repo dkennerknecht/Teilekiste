@@ -3,6 +3,7 @@ import { z } from "zod";
 const uuidSchema = z.string().uuid();
 const nameSchema = z.string().trim().min(1).max(120);
 const codeSchema = z.string().trim().min(1).max(40);
+const shortCodeSchema = z.string().trim().regex(/^[A-Za-z0-9]{2}$/);
 
 export const itemSchema = z.object({
   labelCode: z.string().optional(),
@@ -20,7 +21,6 @@ export const itemSchema = z.object({
   datasheetUrl: z.string().url().optional().nullable(),
   purchaseUrl: z.string().url().optional().nullable(),
   barcodeEan: z.string().max(64).optional().nullable(),
-  areaId: z.string().uuid(),
   typeId: z.string().uuid(),
   tagIds: z.array(z.string().uuid()).default([]),
   customValues: z.record(z.any()).optional().default({})
@@ -54,6 +54,15 @@ export const adminUserUpdateSchema = adminUserSchema.partial().extend({
 });
 
 export const idPayloadSchema = z.object({
+  id: uuidSchema
+});
+
+export const categoryCreateSchema = z.object({
+  name: nameSchema,
+  code: shortCodeSchema
+});
+
+export const categoryUpdateSchema = categoryCreateSchema.extend({
   id: uuidSchema
 });
 
@@ -91,13 +100,24 @@ export const storageLocationUpdateSchema = z.object({
   code: z.string().trim().max(40).optional().nullable()
 });
 
+export const storageShelfCreateSchema = z.object({
+  name: nameSchema,
+  storageLocationId: uuidSchema
+});
+
+export const storageShelfUpdateSchema = storageShelfCreateSchema.extend({
+  id: uuidSchema
+});
+
 export const customFieldCreateSchema = z.object({
   name: nameSchema,
-  key: z.string().trim().min(1).max(120),
+  key: z.string().trim().min(1).max(120).optional(),
   type: z.string().trim().min(1).max(40),
+  unit: z.string().trim().max(40).optional().nullable(),
   options: z.unknown().optional(),
   required: z.boolean().optional(),
-  categoryId: uuidSchema.optional().nullable()
+  categoryId: uuidSchema.optional().nullable(),
+  typeId: uuidSchema.optional().nullable()
 });
 
 export const customFieldUpdateSchema = customFieldCreateSchema.partial().extend({
@@ -112,10 +132,13 @@ export const areaCreateSchema = z.object({
 });
 
 export const labelTypeCreateSchema = z.object({
-  areaId: uuidSchema,
-  code: codeSchema,
+  code: shortCodeSchema,
   name: nameSchema,
   active: z.boolean().optional()
+});
+
+export const labelTypeUpdateSchema = labelTypeCreateSchema.extend({
+  id: uuidSchema
 });
 
 export const labelConfigSchema = z.object({
@@ -131,15 +154,18 @@ export const labelConfigSchema = z.object({
 
 export const bulkItemSchema = z.object({
   itemIds: z.array(uuidSchema).min(1),
+  deleteItems: z.boolean().optional(),
+  archiveItems: z.boolean().optional(),
+  unarchiveItems: z.boolean().optional(),
   categoryId: uuidSchema.optional(),
   storageLocationId: uuidSchema.optional(),
   storageArea: z.string().max(120).optional().nullable(),
   bin: z.string().max(120).optional().nullable(),
   minStock: z.number().int().optional().nullable(),
   unit: z.enum(["STK", "M", "SET", "PACK"]).optional(),
+  setTagIds: z.array(uuidSchema).optional(),
   addTagIds: z.array(uuidSchema).optional(),
   removeTagIds: z.array(uuidSchema).optional(),
-  areaId: uuidSchema.optional(),
   typeId: uuidSchema.optional(),
   dryRun: z.boolean().optional()
 });

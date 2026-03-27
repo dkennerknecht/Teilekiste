@@ -14,11 +14,15 @@ type ItemImage = {
   sortOrder: number;
 };
 type TagOption = { id: string; name: string };
+type LocationOption = { id: string; name: string; code?: string | null };
+type ShelfOption = { id: string; name: string; storageLocationId: string };
 
 export default function EditItemPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [form, setForm] = useState<any>(null);
   const [tags, setTags] = useState<TagOption[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [shelves, setShelves] = useState<ShelfOption[]>([]);
   const [images, setImages] = useState<ItemImage[]>([]);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -28,6 +32,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
     setForm({
       name: data.name,
       description: data.description,
+      storageLocationId: data.storageLocationId || "",
       storageArea: data.storageArea || "",
       bin: data.bin || "",
       minStock: data.minStock ?? "",
@@ -42,11 +47,24 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     fetch("/api/meta", { cache: "no-store" })
       .then((r) => r.json())
-      .then((meta) => setTags(meta.tags || []));
+      .then((meta) => {
+        setTags(meta.tags || []);
+        setLocations(meta.locations || []);
+        setShelves(meta.shelves || []);
+      });
     load();
   }, [load]);
 
   const imageIds = useMemo(() => images.map((img) => img.id), [images]);
+  const availableShelves = useMemo(() => {
+    const currentLocationId = form?.storageLocationId || "";
+    const currentStorageArea = form?.storageArea || "";
+    const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
+    if (!currentStorageArea || filtered.some((shelf) => shelf.name === currentStorageArea)) {
+      return filtered;
+    }
+    return [{ id: `legacy-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
+  }, [form?.storageArea, form?.storageLocationId, shelves]);
 
   async function persistOrder(nextImages: ItemImage[]) {
     setImages(nextImages);
@@ -86,8 +104,30 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         </label>
 
         <label className="text-sm">
+          Lagerort
+          <select
+            className="input mt-1"
+            value={form.storageLocationId}
+            onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "" })}
+          >
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name} ({location.code || "--"})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm">
           Regal
-          <input className="input mt-1" value={form.storageArea} onChange={(e) => setForm({ ...form, storageArea: e.target.value })} />
+          <select className="input mt-1" value={form.storageArea} onChange={(e) => setForm({ ...form, storageArea: e.target.value })}>
+            <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+            {availableShelves.map((shelf) => (
+              <option key={shelf.id} value={shelf.name}>
+                {shelf.name}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label className="text-sm">

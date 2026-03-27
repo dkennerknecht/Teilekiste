@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
 import { reservationSchema } from "@/lib/validation";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canReserveQty } from "@/lib/stock";
 import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -19,6 +20,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const reservedQtyResult = await prisma.reservation.aggregate({
+    where: { itemId: params.id },
+    _sum: { reservedQty: true }
+  });
+  const reservedQty = reservedQtyResult._sum.reservedQty || 0;
+
+  if (!canReserveQty(item.stock, reservedQty, body.reservedQty)) {
+    return NextResponse.json({ error: "Nicht genug verfuegbarer Bestand fuer diese Reservierung" }, { status: 400 });
   }
 
   const reservation = await prisma.reservation.create({

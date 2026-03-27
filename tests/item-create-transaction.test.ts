@@ -72,7 +72,6 @@ describe("Item create transaction", () => {
           manufacturer: "Espressif",
           mpn: "ESP32-DEVKIT-V1",
           barcodeEan: "123456789",
-          areaId: "33333333-3333-4333-8333-333333333333",
           typeId: "44444444-4444-4444-8444-444444444444",
           tagIds: ["55555555-5555-4555-8555-555555555555"],
           customValues: {
@@ -89,7 +88,7 @@ describe("Item create transaction", () => {
     expect(response.status).toBe(201);
     expect(transactionMock).toHaveBeenCalledTimes(1);
     expect(assignNextLabelCodeMock).toHaveBeenCalledWith(
-      "33333333-3333-4333-8333-333333333333",
+      "22222222-2222-4222-8222-222222222222",
       "44444444-4444-4444-8444-444444444444",
       tx
     );

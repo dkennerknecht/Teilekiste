@@ -14,7 +14,9 @@
     "backup:create": "tsx scripts/create-backup.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "label:sync": "tsx scripts/sync-label-catalog.ts",
+    "bootstrap:system": "tsx scripts/bootstrap-system.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

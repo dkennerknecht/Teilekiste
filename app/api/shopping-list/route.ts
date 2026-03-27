@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { getAvailableQty, getReservedQty } from "@/lib/stock";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -11,6 +12,7 @@ export async function GET(req: NextRequest) {
   const rows = await prisma.item.findMany({
     where: {
       deletedAt: null,
+      isArchived: false,
       minStock: { not: null },
       storageLocationId: allowedLocationIds ? { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } : undefined
     },
@@ -24,8 +26,8 @@ export async function GET(req: NextRequest) {
 
   const items = rows
     .map((item) => {
-      const reserved = item.reservations.reduce((sum, r) => sum + r.reservedQty, 0);
-      const available = item.stock - reserved;
+      const reserved = getReservedQty(item.reservations);
+      const available = getAvailableQty(item.stock, reserved);
       const min = item.minStock || 0;
       const needed = Math.max(0, min - available);
       const targetQty = Math.max(min * 2, min + needed);

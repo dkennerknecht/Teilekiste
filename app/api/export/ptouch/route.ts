@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
   const items = await prisma.item.findMany({
     where: {
       deletedAt: null,
+      isArchived: false,
       storageLocationId: allowedLocationIds ? { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } : undefined
     },
     include: {

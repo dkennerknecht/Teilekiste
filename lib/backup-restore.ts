@@ -27,6 +27,12 @@ type BackupLocation = {
   code?: string | null;
 };
 
+type BackupShelf = {
+  id: string;
+  name: string;
+  storageLocationId: string;
+};
+
 type BackupTag = {
   id: string;
   name: string;
@@ -37,10 +43,12 @@ type BackupCustomField = {
   name: string;
   key: string;
   type: string;
+  unit?: string | null;
   options?: unknown;
   required?: boolean;
   isActive?: boolean;
   categoryId?: string | null;
+  typeId?: string | null;
 };
 
 type BackupArea = {
@@ -173,6 +181,7 @@ export type BackupPayload = {
   users?: BackupUser[];
   categories?: BackupCategory[];
   locations?: BackupLocation[];
+  shelves?: BackupShelf[];
   tags?: BackupTag[];
   customFields?: BackupCustomField[];
   areas?: BackupArea[];
@@ -188,6 +197,7 @@ export type RestoreResult = {
   conflicts: {
     categories: string[];
     locations: string[];
+    shelves: string[];
     tags: string[];
     items: string[];
     areas: string[];
@@ -195,6 +205,7 @@ export type RestoreResult = {
   };
   restoredCategories: number;
   restoredLocations: number;
+  restoredShelves: number;
   restoredTags: number;
   restoredAreas: number;
   restoredTypes: number;
@@ -293,6 +304,7 @@ export async function restoreBackupData(input: {
   const conflicts = {
     categories: [] as string[],
     locations: [] as string[],
+    shelves: [] as string[],
     tags: [] as string[],
     items: [] as string[],
     areas: [] as string[],
@@ -348,6 +360,31 @@ export async function restoreBackupData(input: {
       data: { id: location.id, name: location.name, code: location.code || null }
     });
     locationIdMap.set(location.id, created.id);
+  }
+
+  for (const shelf of payload.shelves || []) {
+    const resolvedLocationId = locationIdMap.get(shelf.storageLocationId) || shelf.storageLocationId;
+    const existing = await prisma.storageShelf.findFirst({
+      where: {
+        OR: [{ id: shelf.id }, { storageLocationId: resolvedLocationId, name: shelf.name }]
+      }
+    });
+
+    if (existing) {
+      if (strategy === "merge" && existing.id !== shelf.id) {
+        conflicts.shelves.push(`${shelf.name} (${resolvedLocationId})`);
+        continue;
+      }
+      await prisma.storageShelf.update({
+        where: { id: existing.id },
+        data: { name: shelf.name, storageLocationId: resolvedLocationId }
+      });
+      continue;
+    }
+
+    const created = await prisma.storageShelf.create({
+      data: { id: shelf.id, name: shelf.name, storageLocationId: resolvedLocationId }
+    });
   }
 
   for (const tag of payload.tags || []) {
@@ -498,20 +535,24 @@ export async function restoreBackupData(input: {
       update: {
         name: field.name,
         type: field.type,
+        unit: field.unit ?? null,
         options: serializeOptions(field.options),
         required: !!field.required,
         isActive: field.isActive !== false,
-        categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null
+        categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null,
+        typeId: field.typeId ? typeIdMap.get(field.typeId) || field.typeId : null
       },
       create: {
         id: field.id,
         name: field.name,
         key: field.key,
         type: field.type,
+        unit: field.unit ?? null,
         options: serializeOptions(field.options),
         required: !!field.required,
         isActive: field.isActive !== false,
-        categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null
+        categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null,
+        typeId: field.typeId ? typeIdMap.get(field.typeId) || field.typeId : null
       }
     });
     customFieldIdMap.set(field.id, restoredField.id);
@@ -774,6 +815,7 @@ export async function restoreBackupData(input: {
     conflicts,
     restoredCategories: (payload.categories || []).length,
     restoredLocations: (payload.locations || []).length,
+    restoredShelves: (payload.shelves || []).length,
     restoredTags: (payload.tags || []).length,
     restoredAreas: (payload.areas || []).length,
     restoredTypes: (payload.types || []).length,
@@ -795,6 +837,7 @@ export async function previewBackupRestore(input: {
   const conflicts: RestoreResult["conflicts"] = {
     categories: [],
     locations: [],
+    shelves: [],
     tags: [],
     items: [],
     areas: [],
@@ -816,6 +859,17 @@ export async function previewBackupRestore(input: {
     });
     if (existing && strategy === "merge" && existing.id !== location.id) {
       conflicts.locations.push(location.name);
+    }
+  }
+
+  for (const shelf of payload.shelves || []) {
+    const existing = await prisma.storageShelf.findFirst({
+      where: {
+        OR: [{ id: shelf.id }, { storageLocationId: shelf.storageLocationId, name: shelf.name }]
+      }
+    });
+    if (existing && strategy === "merge" && existing.id !== shelf.id) {
+      conflicts.shelves.push(`${shelf.name}`);
     }
   }
 
@@ -862,6 +916,7 @@ export async function previewBackupRestore(input: {
       users: (payload.users || []).length,
       categories: (payload.categories || []).length,
       locations: (payload.locations || []).length,
+      shelves: (payload.shelves || []).length,
       tags: (payload.tags || []).length,
       areas: (payload.areas || []).length,
       types: (payload.types || []).length,

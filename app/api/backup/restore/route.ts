@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       prisma.area.deleteMany(),
       prisma.labelConfig.deleteMany(),
       prisma.userLocation.deleteMany(),
+      prisma.storageShelf.deleteMany(),
       prisma.category.deleteMany(),
       prisma.storageLocation.deleteMany()
     ]);
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
     manifest,
     restoredCategories: result.restoredCategories,
     restoredLocations: result.restoredLocations,
+    restoredShelves: result.restoredShelves,
     restoredTags: result.restoredTags,
     restoredAreas: result.restoredAreas,
     restoredTypes: result.restoredTypes,
