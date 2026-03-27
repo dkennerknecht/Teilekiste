@@ -135,6 +135,7 @@ model CategoryTypeCounter {
 
 model LabelConfig {
   id                String   @id @default("default")
+  language          String   @default("de")
   separator         String   @default("-")
   digits            Int      @default(3)
   prefix            String?
@@ -163,7 +164,6 @@ model Item {
   mpn               String?
   datasheetUrl      String?
   purchaseUrl       String?
-  barcodeEan        String?
   isArchived        Boolean             @default(false)
   deletedAt         DateTime?
   createdAt         DateTime            @default(now())

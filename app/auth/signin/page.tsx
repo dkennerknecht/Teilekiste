@@ -4,11 +4,13 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { Brand } from "@/components/brand";
+import { useAppLanguage } from "@/components/app-language-provider";
 
 export default function SignInPage() {
   const [email, setEmail] = useState("admin@local");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
+  const { t } = useAppLanguage();
 
   return (
     <div className="mx-auto mt-6 max-w-md px-1 sm:mt-12">
@@ -22,7 +24,7 @@ export default function SignInPage() {
               textClassName="text-xl font-semibold text-workshop-800 sm:text-2xl"
             />
           </Link>
-          <h1 className="text-xl font-semibold">Anmelden</h1>
+          <h1 className="text-xl font-semibold">{t("signInTitle")}</h1>
         </div>
         <form
           className="space-y-3"
@@ -33,20 +35,20 @@ export default function SignInPage() {
               password,
               callbackUrl: "/"
             });
-            if (result?.error) setError("Login fehlgeschlagen");
+            if (result?.error) setError(t("signInError"));
           }}
         >
-          <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-Mail" />
+          <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("signInEmail")} />
           <input
             className="input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
-            placeholder="Passwort"
+            placeholder={t("signInPassword")}
           />
           {error && <p className="text-sm [color:var(--app-danger-text)]">{error}</p>}
           <button className="btn w-full" type="submit">
-            Login
+            {t("signInSubmit")}
           </button>
         </form>
       </div>

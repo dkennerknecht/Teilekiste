@@ -8,12 +8,10 @@ export async function GET(req: NextRequest) {
 
   const name = req.nextUrl.searchParams.get("name") || "";
   const mpn = req.nextUrl.searchParams.get("mpn") || "";
-  const barcodeEan = req.nextUrl.searchParams.get("barcodeEan") || "";
 
   const clauses = [] as Array<Record<string, unknown>>;
   if (name) clauses.push({ name: { contains: name } });
   if (mpn) clauses.push({ mpn: { contains: mpn } });
-  if (barcodeEan) clauses.push({ barcodeEan: { contains: barcodeEan } });
 
   if (!clauses.length) return NextResponse.json([]);
 

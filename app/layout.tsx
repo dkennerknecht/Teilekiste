@@ -24,16 +24,18 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               (function() {
                 try {
                   var stored = localStorage.getItem('theme');
+                  var storedLanguage = localStorage.getItem('app-language');
                   var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                   var theme = (stored === 'dark' || stored === 'light') ? stored : (prefersDark ? 'dark' : 'light');
                   document.documentElement.classList.toggle('dark', theme === 'dark');
                   document.documentElement.style.colorScheme = theme;
+                  document.documentElement.lang = storedLanguage === 'en' ? 'en' : 'de';
                 } catch (e) {}
               })();
             `
           }}
         />
-        <Providers>
+        <Providers initialLanguage="de">
           <BuildVersionWatcher />
           <Nav />
           <main className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">{children}</main>

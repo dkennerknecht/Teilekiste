@@ -28,7 +28,6 @@ function humanFieldName(field: string) {
     minStock: "Mindestbestand",
     manufacturer: "Hersteller",
     mpn: "MPN",
-    barcodeEan: "EAN",
     isArchived: "Archiviert",
     qty: "Menge",
     childItemId: "Komponente"
@@ -85,6 +84,20 @@ export function summarizeAuditEntry(entry: AuditLike) {
     case "BOM_REMOVE": {
       const childLabel = String(before?.childLabelCode || "Komponente");
       return `Stückliste entfernt: ${childLabel}`;
+    }
+    case "RESERVATION_CREATE": {
+      const qty = typeof after?.reservedQty === "number" ? after.reservedQty : null;
+      const reservedFor = String(after?.reservedFor || "").trim();
+      const note = String(after?.note || "").trim();
+      const base = qty !== null && reservedFor ? `Reservierung angelegt: ${qty} x ${reservedFor}` : "Reservierung angelegt";
+      return note ? `${base} (${note})` : base;
+    }
+    case "RESERVATION_DELETE": {
+      const qty = typeof before?.reservedQty === "number" ? before.reservedQty : null;
+      const reservedFor = String(before?.reservedFor || "").trim();
+      const note = String(before?.note || "").trim();
+      const base = qty !== null && reservedFor ? `Reservierung aufgehoben: ${qty} x ${reservedFor}` : "Reservierung aufgehoben";
+      return note ? `${base} (${note})` : base;
     }
     default:
       return `${entry.action} auf ${entry.entity}`;

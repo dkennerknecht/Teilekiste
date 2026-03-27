@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
+import { auditLog } from "@/lib/audit";
 import { reservationSchema } from "@/lib/validation";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { canReserveQty } from "@/lib/stock";
@@ -31,14 +32,34 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Nicht genug verfuegbarer Bestand fuer diese Reservierung" }, { status: 400 });
   }
 
-  const reservation = await prisma.reservation.create({
-    data: {
-      itemId: params.id,
-      reservedQty: body.reservedQty,
-      reservedFor: body.reservedFor,
-      note: body.note || null,
-      userId: auth.user!.id
-    }
+  const reservation = await prisma.$transaction(async (tx) => {
+    const createdReservation = await tx.reservation.create({
+      data: {
+        itemId: params.id,
+        reservedQty: body.reservedQty,
+        reservedFor: body.reservedFor,
+        note: body.note || null,
+        userId: auth.user!.id
+      }
+    });
+
+    await auditLog(
+      {
+        userId: auth.user!.id,
+        action: "RESERVATION_CREATE",
+        entity: "Item",
+        entityId: params.id,
+        after: {
+          reservationId: createdReservation.id,
+          reservedQty: createdReservation.reservedQty,
+          reservedFor: createdReservation.reservedFor,
+          note: createdReservation.note
+        }
+      },
+      tx
+    );
+
+    return createdReservation;
   });
 
   return NextResponse.json(reservation, { status: 201 });

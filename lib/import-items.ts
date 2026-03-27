@@ -9,8 +9,7 @@ const csvRowSchema = z.object({
   minStock: z.number().int().nullable(),
   unit: z.enum(["STK", "M", "SET", "PACK"]),
   manufacturer: z.string().max(180).optional().nullable(),
-  mpn: z.string().max(180).optional().nullable(),
-  barcodeEan: z.string().max(64).optional().nullable()
+  mpn: z.string().max(180).optional().nullable()
 });
 
 export type ImportReadyRow = {
@@ -47,7 +46,6 @@ export function analyzeImportRows(input: {
 }) {
   const seenNames = new Map<string, number>();
   const seenMpns = new Map<string, number>();
-  const seenBarcodes = new Map<string, number>();
 
   const analyzedRows: ImportAnalyzedRow[] = input.rows.map((row, idx) => {
     const lineNumber = idx + 2;
@@ -77,8 +75,7 @@ export function analyzeImportRows(input: {
       minStock,
       unit: String(row.unit || "STK").trim().toUpperCase(),
       manufacturer: String(row.manufacturer || "").trim() || null,
-      mpn: String(row.mpn || "").trim() || null,
-      barcodeEan: String(row.barcodeEan || "").trim() || null
+      mpn: String(row.mpn || "").trim() || null
     };
 
     const parsed = csvRowSchema.safeParse(candidate);
@@ -98,7 +95,6 @@ export function analyzeImportRows(input: {
 
     const normalizedName = candidate.name.toLowerCase();
     const normalizedMpn = (candidate.mpn || "").toLowerCase();
-    const normalizedBarcode = (candidate.barcodeEan || "").toLowerCase();
 
     if (normalizedName) {
       if (seenNames.has(normalizedName)) warnings.push(`Name bereits in CSV, zuerst in Zeile ${seenNames.get(normalizedName)}`);
@@ -108,12 +104,8 @@ export function analyzeImportRows(input: {
       if (seenMpns.has(normalizedMpn)) warnings.push(`MPN bereits in CSV, zuerst in Zeile ${seenMpns.get(normalizedMpn)}`);
       else seenMpns.set(normalizedMpn, lineNumber);
     }
-    if (normalizedBarcode) {
-      if (seenBarcodes.has(normalizedBarcode)) warnings.push(`EAN bereits in CSV, zuerst in Zeile ${seenBarcodes.get(normalizedBarcode)}`);
-      else seenBarcodes.set(normalizedBarcode, lineNumber);
-    }
 
-    const duplicateKeys = [normalizedName, normalizedMpn, normalizedBarcode].filter(Boolean);
+    const duplicateKeys = [normalizedName, normalizedMpn].filter(Boolean);
     const duplicateCandidates = duplicateKeys.flatMap((key) => input.duplicateCandidatesByKey.get(key) || []);
     if (duplicateCandidates.length) {
       warnings.push(

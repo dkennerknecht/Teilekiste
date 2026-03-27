@@ -11,6 +11,15 @@ import { canSetStock, getAvailableQty, getReservedQty } from "@/lib/stock";
 import { prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { parseJson } from "@/lib/http";
 
+function safeParseAuditPayload(value?: string | null) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth(req);
   if (auth.error) return auth.error;
@@ -36,7 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [{ bomChildren, bomParents }, auditEntries] = await Promise.all([
+  const [{ bomChildren, bomParents }, auditEntries, reservationHistoryEntries] = await Promise.all([
     loadItemBom(item.id, allowedLocationIds),
     auth.user!.role === "ADMIN"
       ? prisma.auditLog.findMany({
@@ -52,7 +61,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           orderBy: { createdAt: "desc" },
           take: 25
         })
-      : Promise.resolve([])
+      : Promise.resolve([]),
+    prisma.auditLog.findMany({
+      where: {
+        entity: "Item",
+        entityId: item.id,
+        action: {
+          in: ["RESERVATION_CREATE", "RESERVATION_DELETE"]
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50
+    })
   ]);
 
   await prisma.recentView.upsert({
@@ -75,6 +95,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       user: entry.user,
       summary: summarizeAuditEntry(entry)
     })),
+    reservationHistoryEntries: reservationHistoryEntries.map((entry) => {
+      const payload = safeParseAuditPayload(entry.after) || safeParseAuditPayload(entry.before);
+      return {
+        id: entry.id,
+        action: entry.action,
+        reservationId: payload?.reservationId || null,
+        createdAt: entry.createdAt,
+        text: summarizeAuditEntry(entry)
+      };
+    }),
     primaryImage: item.images[0] ?? null,
     reservedQty,
     availableStock: getAvailableQty(item.stock, reservedQty)
@@ -144,7 +174,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       minStock: itemData.minStock || undefined,
       manufacturer: itemData.manufacturer || null,
       mpn: itemData.mpn || null,
-      barcodeEan: itemData.barcodeEan || null,
       ...(tagIds
         ? {
             tags: {

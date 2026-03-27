@@ -29,7 +29,6 @@ export function buildItemFilter(params: URLSearchParams, allowedLocationIds: str
       { description: { contains: q } },
       { mpn: { contains: q } },
       { manufacturer: { contains: q } },
-      { barcodeEan: { contains: q } },
       { tags: { some: { tag: { name: { contains: q } } } } }
     ];
   }

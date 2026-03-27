@@ -38,10 +38,27 @@ afterEach(() => {
 describe("Item create transaction", () => {
   it("creates the item, stock movement, and audit log inside one transaction context", async () => {
     const tx = {
+      customField: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "66666666-6666-4666-8666-666666666666",
+            name: "Spannung",
+            key: "spannung",
+            type: "TEXT",
+            unit: "V",
+            options: null,
+            required: false,
+            isActive: true,
+            categoryId: null,
+            typeId: null
+          }
+        ])
+      },
       item: {
         create: vi.fn().mockResolvedValue({ id: "item-1", labelCode: "EL-KB-001", name: "ESP32" })
       },
       itemCustomFieldValue: {
+        findMany: vi.fn().mockResolvedValue([]),
         upsert: vi.fn().mockResolvedValue({})
       },
       stockMovement: {
@@ -71,7 +88,6 @@ describe("Item create transaction", () => {
           minStock: 1,
           manufacturer: "Espressif",
           mpn: "ESP32-DEVKIT-V1",
-          barcodeEan: "123456789",
           typeId: "44444444-4444-4444-8444-444444444444",
           tagIds: ["55555555-5555-4555-8555-555555555555"],
           customValues: {
@@ -92,6 +108,7 @@ describe("Item create transaction", () => {
       "44444444-4444-4444-8444-444444444444",
       tx
     );
+    expect(tx.customField.findMany).toHaveBeenCalledTimes(1);
     expect(tx.item.create).toHaveBeenCalledTimes(1);
     expect(tx.itemCustomFieldValue.upsert).toHaveBeenCalledTimes(1);
     expect(tx.stockMovement.create).toHaveBeenCalledTimes(1);

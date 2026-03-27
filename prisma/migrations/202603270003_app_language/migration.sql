@@ -1,0 +1,1 @@
+ALTER TABLE "LabelConfig" ADD COLUMN "language" TEXT NOT NULL DEFAULT 'de';

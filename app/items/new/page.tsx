@@ -8,7 +8,7 @@ import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 type Option = { id: string; name: string; code?: string; codeLabel?: string };
 type ShelfOption = { id: string; name: string; storageLocationId: string };
 
-const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
 function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -46,7 +46,6 @@ export default function NewItemPage() {
     minStock: "",
     manufacturer: "",
     mpn: "",
-    barcodeEan: "",
     typeId: "",
     tagIds: [] as string[],
     customValues: {} as CustomFieldValueMap
@@ -86,13 +85,13 @@ export default function NewItemPage() {
   }, [form.categoryId, form.typeId]);
 
   useEffect(() => {
-    if (!form.name && !form.mpn && !form.barcodeEan) return;
+    if (!form.name && !form.mpn) return;
     fetch(
-      `/api/items/duplicates?name=${encodeURIComponent(form.name)}&mpn=${encodeURIComponent(form.mpn)}&barcodeEan=${encodeURIComponent(form.barcodeEan)}`
+      `/api/items/duplicates?name=${encodeURIComponent(form.name)}&mpn=${encodeURIComponent(form.mpn)}`
     )
       .then((r) => r.json())
       .then(setDuplicates);
-  }, [form.name, form.mpn, form.barcodeEan]);
+  }, [form.name, form.mpn]);
 
   async function createTag() {
     const name = newTagName.trim();
@@ -223,16 +222,22 @@ export default function NewItemPage() {
           </label>
 
           <label className="text-sm">
-            EAN / Barcode
-            <input className="input mt-1" value={form.barcodeEan} onChange={(e) => setForm({ ...form, barcodeEan: e.target.value })} disabled={!hasRequiredMeta} />
-          </label>
-
-          <label className="text-sm">
             Kategorie
             <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.code ? `${c.code} - ${c.name}` : c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            Type (Label)
+            <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })} disabled={!hasRequiredMeta} required>
+              {types.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code} - {t.name}
                 </option>
               ))}
             </select>
@@ -250,17 +255,6 @@ export default function NewItemPage() {
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            Type (Label)
-            <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })} disabled={!hasRequiredMeta} required>
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code} - {t.name}
                 </option>
               ))}
             </select>
@@ -387,7 +381,7 @@ export default function NewItemPage() {
             <input
               className="input"
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/avif"
               multiple
               disabled={!hasRequiredMeta}
               onChange={(e) => {

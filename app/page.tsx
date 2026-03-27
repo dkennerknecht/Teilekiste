@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { fileHref } from "@/lib/file-href";
@@ -62,6 +63,7 @@ const initialBulkForm: BulkForm = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -100,6 +102,20 @@ export default function HomePage() {
       })
     });
     await load();
+  }
+
+  function openItem(itemId: string) {
+    router.push(`/items/${itemId}`);
+  }
+
+  function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, itemId: string) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openItem(itemId);
+  }
+
+  function stopRowNavigation(event: React.SyntheticEvent) {
+    event.stopPropagation();
   }
 
   function toggleSelected(itemId: string, checked: boolean) {
@@ -346,12 +362,20 @@ export default function HomePage() {
           </div>
         ) : (
           items.map((item) => (
-            <article key={item.id} className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-2.5 shadow-sm">
+            <article
+              key={item.id}
+              className="cursor-pointer rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-2.5 shadow-sm transition-colors hover:bg-[var(--app-surface-alt)]"
+              onClick={() => openItem(item.id)}
+              onKeyDown={(event) => handleRowKeyDown(event, item.id)}
+              role="link"
+              tabIndex={0}
+            >
               <div className="flex items-center gap-2">
                 <input
                   className="shrink-0"
                   type="checkbox"
                   checked={selectedSet.has(item.id)}
+                  onClick={stopRowNavigation}
                   onChange={(e) => toggleSelected(item.id, e.target.checked)}
                 />
                 {item.primaryImage ? (
@@ -367,7 +391,11 @@ export default function HomePage() {
                   <div className="h-12 w-12 shrink-0 rounded border border-dashed border-workshop-200" />
                 )}
                 <div className="min-w-0 flex-1 leading-tight">
-                  <Link href={`/items/${item.id}`} className="block truncate font-mono text-xs text-workshop-700 underline">
+                  <Link
+                    href={`/items/${item.id}`}
+                    className="block truncate font-mono text-xs text-workshop-700 underline"
+                    onClick={stopRowNavigation}
+                  >
                     {item.labelCode}
                   </Link>
                   <p className="mt-0.5 truncate text-sm font-medium">{item.name}</p>
@@ -378,7 +406,11 @@ export default function HomePage() {
                     Verfuegbar {item.availableStock}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div
+                  className="flex shrink-0 items-center gap-1 rounded-xl px-1 py-1"
+                  onClick={stopRowNavigation}
+                  onKeyDown={stopRowNavigation}
+                >
                   {[-1, 1].map((delta) => (
                     <button
                       key={delta}
@@ -424,11 +456,19 @@ export default function HomePage() {
               </thead>
               <tbody>
                 {items.map((item) => (
-                  <tr key={item.id} className="border-b border-workshop-100">
-                    <td className="px-2 py-2">
+                  <tr
+                    key={item.id}
+                    className="cursor-pointer border-b border-workshop-100 transition-colors hover:bg-[var(--app-surface-alt)]"
+                    onClick={() => openItem(item.id)}
+                    onKeyDown={(event) => handleRowKeyDown(event, item.id)}
+                    role="link"
+                    tabIndex={0}
+                  >
+                    <td className="px-2 py-2" onClick={stopRowNavigation}>
                       <input
                         type="checkbox"
                         checked={selectedSet.has(item.id)}
+                        onClick={stopRowNavigation}
                         onChange={(e) => toggleSelected(item.id, e.target.checked)}
                       />
                     </td>
@@ -447,7 +487,7 @@ export default function HomePage() {
                       )}
                     </td>
                     <td className="px-2 py-2 font-mono">
-                      <Link href={`/items/${item.id}`} className="text-workshop-700 underline">
+                      <Link href={`/items/${item.id}`} className="text-workshop-700 underline" onClick={stopRowNavigation}>
                         {item.labelCode}
                       </Link>
                     </td>
@@ -457,8 +497,8 @@ export default function HomePage() {
                     <td className={`px-2 py-2 ${item.minStock !== null && item.availableStock <= item.minStock ? "text-red-700" : ""}`}>
                       {item.availableStock}
                     </td>
-                    <td className="px-2 py-2">
-                      <div className="flex gap-1">
+                    <td className="px-2 py-2" onClick={stopRowNavigation}>
+                      <div className="flex w-fit gap-1 rounded-xl px-1 py-1">
                         {[-1, 1].map((delta) => (
                           <button
                             key={delta}

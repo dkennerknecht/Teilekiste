@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PencilLine, Trash2 } from "lucide-react";
 import type { CustomFieldRow } from "@/lib/custom-fields";
+import { useAppLanguage } from "@/components/app-language-provider";
+import { appLanguageOptions, type AppLanguage } from "@/lib/app-language";
 
 type IdObj = { id: string };
 type LocationRow = { id: string; name: string; code?: string | null };
@@ -45,13 +47,24 @@ function IconActionButton({
   );
 }
 
-function formatAdminBackupStat(latestBackup: string | null) {
-  if (!latestBackup) return "kein";
+function formatAdminBackupStat(latestBackup: string | null, emptyLabel: string) {
+  if (!latestBackup) return emptyLabel;
   const fileName = latestBackup.split("/").pop() || latestBackup;
   return fileName.replace(/^backup-/, "").replace(/\.zip$/, "");
 }
 
+function triggerFileDownload(url: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 export default function AdminPage() {
+  const { language, t, setLanguage } = useAppLanguage();
   const [dash, setDash] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [apiTokens, setApiTokens] = useState<any[]>([]);
@@ -67,6 +80,9 @@ export default function AdminPage() {
   const [restoreResult, setRestoreResult] = useState<any>(null);
   const [backupResult, setBackupResult] = useState<any>(null);
   const [types, setTypes] = useState<any[]>([]);
+  const [appLanguageDraft, setAppLanguageDraft] = useState<AppLanguage>(language);
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
+  const unknownError = tr("Unbekannt", "Unknown");
 
   const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
   const [editCategoryName, setEditCategoryName] = useState("");
@@ -125,6 +141,10 @@ export default function AdminPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    setAppLanguageDraft(language);
+  }, [language]);
+
   async function apiJson(url: string, init: RequestInit) {
     try {
       const res = await fetch(url, init);
@@ -133,7 +153,7 @@ export default function AdminPage() {
     } catch (error) {
       return {
         res: { ok: false, status: 0 } as Response,
-        data: { error: (error as Error).message || "Netzwerkfehler" }
+        data: { error: (error as Error).message || tr("Netzwerkfehler", "Network error") }
       };
     }
   }
@@ -163,7 +183,7 @@ export default function AdminPage() {
     }
     if (field.category) return field.category.name;
     if (field.labelType) return `${field.labelType.code} - ${field.labelType.name}`;
-    return "Alle Items";
+    return tr("Alle Items", "All items");
   }
 
   function replaceById<T extends IdObj>(rows: T[], nextRow: T) {
@@ -243,9 +263,9 @@ export default function AdminPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Admin</h1>
+        <h1 className="text-2xl font-semibold">{t("adminTitle")}</h1>
         <Link className="btn-secondary" href="/admin/audit">
-          Audit History
+          {t("adminAuditHistory")}
         </Link>
       </div>
       {feedback && <div className="rounded border border-workshop-300 bg-workshop-100 p-2 text-sm">{feedback}</div>}
@@ -257,20 +277,20 @@ export default function AdminPage() {
             <p className="text-base font-bold leading-tight sm:text-2xl">{dash.items}</p>
           </div>
           <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3">
-            <p className="text-[10px] leading-tight sm:text-xs">Unter min</p>
+            <p className="text-[10px] leading-tight sm:text-xs">{tr("Unter min", "Below min")}</p>
             <p className="text-base font-bold leading-tight sm:text-2xl">{dash.lowStock}</p>
           </div>
           <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3">
-            <p className="text-[10px] leading-tight sm:text-xs">Nutzer</p>
+            <p className="text-[10px] leading-tight sm:text-xs">{tr("Nutzer", "Users")}</p>
             <p className="text-base font-bold leading-tight sm:text-2xl">{dash.users}</p>
           </div>
           <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3">
-            <p className="text-[10px] leading-tight sm:text-xs">Orte</p>
+            <p className="text-[10px] leading-tight sm:text-xs">{tr("Orte", "Locations")}</p>
             <p className="text-base font-bold leading-tight sm:text-2xl">{dash.locations}</p>
           </div>
-          <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3" title={dash.latestBackup || "keins"}>
+          <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3" title={dash.latestBackup || tr("keins", "none")}>
             <p className="text-[10px] leading-tight sm:text-xs">Backup</p>
-            <p className="truncate text-[10px] leading-tight sm:text-xs">{formatAdminBackupStat(dash.latestBackup)}</p>
+            <p className="truncate text-[10px] leading-tight sm:text-xs">{formatAdminBackupStat(dash.latestBackup, tr("kein", "none"))}</p>
           </div>
         </div>
       )}
@@ -281,11 +301,16 @@ export default function AdminPage() {
           onClick={async () => {
             const { res, data } = await apiJson("/api/backup/create", { method: "POST" });
             setBackupResult(data);
-            setFeedback(res.ok ? "Backup erstellt" : `Backup fehlgeschlagen: ${data.error || "Unbekannt"}`);
+            setFeedback(
+              res.ok ? tr("Backup erstellt", "Backup created") : tr(`Backup fehlgeschlagen: ${data.error || unknownError}`, `Backup failed: ${data.error || unknownError}`)
+            );
+            if (res.ok && data?.fileName) {
+              triggerFileDownload(`/api/backup/download?name=${encodeURIComponent(data.fileName)}`);
+            }
             await load();
           }}
         >
-          Backup jetzt
+          {tr("Backup jetzt", "Create backup now")}
         </button>
         <form
           onSubmit={async (e) => {
@@ -296,9 +321,9 @@ export default function AdminPage() {
             setFeedback(
               res.ok
                 ? data.dryRun
-                  ? "Restore-Vorschau aktualisiert"
-                  : "Restore ausgefuehrt"
-                : `Restore Fehler: ${data.error || "Unbekannt"}`
+                  ? tr("Restore-Vorschau aktualisiert", "Restore preview updated")
+                  : tr("Restore ausgefuehrt", "Restore completed")
+                : tr(`Restore Fehler: ${data.error || unknownError}`, `Restore error: ${data.error || unknownError}`)
             );
             if (res.ok && !data.dryRun) {
               await load();
@@ -307,49 +332,64 @@ export default function AdminPage() {
           className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
         >
           <input className="input" type="file" name="file" accept=".zip" required />
-          <select className="input" name="strategy"><option value="merge">merge</option><option value="overwrite">overwrite</option></select>
-          <select className="input" name="dryRun"><option value="1">Preview</option><option value="0">Apply</option></select>
-          <button className="btn-secondary w-full sm:w-auto" type="submit">Restore ZIP</button>
+          <select className="input" name="strategy">
+            <option value="merge">{tr("Zusammenfuehren", "Merge")}</option>
+            <option value="overwrite">{tr("Ueberschreiben", "Overwrite")}</option>
+          </select>
+          <select className="input" name="dryRun">
+            <option value="1">{tr("Vorschau", "Preview")}</option>
+            <option value="0">{tr("Anwenden", "Apply")}</option>
+          </select>
+          <button className="btn-secondary w-full sm:w-auto" type="submit">{tr("Restore ZIP", "Restore ZIP")}</button>
         </form>
       </div>
 
       {backupResult?.backupFile && (
         <div className="card text-sm">
-          <p className="font-semibold">Letztes Backup</p>
+          <p className="font-semibold">{tr("Letztes Backup", "Latest backup")}</p>
           <p className="break-all">{backupResult.backupFile}</p>
+          {backupResult.fileName && (
+            <button
+              type="button"
+              className="btn-secondary mt-2"
+              onClick={() => triggerFileDownload(`/api/backup/download?name=${encodeURIComponent(backupResult.fileName)}`)}
+            >
+              {tr("Backup herunterladen", "Download backup")}
+            </button>
+          )}
           <p>ZIP SHA-256: <span className="font-mono text-xs">{backupResult.zipSha256}</span></p>
           <p>
-            Inhalt: {backupResult.manifest?.itemCount || 0} Items, {backupResult.manifest?.bomCount || 0} BOM-Eintraege,
-            {" "}{backupResult.manifest?.auditCount || 0} Audit-Logs
+            {tr("Inhalt", "Contents")}: {backupResult.manifest?.itemCount || 0} Items, {backupResult.manifest?.bomCount || 0}{" "}
+            {tr("BOM-Eintraege", "BOM entries")}, {backupResult.manifest?.auditCount || 0} {tr("Audit-Logs", "audit logs")}
           </p>
-          <p>Retention geloeschter Dateien: {(backupResult.deletedBackups || []).join(", ") || "-"}</p>
+          <p>{tr("Retention geloeschter Dateien", "Deleted files retention")}: {(backupResult.deletedBackups || []).join(", ") || "-"}</p>
         </div>
       )}
 
       {restoreResult?.conflicts && (
         <div className="card text-sm">
-          <p className="font-semibold">{restoreResult.dryRun ? "Restore Vorschau" : "Restore Ergebnis"}</p>
+          <p className="font-semibold">{restoreResult.dryRun ? tr("Restore Vorschau", "Restore preview") : tr("Restore Ergebnis", "Restore result")}</p>
           {restoreResult.manifest && (
             <p>
-              Manifest: {restoreResult.manifest.itemCount || 0} Items, {restoreResult.manifest.bomCount || 0} BOM,
-              {" "}{restoreResult.manifest.auditCount || 0} Audit-Logs, Checksumme: {restoreResult.checksumVerified ? "ok" : "nicht vorhanden"}
+              {tr("Manifest", "Manifest")}: {restoreResult.manifest.itemCount || 0} Items, {restoreResult.manifest.bomCount || 0} BOM,
+              {" "}{restoreResult.manifest.auditCount || 0} {tr("Audit-Logs", "audit logs")}, {tr("Checksumme", "Checksum")}: {restoreResult.checksumVerified ? "ok" : tr("nicht vorhanden", "missing")}
             </p>
           )}
           {restoreResult.summary && (
             <p>
-              Preview: {restoreResult.summary.items} Items, {restoreResult.summary.boms} BOM, {restoreResult.summary.auditLogs} Audit-Logs
+              {tr("Vorschau", "Preview")}: {restoreResult.summary.items} Items, {restoreResult.summary.boms} BOM, {restoreResult.summary.auditLogs} {tr("Audit-Logs", "audit logs")}
             </p>
           )}
           {!restoreResult.dryRun && (
             <p>
-              Wiederhergestellt: {restoreResult.restoredItems || 0} Items, {restoreResult.restoredBomEntries || 0} BOM,
-              {" "}{restoreResult.restoredAuditLogs || 0} Audit-Logs
+              {tr("Wiederhergestellt", "Restored")}: {restoreResult.restoredItems || 0} Items, {restoreResult.restoredBomEntries || 0} BOM,
+              {" "}{restoreResult.restoredAuditLogs || 0} {tr("Audit-Logs", "audit logs")}
             </p>
           )}
-          <p>Kategorien: {(restoreResult.conflicts.categories || []).join(", ") || "-"}</p>
-          <p>Lagerorte: {(restoreResult.conflicts.locations || []).join(", ") || "-"}</p>
-          <p>Regale: {(restoreResult.conflicts.shelves || []).join(", ") || "-"}</p>
-          <p>Tags: {(restoreResult.conflicts.tags || []).join(", ") || "-"}</p>
+          <p>{tr("Kategorien", "Categories")}: {(restoreResult.conflicts.categories || []).join(", ") || "-"}</p>
+          <p>{tr("Lagerorte", "Storage locations")}: {(restoreResult.conflicts.locations || []).join(", ") || "-"}</p>
+          <p>{tr("Regale", "Shelves")}: {(restoreResult.conflicts.shelves || []).join(", ") || "-"}</p>
+          <p>{tr("Tags", "Tags")}: {(restoreResult.conflicts.tags || []).join(", ") || "-"}</p>
           <p>Items (labelCode): {(restoreResult.conflicts.items || []).join(", ") || "-"}</p>
           <p>Areas: {(restoreResult.conflicts.areas || []).join(", ") || "-"}</p>
           <p>Types: {(restoreResult.conflicts.types || []).join(", ") || "-"}</p>
@@ -357,8 +397,8 @@ export default function AdminPage() {
       )}
 
       <section className="card space-y-2">
-        <h2 className="font-semibold">CSV Import (Dry-run + Apply)</h2>
-        <p className="text-sm text-workshop-700">Die Kategorie kommt aus jeder CSV-Zeile. Hier waehlt man nur den Type fuer die ID-Vergabe.</p>
+        <h2 className="font-semibold">{tr("CSV Import (Dry-run + Apply)", "CSV Import (Dry run + Apply)")}</h2>
+        <p className="text-sm text-workshop-700">{tr("Die Kategorie kommt aus jeder CSV-Zeile. Hier waehlt man nur den Type fuer die ID-Vergabe.", "Category comes from each CSV row. Only the type for label generation is selected here.")}</p>
         <form
           className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
           onSubmit={async (e) => {
@@ -370,25 +410,25 @@ export default function AdminPage() {
         >
           <input className="input sm:col-span-2" type="file" name="file" accept=".csv,text/csv" required />
           <select className="input" name="typeId" required>
-            <option value="">Type</option>
+            <option value="">{tr("Type", "Type")}</option>
             {types.map((type) => (
               <option key={type.id} value={type.id}>
                 {type.code} - {type.name}
               </option>
             ))}
           </select>
-          <select className="input" name="dryRun"><option value="1">Dry-run</option><option value="0">Apply</option></select>
-          <button className="btn sm:col-span-2">Import starten</button>
+          <select className="input" name="dryRun"><option value="1">{tr("Dry-run", "Dry run")}</option><option value="0">{tr("Apply", "Apply")}</option></select>
+          <button className="btn sm:col-span-2">{tr("Import starten", "Start import")}</button>
         </form>
         {importResult && (
           <div className="space-y-2 rounded border border-workshop-200 p-2 text-sm">
             <p>
-              Rows: {importResult.totalRows} | Created: {importResult.created} | DryRun: {String(importResult.dryRun)}
-              {" "} | Errors: {importResult.errorsCount || 0} | Warnings: {importResult.warningsCount || 0}
+              {tr("Rows", "Rows")}: {importResult.totalRows} | {tr("Created", "Created")}: {importResult.created} | DryRun: {String(importResult.dryRun)}
+              {" "} | {tr("Errors", "Errors")}: {importResult.errorsCount || 0} | {tr("Warnings", "Warnings")}: {importResult.warningsCount || 0}
             </p>
             {!!importResult.createdItems?.length && (
               <p>
-                Angelegt: {importResult.createdItems.map((item: any) => `${item.labelCode} (${item.name})`).join(", ")}
+                {tr("Angelegt", "Created")}: {importResult.createdItems.map((item: any) => `${item.labelCode} (${item.name})`).join(", ")}
               </p>
             )}
             <div className="space-y-2">
@@ -398,15 +438,15 @@ export default function AdminPage() {
                   className={`rounded border px-3 py-2 ${row.status === "ready" ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}
                 >
                   <p className="font-medium">
-                    Zeile {row.lineNumber} - {row.status === "ready" ? "bereit" : "fehlerhaft"}
+                    {tr("Zeile", "Line")} {row.lineNumber} - {row.status === "ready" ? tr("bereit", "ready") : tr("fehlerhaft", "invalid")}
                   </p>
                   {row.input && (
                     <p>
                       {row.input.name} | {row.input.categoryName} | {row.input.locationName}
                     </p>
                   )}
-                  {!!row.errors?.length && <p className="text-red-700">Fehler: {row.errors.join(" | ")}</p>}
-                  {!!row.warnings?.length && <p className="text-amber-700">Warnungen: {row.warnings.join(" | ")}</p>}
+                  {!!row.errors?.length && <p className="text-red-700">{tr("Fehler", "Errors")}: {row.errors.join(" | ")}</p>}
+                  {!!row.warnings?.length && <p className="text-amber-700">{tr("Warnungen", "Warnings")}: {row.warnings.join(" | ")}</p>}
                 </div>
               ))}
             </div>
@@ -416,7 +456,7 @@ export default function AdminPage() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <section className="card space-y-2">
-          <h2 className="font-semibold">Kategorien</h2>
+          <h2 className="font-semibold">{tr("Kategorien", "Categories")}</h2>
           <ul className="space-y-1 text-sm">
             {categories.map((c) => (
               <li key={c.id} className="rounded border border-workshop-200 p-2">
@@ -428,15 +468,15 @@ export default function AdminPage() {
                       const { res, data } = await apiJson("/api/admin/categories", {
                         method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: c.id, name: editCategoryName, code: editCategoryCode })
                       });
-                      setFeedback(res.ok ? "Kategorie aktualisiert" : `Kategorie-Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                      setFeedback(res.ok ? tr("Kategorie aktualisiert", "Category updated") : tr(`Kategorie-Update fehlgeschlagen: ${data.error || unknownError}`, `Category update failed: ${data.error || unknownError}`));
                       if (res.ok) {
                         setCategories((prev) => sortByName(replaceById(prev, data)));
                         setEditCategoryId(null);
                         setEditCategoryName("");
                         setEditCategoryCode("");
                       }
-                    }}>Speichern</button>
-                    <button className="btn-secondary px-2" onClick={() => setEditCategoryId(null)}>Abbrechen</button>
+                    }}>{tr("Speichern", "Save")}</button>
+                    <button className="btn-secondary px-2" onClick={() => setEditCategoryId(null)}>{tr("Abbrechen", "Cancel")}</button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
@@ -444,18 +484,18 @@ export default function AdminPage() {
                       {c.name} ({c.code || "--"})
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
-                      <IconActionButton label="Kategorie bearbeiten" onClick={() => startEdit(c, "category")}>
+                      <IconActionButton label={tr("Kategorie bearbeiten", "Edit category")} onClick={() => startEdit(c, "category")}>
                         <PencilLine size={20} />
                       </IconActionButton>
                       <IconActionButton
-                        label="Kategorie loeschen"
+                        label={tr("Kategorie loeschen", "Delete category")}
                         onClick={async () => {
                           const { res, data } = await apiJson("/api/admin/categories", {
                             method: "DELETE",
                             headers: { "content-type": "application/json" },
                             body: JSON.stringify({ id: c.id })
                           });
-                          setFeedback(res.ok ? "Kategorie geloescht" : `Kategorie-Loeschen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Kategorie geloescht", "Category deleted") : tr(`Kategorie-Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Category delete failed: ${data.error || unknownError}`));
                           if (res.ok) setCategories((prev) => removeById(prev, c.id));
                         }}
                       >
@@ -476,15 +516,15 @@ export default function AdminPage() {
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ name: fd.get("name"), code: String(fd.get("code") || "").toUpperCase() })
             });
-            setFeedback(res.ok ? "Kategorie angelegt" : `Kategorie anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+            setFeedback(res.ok ? tr("Kategorie angelegt", "Category created") : tr(`Kategorie anlegen fehlgeschlagen: ${data.error || unknownError}`, `Category creation failed: ${data.error || unknownError}`));
             if (res.ok) {
               setCategories((prev) => sortByName([...prev, data]));
               formEl.reset();
             }
           }}>
-            <input className="input min-w-0" name="name" placeholder="Neue Kategorie" required />
-            <input className="input min-w-0" name="code" placeholder="Code" maxLength={2} required />
-            <button className="btn-secondary col-span-2" type="submit">Anlegen</button>
+            <input className="input min-w-0" name="name" placeholder={tr("Neue Kategorie", "New category")} required />
+            <input className="input min-w-0" name="code" placeholder={tr("Code", "Code")} maxLength={2} required />
+            <button className="btn-secondary col-span-2" type="submit">{tr("Anlegen", "Create")}</button>
           </form>
         </section>
 
@@ -505,7 +545,7 @@ export default function AdminPage() {
                           headers: { "content-type": "application/json" },
                           body: JSON.stringify({ id: type.id, name: editTypeName, code: editTypeCode })
                         });
-                        setFeedback(res.ok ? "Type aktualisiert" : `Type-Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                        setFeedback(res.ok ? tr("Type aktualisiert", "Type updated") : tr(`Type-Update fehlgeschlagen: ${data.error || unknownError}`, `Type update failed: ${data.error || unknownError}`));
                         if (res.ok) {
                           setTypes((prev) => sortByCodeThenName(replaceById(prev, data)));
                           setEditTypeId(null);
@@ -514,9 +554,9 @@ export default function AdminPage() {
                         }
                       }}
                     >
-                      Speichern
+                      {tr("Speichern", "Save")}
                     </button>
-                    <button className="btn-secondary px-2" onClick={() => setEditTypeId(null)}>Abbrechen</button>
+                    <button className="btn-secondary px-2" onClick={() => setEditTypeId(null)}>{tr("Abbrechen", "Cancel")}</button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
@@ -524,18 +564,18 @@ export default function AdminPage() {
                       {type.name} ({type.code || "--"})
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
-                      <IconActionButton label="Type bearbeiten" onClick={() => startEdit(type, "type")}>
+                      <IconActionButton label={tr("Type bearbeiten", "Edit type")} onClick={() => startEdit(type, "type")}>
                         <PencilLine size={20} />
                       </IconActionButton>
                       <IconActionButton
-                        label="Type loeschen"
+                        label={tr("Type loeschen", "Delete type")}
                         onClick={async () => {
                           const { res, data } = await apiJson("/api/admin/types", {
                             method: "DELETE",
                             headers: { "content-type": "application/json" },
                             body: JSON.stringify({ id: type.id })
                           });
-                          setFeedback(res.ok ? "Type geloescht" : `Type-Loeschen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Type geloescht", "Type deleted") : tr(`Type-Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Type delete failed: ${data.error || unknownError}`));
                           if (res.ok) setTypes((prev) => removeById(prev, type.id));
                         }}
                       >
@@ -558,21 +598,21 @@ export default function AdminPage() {
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ name: fd.get("name"), code: String(fd.get("code") || "").toUpperCase() })
               });
-              setFeedback(res.ok ? "Type angelegt" : `Type anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+              setFeedback(res.ok ? tr("Type angelegt", "Type created") : tr(`Type anlegen fehlgeschlagen: ${data.error || unknownError}`, `Type creation failed: ${data.error || unknownError}`));
               if (res.ok) {
                 setTypes((prev) => sortByCodeThenName([...prev, data]));
                 formEl.reset();
               }
             }}
           >
-            <input className="input min-w-0" name="name" placeholder="Neuer Type" required />
-            <input className="input min-w-0" name="code" placeholder="Code" maxLength={2} required />
-            <button className="btn-secondary col-span-2" type="submit">Anlegen</button>
+            <input className="input min-w-0" name="name" placeholder={tr("Neuer Type", "New type")} required />
+            <input className="input min-w-0" name="code" placeholder={tr("Code", "Code")} maxLength={2} required />
+            <button className="btn-secondary col-span-2" type="submit">{tr("Anlegen", "Create")}</button>
           </form>
         </section>
 
         <section className="card space-y-2">
-          <h2 className="font-semibold">Tags</h2>
+          <h2 className="font-semibold">{tr("Tags", "Tags")}</h2>
           <ul className="space-y-1 text-sm">
             {tags.map((t) => (
               <li key={t.id} className="rounded border border-workshop-200 p-2">
@@ -583,14 +623,14 @@ export default function AdminPage() {
                       const { res, data } = await apiJson("/api/admin/tags", {
                         method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: t.id, name: editTagName })
                       });
-                      setFeedback(res.ok ? "Tag aktualisiert" : `Tag-Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                      setFeedback(res.ok ? tr("Tag aktualisiert", "Tag updated") : tr(`Tag-Update fehlgeschlagen: ${data.error || unknownError}`, `Tag update failed: ${data.error || unknownError}`));
                       if (res.ok) {
                         setTags((prev) => sortByName(replaceById(prev, data)));
                         setEditTagId(null);
                         setEditTagName("");
                       }
-                    }}>Speichern</button>
-                    <button className="btn-secondary px-2" onClick={() => setEditTagId(null)}>Abbrechen</button>
+                    }}>{tr("Speichern", "Save")}</button>
+                    <button className="btn-secondary px-2" onClick={() => setEditTagId(null)}>{tr("Abbrechen", "Cancel")}</button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
@@ -598,18 +638,18 @@ export default function AdminPage() {
                       {t.name}
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
-                      <IconActionButton label="Tag bearbeiten" onClick={() => startEdit(t, "tag")}>
+                      <IconActionButton label={tr("Tag bearbeiten", "Edit tag")} onClick={() => startEdit(t, "tag")}>
                         <PencilLine size={20} />
                       </IconActionButton>
                       <IconActionButton
-                        label="Tag loeschen"
+                        label={tr("Tag loeschen", "Delete tag")}
                         onClick={async () => {
                           const { res, data } = await apiJson("/api/admin/tags", {
                             method: "DELETE",
                             headers: { "content-type": "application/json" },
                             body: JSON.stringify({ id: t.id })
                           });
-                          setFeedback(res.ok ? "Tag geloescht" : `Tag-Loeschen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Tag geloescht", "Tag deleted") : tr(`Tag-Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Tag delete failed: ${data.error || unknownError}`));
                           if (res.ok) setTags((prev) => removeById(prev, t.id));
                         }}
                       >
@@ -626,31 +666,31 @@ export default function AdminPage() {
             const formEl = e.currentTarget;
             const fd = new FormData(formEl);
             const { res, data } = await apiJson("/api/admin/tags", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name") }) });
-            setFeedback(res.ok ? "Tag angelegt" : `Tag anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+            setFeedback(res.ok ? tr("Tag angelegt", "Tag created") : tr(`Tag anlegen fehlgeschlagen: ${data.error || unknownError}`, `Tag creation failed: ${data.error || unknownError}`));
             if (res.ok) {
               setTags((prev) => sortByName([...prev, data]));
               formEl.reset();
             }
           }}>
-            <input className="input" name="name" placeholder="Neuer Tag" required />
-            <button className="btn-secondary" type="submit">Anlegen</button>
+            <input className="input" name="name" placeholder={tr("Neuer Tag", "New tag")} required />
+            <button className="btn-secondary" type="submit">{tr("Anlegen", "Create")}</button>
           </form>
         </section>
       </div>
 
       <section className="card space-y-2">
-        <h2 className="font-semibold">Read-only API Tokens</h2>
-        {newTokenValue && <div className="rounded border border-green-600 bg-green-50 p-2 text-sm">Neuer Token (nur jetzt sichtbar): <code className="break-all">{newTokenValue}</code></div>}
+        <h2 className="font-semibold">{tr("Read-only API Tokens", "Read-only API tokens")}</h2>
+        {newTokenValue && <div className="rounded border border-green-600 bg-green-50 p-2 text-sm">{tr("Neuer Token (nur jetzt sichtbar)", "New token (visible only now)")}: <code className="break-all">{newTokenValue}</code></div>}
         <ul className="space-y-1 text-sm">
           {apiTokens.map((t) => (
             <li key={t.id} className="rounded border border-workshop-200 p-2">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="break-words">{t.name} | {t.user?.email || t.userId} | aktiv: {String(t.isActive)}</span>
+                <span className="break-words">{t.name} | {t.user?.email || t.userId} | {tr("aktiv", "active")}: {String(t.isActive)}</span>
                 {t.isActive && <button className="btn-secondary px-2 py-1" onClick={async () => {
                   await fetch(`/api/admin/api-tokens/${t.id}`, { method: "DELETE" });
-                  setFeedback("API Token deaktiviert");
+                  setFeedback(tr("API Token deaktiviert", "API token deactivated"));
                   await load();
-                }}>deaktivieren</button>}
+                }}>{tr("deaktivieren", "Deactivate")}</button>}
               </div>
             </li>
           ))}
@@ -663,19 +703,19 @@ export default function AdminPage() {
             body: JSON.stringify({ name: fd.get("name"), userId: fd.get("userId") || undefined, expiresAt: fd.get("expiresAt") || undefined })
           });
           setNewTokenValue(data.token || "");
-          setFeedback(res.ok ? "API Token erstellt" : `Token erstellen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+          setFeedback(res.ok ? tr("API Token erstellt", "API token created") : tr(`Token erstellen fehlgeschlagen: ${data.error || unknownError}`, `Token creation failed: ${data.error || unknownError}`));
           e.currentTarget.reset();
           await load();
         }}>
-          <input className="input" name="name" placeholder="Token Name" required />
-          <select className="input" name="userId"><option value="">aktueller Admin</option>{users.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}</select>
+          <input className="input" name="name" placeholder={tr("Token Name", "Token name")} required />
+          <select className="input" name="userId"><option value="">{tr("aktueller Admin", "Current admin")}</option>{users.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}</select>
           <input className="input" name="expiresAt" type="datetime-local" />
-          <button className="btn-secondary">Token erstellen</button>
+          <button className="btn-secondary">{tr("Token erstellen", "Create token")}</button>
         </form>
       </section>
 
       <section className="card space-y-2">
-        <h2 className="font-semibold">Nutzerverwaltung</h2>
+        <h2 className="font-semibold">{tr("Nutzerverwaltung", "User management")}</h2>
         <ul className="space-y-1 text-sm">
           {users.map((u) => (
             <li key={u.id} className="rounded border border-workshop-200 p-2">
@@ -686,35 +726,35 @@ export default function AdminPage() {
                   <select className="input" value={editUser.role} onChange={(e) => setEditUser((v) => ({ ...v, role: e.target.value }))}>
                     <option value="READ">READ</option><option value="READ_WRITE">READ_WRITE</option><option value="ADMIN">ADMIN</option>
                   </select>
-                  <label className="text-sm"><input type="checkbox" checked={editUser.isActive} onChange={(e) => setEditUser((v) => ({ ...v, isActive: e.target.checked }))} /> aktiv</label>
-                  <input className="input" value={editUser.password} onChange={(e) => setEditUser((v) => ({ ...v, password: e.target.value }))} placeholder="Neues Passwort (optional)" />
+                  <label className="text-sm"><input type="checkbox" checked={editUser.isActive} onChange={(e) => setEditUser((v) => ({ ...v, isActive: e.target.checked }))} /> {tr("aktiv", "active")}</label>
+                  <input className="input" value={editUser.password} onChange={(e) => setEditUser((v) => ({ ...v, password: e.target.value }))} placeholder={tr("Neues Passwort (optional)", "New password (optional)")} />
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <button className="btn-secondary px-2" onClick={async () => {
                       const payload: any = { id: u.id, name: editUser.name, email: editUser.email, role: editUser.role, isActive: editUser.isActive };
                       if (editUser.password) payload.password = editUser.password;
                       const { res, data } = await apiJson("/api/admin/users", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-                      setFeedback(res.ok ? "Nutzer aktualisiert" : `Nutzer-Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                      setFeedback(res.ok ? tr("Nutzer aktualisiert", "User updated") : tr(`Nutzer-Update fehlgeschlagen: ${data.error || unknownError}`, `User update failed: ${data.error || unknownError}`));
                       if (res.ok) {
                         setUsers((prev) => replaceById(prev, data));
                         setEditUserId(null);
                         setEditUser({ name: "", email: "", role: "READ", isActive: true, password: "" });
                       }
-                    }}>Speichern</button>
-                    <button className="btn-secondary px-2" onClick={() => setEditUserId(null)}>Abbrechen</button>
+                    }}>{tr("Speichern", "Save")}</button>
+                    <button className="btn-secondary px-2" onClick={() => setEditUserId(null)}>{tr("Abbrechen", "Cancel")}</button>
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="break-words">{u.name} ({u.email}) - {u.role} - aktiv: {String(u.isActive)}</span>
+                  <span className="break-words">{u.name} ({u.email}) - {u.role} - {tr("aktiv", "active")}: {String(u.isActive)}</span>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <button className="btn-secondary px-2 py-1" onClick={() => startEdit(u, "user")}>Bearbeiten</button>
+                    <button className="btn-secondary px-2 py-1" onClick={() => startEdit(u, "user")}>{tr("Bearbeiten", "Edit")}</button>
                     <button className="btn-secondary px-2 py-1" onClick={async () => {
                       const { res, data } = await apiJson("/api/admin/users", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: u.id }) });
-                      setFeedback(res.ok ? "Nutzer deaktiviert" : `Nutzer deaktivieren fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                      setFeedback(res.ok ? tr("Nutzer deaktiviert", "User deactivated") : tr(`Nutzer deaktivieren fehlgeschlagen: ${data.error || unknownError}`, `User deactivation failed: ${data.error || unknownError}`));
                       if (res.ok) {
                         setUsers((prev) => prev.map((row) => (row.id === u.id ? { ...row, isActive: false } : row)));
                       }
-                    }}>Deaktivieren</button>
+                    }}>{tr("Deaktivieren", "Deactivate")}</button>
                   </div>
                 </div>
               )}
@@ -730,25 +770,25 @@ export default function AdminPage() {
             body: JSON.stringify({ name: fd.get("name"), email: fd.get("email"), password: fd.get("password"), role: fd.get("role") })
           });
           if (!res.ok) {
-            setFeedback(`Nutzer anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+            setFeedback(tr(`Nutzer anlegen fehlgeschlagen: ${data.error || unknownError}`, `User creation failed: ${data.error || unknownError}`));
             return;
           }
-          setFeedback("Nutzer angelegt");
+          setFeedback(tr("Nutzer angelegt", "User created"));
           setUsers((prev) => [data, ...prev]);
           setDash((prev: any) => (prev ? { ...prev, users: prev.users + 1 } : prev));
           formEl.reset();
         }}>
-          <input className="input" name="name" placeholder="Name" required />
-          <input className="input" name="email" placeholder="E-Mail" required />
-          <input className="input" name="password" placeholder="Passwort (mind. 8 Zeichen)" minLength={8} required />
+          <input className="input" name="name" placeholder={tr("Name", "Name")} required />
+          <input className="input" name="email" placeholder={tr("E-Mail", "Email")} required />
+          <input className="input" name="password" placeholder={tr("Passwort (mind. 8 Zeichen)", "Password (min. 8 characters)")} minLength={8} required />
           <select className="input" name="role"><option value="READ">READ</option><option value="READ_WRITE">READ_WRITE</option><option value="ADMIN">ADMIN</option></select>
-          <button className="btn-secondary" type="submit">Nutzer anlegen</button>
+          <button className="btn-secondary" type="submit">{tr("Nutzer anlegen", "Create user")}</button>
         </form>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="card space-y-2">
-          <h2 className="font-semibold">Lagerorte</h2>
+          <h2 className="font-semibold">{tr("Lagerorte", "Storage locations")}</h2>
           <ul className="space-y-1 text-sm">
             {locations.map((l) => (
               <li key={l.id} className="rounded border border-workshop-200 p-2">
@@ -760,15 +800,15 @@ export default function AdminPage() {
                       const { res, data } = await apiJson("/api/admin/locations", {
                         method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: l.id, name: editLocationName, code: editLocationCode })
                       });
-                      setFeedback(res.ok ? "Lagerort aktualisiert" : `Lagerort-Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                      setFeedback(res.ok ? tr("Lagerort aktualisiert", "Location updated") : tr(`Lagerort-Update fehlgeschlagen: ${data.error || unknownError}`, `Location update failed: ${data.error || unknownError}`));
                       if (res.ok) {
                         setLocations((prev) => sortByName(replaceById(prev, data)));
                         setEditLocationId(null);
                         setEditLocationName("");
                         setEditLocationCode("");
                       }
-                    }}>Speichern</button>
-                    <button className="btn-secondary" onClick={() => setEditLocationId(null)}>Abbrechen</button>
+                    }}>{tr("Speichern", "Save")}</button>
+                    <button className="btn-secondary" onClick={() => setEditLocationId(null)}>{tr("Abbrechen", "Cancel")}</button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
@@ -776,18 +816,18 @@ export default function AdminPage() {
                       {l.name} ({l.code || "--"})
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
-                      <IconActionButton label="Lagerort bearbeiten" onClick={() => startEdit(l, "location")}>
+                      <IconActionButton label={tr("Lagerort bearbeiten", "Edit location")} onClick={() => startEdit(l, "location")}>
                         <PencilLine size={20} />
                       </IconActionButton>
                       <IconActionButton
-                        label="Lagerort loeschen"
+                        label={tr("Lagerort loeschen", "Delete location")}
                         onClick={async () => {
                           const { res, data } = await apiJson("/api/admin/locations", {
                             method: "DELETE",
                             headers: { "content-type": "application/json" },
                             body: JSON.stringify({ id: l.id })
                           });
-                          setFeedback(res.ok ? "Lagerort geloescht" : `Lagerort-Loeschen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Lagerort geloescht", "Location deleted") : tr(`Lagerort-Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Location delete failed: ${data.error || unknownError}`));
                           if (res.ok) {
                             setLocations((prev) => removeById(prev, l.id));
                             setShelves((prev) => prev.filter((shelf) => shelf.storageLocationId !== l.id));
@@ -810,21 +850,21 @@ export default function AdminPage() {
             const { res, data } = await apiJson("/api/admin/locations", {
               method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name"), code: fd.get("code") })
             });
-            setFeedback(res.ok ? "Lagerort angelegt" : `Lagerort anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+            setFeedback(res.ok ? tr("Lagerort angelegt", "Location created") : tr(`Lagerort anlegen fehlgeschlagen: ${data.error || unknownError}`, `Location creation failed: ${data.error || unknownError}`));
             if (res.ok) {
               setLocations((prev) => sortByName([...prev, data]));
               setDash((prev: any) => (prev ? { ...prev, locations: prev.locations + 1 } : prev));
               formEl.reset();
             }
           }}>
-            <input className="input" name="name" placeholder="Name" required />
-            <input className="input" name="code" placeholder="Code" />
-            <button className="btn-secondary" type="submit">Anlegen</button>
+            <input className="input" name="name" placeholder={tr("Name", "Name")} required />
+            <input className="input" name="code" placeholder={tr("Code", "Code")} />
+            <button className="btn-secondary" type="submit">{tr("Anlegen", "Create")}</button>
           </form>
         </section>
 
         <section className="card space-y-2">
-          <h2 className="font-semibold">Regale</h2>
+          <h2 className="font-semibold">{tr("Regale", "Shelves")}</h2>
           <ul className="space-y-1 text-sm">
             {shelves.map((shelf) => (
               <li key={shelf.id} className="rounded border border-workshop-200 p-2">
@@ -846,7 +886,7 @@ export default function AdminPage() {
                           headers: { "content-type": "application/json" },
                           body: JSON.stringify({ id: shelf.id, name: editShelfName, storageLocationId: editShelfLocationId })
                         });
-                        setFeedback(res.ok ? "Regal aktualisiert" : `Regal-Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                        setFeedback(res.ok ? tr("Regal aktualisiert", "Shelf updated") : tr(`Regal-Update fehlgeschlagen: ${data.error || unknownError}`, `Shelf update failed: ${data.error || unknownError}`));
                         if (res.ok) {
                           setShelves((prev) => sortShelves(replaceById(prev, data as ShelfRow)));
                           setEditShelfId(null);
@@ -855,7 +895,7 @@ export default function AdminPage() {
                         }
                       }}
                     >
-                      Speichern
+                      {tr("Speichern", "Save")}
                     </button>
                     <button
                       className="btn-secondary px-2"
@@ -865,7 +905,7 @@ export default function AdminPage() {
                         setEditShelfLocationId("");
                       }}
                     >
-                      Abbrechen
+                      {tr("Abbrechen", "Cancel")}
                     </button>
                   </div>
                 ) : (
@@ -874,18 +914,18 @@ export default function AdminPage() {
                       {shelf.name} · {shelf.storageLocation?.name || "-"}
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
-                      <IconActionButton label="Regal bearbeiten" onClick={() => startEdit(shelf, "shelf")}>
+                      <IconActionButton label={tr("Regal bearbeiten", "Edit shelf")} onClick={() => startEdit(shelf, "shelf")}>
                         <PencilLine size={20} />
                       </IconActionButton>
                       <IconActionButton
-                        label="Regal loeschen"
+                        label={tr("Regal loeschen", "Delete shelf")}
                         onClick={async () => {
                           const { res, data } = await apiJson("/api/admin/shelves", {
                             method: "DELETE",
                             headers: { "content-type": "application/json" },
                             body: JSON.stringify({ id: shelf.id })
                           });
-                          setFeedback(res.ok ? "Regal geloescht" : `Regal-Loeschen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Regal geloescht", "Shelf deleted") : tr(`Regal-Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Shelf delete failed: ${data.error || unknownError}`));
                           if (res.ok) {
                             setShelves((prev) => removeById(prev, shelf.id));
                           }
@@ -898,7 +938,7 @@ export default function AdminPage() {
                 )}
               </li>
             ))}
-            {shelves.length === 0 && <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">Noch keine Regale angelegt.</li>}
+            {shelves.length === 0 && <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">{tr("Noch keine Regale angelegt.", "No shelves created yet.")}</li>}
           </ul>
           <form
             className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
@@ -911,7 +951,7 @@ export default function AdminPage() {
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ name: fd.get("name"), storageLocationId: fd.get("storageLocationId") })
               });
-              setFeedback(res.ok ? "Regal angelegt" : `Regal anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+              setFeedback(res.ok ? tr("Regal angelegt", "Shelf created") : tr(`Regal anlegen fehlgeschlagen: ${data.error || unknownError}`, `Shelf creation failed: ${data.error || unknownError}`));
               if (res.ok) {
                 setShelves((prev) => sortShelves([...(prev as ShelfRow[]), data as ShelfRow]));
                 formEl.reset();
@@ -928,7 +968,7 @@ export default function AdminPage() {
               disabled={!locations.length}
             >
               {locations.length === 0 ? (
-                <option value="">Erst Lagerort anlegen</option>
+                <option value="">{tr("Erst Lagerort anlegen", "Create a storage location first")}</option>
               ) : (
                 locations.map((location) => (
                   <option key={location.id} value={location.id}>
@@ -937,23 +977,23 @@ export default function AdminPage() {
                 ))
               )}
             </select>
-            <input className="input min-w-0" name="name" placeholder="Neues Regal" required disabled={!locations.length} />
+            <input className="input min-w-0" name="name" placeholder={tr("Neues Regal", "New shelf")} required disabled={!locations.length} />
             <button className="btn-secondary" type="submit" disabled={!locations.length}>
-              Anlegen
+              {tr("Anlegen", "Create")}
             </button>
           </form>
         </section>
 
         <section className="card space-y-2 xl:col-span-2">
-          <h2 className="font-semibold">Custom Fields</h2>
+          <h2 className="font-semibold">{tr("Custom Fields", "Custom fields")}</h2>
           <ul className="space-y-2 text-sm">
             {customFields.map((f) => (
               <li key={f.id} className="rounded border border-workshop-200 p-3">
                 {editCustomId === f.id ? (
                   <div className="space-y-2">
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)]">
-                      <input className="input min-w-0" value={editCustom.name} onChange={(e) => setEditCustom((v) => ({ ...v, name: e.target.value }))} placeholder="Name" />
-                      <input className="input min-w-0" value={editCustom.unit} onChange={(e) => setEditCustom((v) => ({ ...v, unit: e.target.value }))} placeholder="Einheit (optional)" />
+                      <input className="input min-w-0" value={editCustom.name} onChange={(e) => setEditCustom((v) => ({ ...v, name: e.target.value }))} placeholder={tr("Name", "Name")} />
+                      <input className="input min-w-0" value={editCustom.unit} onChange={(e) => setEditCustom((v) => ({ ...v, unit: e.target.value }))} placeholder={tr("Einheit (optional)", "Unit (optional)")} />
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                       <select className="input" value={editCustom.type} onChange={(e) => setEditCustom((v) => ({ ...v, type: e.target.value }))}>
@@ -965,7 +1005,7 @@ export default function AdminPage() {
                         <option>DATE</option>
                       </select>
                       <select className="input" value={editCustom.categoryId} onChange={(e) => setEditCustom((v) => ({ ...v, categoryId: e.target.value }))}>
-                        <option value="">Alle Kategorien</option>
+                        <option value="">{tr("Alle Kategorien", "All categories")}</option>
                         {categories.map((category) => (
                           <option key={category.id} value={category.id}>
                             {category.name} ({category.code || "--"})
@@ -973,7 +1013,7 @@ export default function AdminPage() {
                         ))}
                       </select>
                       <select className="input" value={editCustom.typeId} onChange={(e) => setEditCustom((v) => ({ ...v, typeId: e.target.value }))}>
-                        <option value="">Alle Types</option>
+                        <option value="">{tr("Alle Types", "All types")}</option>
                         {types.map((type) => (
                           <option key={type.id} value={type.id}>
                             {type.code} - {type.name}
@@ -986,14 +1026,14 @@ export default function AdminPage() {
                           checked={editCustom.required}
                           onChange={(e) => setEditCustom((v) => ({ ...v, required: e.target.checked }))}
                         />
-                        Pflichtfeld
+                        {tr("Pflichtfeld", "Required field")}
                       </label>
                     </div>
                     <input
                       className="input"
                       value={editCustom.optionsRaw}
                       onChange={(e) => setEditCustom((v) => ({ ...v, optionsRaw: e.target.value }))}
-                      placeholder="Optionen fuer SELECT/MULTI_SELECT: Rot|Gruen|Blau"
+                      placeholder={tr("Optionen fuer SELECT/MULTI_SELECT: Rot|Gruen|Blau", "Options for SELECT/MULTI_SELECT: Red|Green|Blue")}
                     />
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <button
@@ -1019,7 +1059,7 @@ export default function AdminPage() {
                               options
                             })
                           });
-                          setFeedback(res.ok ? "Custom Field aktualisiert" : `Custom Field Update fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Custom Field aktualisiert", "Custom field updated") : tr(`Custom Field Update fehlgeschlagen: ${data.error || unknownError}`, `Custom field update failed: ${data.error || unknownError}`));
                           if (res.ok) {
                             setCustomFields((prev) => sortByName(replaceById(prev, data)));
                             setEditCustomId(null);
@@ -1035,10 +1075,10 @@ export default function AdminPage() {
                           }
                         }}
                       >
-                        Speichern
+                        {tr("Speichern", "Save")}
                       </button>
                       <button className="btn-secondary" onClick={() => setEditCustomId(null)}>
-                        Abbrechen
+                        {tr("Abbrechen", "Cancel")}
                       </button>
                     </div>
                   </div>
@@ -1051,11 +1091,11 @@ export default function AdminPage() {
                       </p>
                       <p className="theme-muted text-xs">
                         {f.type} • {describeCustomFieldScope(f)}
-                        {f.required ? " • Pflicht" : ""}
+                        {f.required ? ` • ${tr("Pflicht", "Required")}` : ""}
                       </p>
                       {f.options ? (
                         <p className="theme-muted truncate text-xs">
-                          Optionen: {(() => {
+                          {tr("Optionen", "Options")}: {(() => {
                             try {
                               const parsed = JSON.parse(f.options);
                               return Array.isArray(parsed) ? parsed.join(", ") : String(parsed);
@@ -1067,18 +1107,18 @@ export default function AdminPage() {
                       ) : null}
                     </div>
                     <div className="flex shrink-0 gap-2">
-                      <IconActionButton label="Custom Field bearbeiten" onClick={() => startEdit(f, "custom")}>
+                      <IconActionButton label={tr("Custom Field bearbeiten", "Edit custom field")} onClick={() => startEdit(f, "custom")}>
                         <PencilLine size={20} />
                       </IconActionButton>
                       <IconActionButton
-                        label="Custom Field loeschen"
+                        label={tr("Custom Field loeschen", "Delete custom field")}
                         onClick={async () => {
                           const { res, data } = await apiJson("/api/admin/custom-fields", {
                             method: "DELETE",
                             headers: { "content-type": "application/json" },
                             body: JSON.stringify({ id: f.id })
                           });
-                          setFeedback(res.ok ? "Custom Field geloescht" : `Custom Field Loeschen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+                          setFeedback(res.ok ? tr("Custom Field geloescht", "Custom field deleted") : tr(`Custom Field Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Custom field delete failed: ${data.error || unknownError}`));
                           if (res.ok) setCustomFields((prev) => removeById(prev, f.id));
                         }}
                       >
@@ -1089,7 +1129,7 @@ export default function AdminPage() {
                 )}
               </li>
             ))}
-            {customFields.length === 0 && <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">Noch keine Custom Fields angelegt.</li>}
+            {customFields.length === 0 && <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">{tr("Noch keine Custom Fields angelegt.", "No custom fields created yet.")}</li>}
           </ul>
           <form
             className="space-y-2"
@@ -1116,7 +1156,7 @@ export default function AdminPage() {
                     : null
                 })
               });
-              setFeedback(res.ok ? "Custom Field angelegt" : `Custom Field anlegen fehlgeschlagen: ${data.error || "Unbekannt"}`);
+              setFeedback(res.ok ? tr("Custom Field angelegt", "Custom field created") : tr(`Custom Field anlegen fehlgeschlagen: ${data.error || unknownError}`, `Custom field creation failed: ${data.error || unknownError}`));
               if (res.ok) {
                 setCustomFields((prev) => sortByName([...(prev as CustomFieldRow[]), data as CustomFieldRow]));
                 formEl.reset();
@@ -1124,8 +1164,8 @@ export default function AdminPage() {
             }}
           >
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)]">
-              <input className="input min-w-0" name="name" placeholder="Name" required />
-              <input className="input min-w-0" name="unit" placeholder="Einheit (optional)" />
+              <input className="input min-w-0" name="name" placeholder={tr("Name", "Name")} required />
+              <input className="input min-w-0" name="unit" placeholder={tr("Einheit (optional)", "Unit (optional)")} />
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <select className="input" name="type">
@@ -1137,7 +1177,7 @@ export default function AdminPage() {
                 <option>DATE</option>
               </select>
               <select className="input" name="categoryId" defaultValue="">
-                <option value="">Alle Kategorien</option>
+                <option value="">{tr("Alle Kategorien", "All categories")}</option>
                 {categories.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name} ({category.code || "--"})
@@ -1145,7 +1185,7 @@ export default function AdminPage() {
                 ))}
               </select>
               <select className="input" name="typeId" defaultValue="">
-                <option value="">Alle Types</option>
+                <option value="">{tr("Alle Types", "All types")}</option>
                 {types.map((type) => (
                   <option key={type.id} value={type.id}>
                     {type.code} - {type.name}
@@ -1154,20 +1194,59 @@ export default function AdminPage() {
               </select>
               <label className="inline-flex items-center gap-2 rounded border border-workshop-200 px-3 py-2 text-sm">
                 <input type="checkbox" name="required" />
-                Pflichtfeld
+                {tr("Pflichtfeld", "Required field")}
               </label>
             </div>
-            <input className="input" name="options" placeholder="Optionen fuer SELECT/MULTI_SELECT: Rot|Gruen|Blau" />
+            <input className="input" name="options" placeholder={tr("Optionen fuer SELECT/MULTI_SELECT: Rot|Gruen|Blau", "Options for SELECT/MULTI_SELECT: Red|Green|Blue")} />
             <button className="btn-secondary" type="submit">
-              Anlegen
+              {tr("Anlegen", "Create")}
             </button>
           </form>
         </section>
       </div>
 
       {labelConfig && (
+        <>
+        <section className="card space-y-3">
+          <h2 className="font-semibold">{t("adminAppSettingsTitle")}</h2>
+          <p className="theme-muted text-sm">{t("adminLanguageHint")}</p>
+          <form
+            className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const { res, data } = await apiJson("/api/admin/app-language", {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ language: appLanguageDraft })
+              });
+              setFeedback(res.ok ? tr("App-Sprache gespeichert", "App language saved") : tr(`App-Sprache fehlgeschlagen: ${data.error || unknownError}`, `App language failed: ${data.error || unknownError}`));
+              if (res.ok) {
+                setLanguage(data.language);
+                setAppLanguageDraft(data.language);
+              }
+            }}
+          >
+            <label className="text-sm">
+              {t("adminLanguageLabel")}
+              <select
+                className="input mt-1"
+                value={appLanguageDraft}
+                onChange={(e) => setAppLanguageDraft(e.target.value as AppLanguage)}
+                aria-label={t("adminLanguageLabel")}
+              >
+                {appLanguageOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="btn">{t("adminLanguageSave")}</button>
+          </form>
+        </section>
+
         <section className="card space-y-2">
-          <h2 className="font-semibold">Label-Code Einstellungen</h2>
+          <h2 className="font-semibold">{t("adminLabelConfigTitle")}</h2>
           <form className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
@@ -1178,18 +1257,21 @@ export default function AdminPage() {
                 delimiter: fd.get("delimiter"), regenerateOnType: !!fd.get("regenerateOnType")
               })
             });
-            setFeedback(res.ok ? "Label-Code Einstellungen gespeichert" : `Label-Code Einstellungen fehlgeschlagen: ${data.error || "Unbekannt"}`);
-            if (res.ok) setLabelConfig(data);
+            setFeedback(res.ok ? tr("Label-Code Einstellungen gespeichert", "Label code settings saved") : tr(`Label-Code Einstellungen fehlgeschlagen: ${data.error || unknownError}`, `Label code settings failed: ${data.error || unknownError}`));
+            if (res.ok) {
+              setLabelConfig(data);
+            }
           }}>
             <input className="input" name="separator" defaultValue={labelConfig.separator} placeholder="-" />
             <input className="input" name="digits" type="number" min={2} max={6} defaultValue={labelConfig.digits} />
-            <input className="input" name="prefix" defaultValue={labelConfig.prefix || ""} placeholder="Prefix" />
-            <input className="input" name="suffix" defaultValue={labelConfig.suffix || ""} placeholder="Suffix" />
-            <input className="input" name="delimiter" defaultValue={labelConfig.delimiter || ";"} placeholder="CSV Delimiter" />
-            <label className="text-sm sm:col-span-2 xl:col-span-1"><input type="checkbox" name="regenerateOnType" defaultChecked={labelConfig.regenerateOnType} /> Neuen Code bei Kategorie/Type Aenderung</label>
-            <button className="btn sm:col-span-2 xl:col-span-2">Speichern</button>
+            <input className="input" name="prefix" defaultValue={labelConfig.prefix || ""} placeholder={tr("Prefix", "Prefix")} />
+            <input className="input" name="suffix" defaultValue={labelConfig.suffix || ""} placeholder={tr("Suffix", "Suffix")} />
+            <input className="input" name="delimiter" defaultValue={labelConfig.delimiter || ";"} placeholder={tr("CSV Delimiter", "CSV delimiter")} />
+            <label className="text-sm sm:col-span-2 xl:col-span-1"><input type="checkbox" name="regenerateOnType" defaultChecked={labelConfig.regenerateOnType} /> {tr("Neuen Code bei Kategorie/Type Aenderung", "Generate new code when category/type changes")}</label>
+            <button className="btn sm:col-span-2 xl:col-span-2">{tr("Speichern", "Save")}</button>
           </form>
         </section>
+        </>
       )}
     </div>
   );

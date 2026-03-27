@@ -20,7 +20,6 @@ export const itemSchema = z.object({
   mpn: z.string().max(180).optional().nullable(),
   datasheetUrl: z.string().url().optional().nullable(),
   purchaseUrl: z.string().url().optional().nullable(),
-  barcodeEan: z.string().max(64).optional().nullable(),
   typeId: z.string().uuid(),
   tagIds: z.array(z.string().uuid()).default([]),
   customValues: z.record(z.any()).optional().default({})
@@ -139,6 +138,10 @@ export const labelTypeCreateSchema = z.object({
 
 export const labelTypeUpdateSchema = labelTypeCreateSchema.extend({
   id: uuidSchema
+});
+
+export const appLanguageSchema = z.object({
+  language: z.enum(["de", "en"])
 });
 
 export const labelConfigSchema = z.object({

@@ -39,7 +39,6 @@ export async function GET(req: NextRequest) {
         minStock: item.minStock,
         manufacturer: item.manufacturer,
         mpn: item.mpn,
-        barcodeEan: item.barcodeEan,
         tags: item.tags.map((t) => t.tag.name).join("|")
       };
     }).filter((row) => (lowStockOnly ? row.minStock !== null && Number(row.available) <= Number(row.minStock) : true)),

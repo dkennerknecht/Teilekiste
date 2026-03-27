@@ -37,8 +37,7 @@ export async function POST(req: NextRequest) {
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   const duplicateValues = rows.flatMap((row) => [
     String(row.name || "").trim().toLowerCase(),
-    String(row.mpn || "").trim().toLowerCase(),
-    String(row.barcodeEan || "").trim().toLowerCase()
+    String(row.mpn || "").trim().toLowerCase()
   ]).filter(Boolean);
 
   const duplicateCandidates = duplicateValues.length
@@ -48,17 +47,16 @@ export async function POST(req: NextRequest) {
           isArchived: false,
           OR: duplicateValues.flatMap((value) => [
             { name: { equals: value } },
-            { mpn: { equals: value } },
-            { barcodeEan: { equals: value } }
+            { mpn: { equals: value } }
           ]) as never
         },
-        select: { id: true, labelCode: true, name: true, mpn: true, barcodeEan: true }
+        select: { id: true, labelCode: true, name: true, mpn: true }
       })
     : [];
 
   const duplicateCandidatesByKey = new Map<string, Array<{ id: string; labelCode: string; name: string }>>();
   for (const candidate of duplicateCandidates) {
-    for (const key of [candidate.name, candidate.mpn, candidate.barcodeEan].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)) {
+    for (const key of [candidate.name, candidate.mpn].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)) {
       const entries = duplicateCandidatesByKey.get(key) || [];
       entries.push({ id: candidate.id, labelCode: candidate.labelCode, name: candidate.name });
       duplicateCandidatesByKey.set(key, entries);

@@ -12,7 +12,17 @@ import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { orderedImageIdsSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
 
-const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+
+function collectUploadFiles(formData: FormData) {
+  const entries = formData.getAll("files");
+  if (entries.length > 0) {
+    return entries.filter((entry): entry is File => entry instanceof File && entry.size > 0);
+  }
+
+  const single = formData.get("file");
+  return single instanceof File && single.size > 0 ? [single] : [];
+}
 
 async function checkItemAccess(itemId: string, user: { id: string; role: string }) {
   const item = await prisma.item.findUnique({ where: { id: itemId } });
@@ -34,21 +44,37 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (access.error) return access.error;
 
   const formData = await req.formData();
-  const file = formData.get("file");
+  const files = collectUploadFiles(formData);
   const caption = String(formData.get("caption") || "");
-  if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
+  if (!files.length) return NextResponse.json({ error: "Missing file" }, { status: 400 });
 
-  if (!allowed.has(file.type)) return NextResponse.json({ error: "Invalid MIME" }, { status: 400 });
-  if (file.size > env.MAX_UPLOAD_SIZE_MB * 1024 * 1024) return NextResponse.json({ error: "File too large" }, { status: 400 });
+  for (const file of files) {
+    if (!allowed.has(file.type)) return NextResponse.json({ error: "Invalid MIME" }, { status: 400 });
+    if (file.size > env.MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      return NextResponse.json({ error: "File too large" }, { status: 400 });
+    }
+  }
 
-  const ext = mime.extension(file.type) || "bin";
-  const baseName = `${randomUUID()}.${ext}`;
-  const target = path.join(env.UPLOAD_DIR, params.id, baseName);
-  const thumb = path.join(env.UPLOAD_DIR, params.id, `thumb-${baseName}.jpg`);
+  const preparedFiles = await Promise.all(
+    files.map(async (file) => {
+      const ext = mime.extension(file.type) || "bin";
+      const baseName = `${randomUUID()}.${ext}`;
+      const target = path.join(env.UPLOAD_DIR, params.id, baseName);
+      const thumb = path.join(env.UPLOAD_DIR, params.id, `thumb-${baseName}.jpg`);
+      const buffer = Buffer.from(await file.arrayBuffer());
+      return {
+        file,
+        buffer,
+        target,
+        thumb
+      };
+    })
+  );
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await saveFile(buffer, target);
-  await sharp(buffer).resize(480).jpeg({ quality: 80 }).toFile(thumb);
+  for (const prepared of preparedFiles) {
+    await saveFile(prepared.buffer, prepared.target);
+    await sharp(prepared.buffer).resize(480).jpeg({ quality: 80 }).toFile(prepared.thumb);
+  }
 
   const created = await prisma.$transaction(async (tx) => {
     const images = await tx.itemImage.findMany({
@@ -57,18 +83,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       select: { id: true }
     });
 
-    return tx.itemImage.create({
-      data: {
-        itemId: params.id,
-        path: target,
-        thumbPath: thumb,
-        isPrimary: images.length === 0,
-        sortOrder: images.length,
-        mime: file.type,
-        size: file.size,
-        caption: caption || null
-      }
-    });
+    const sharedCaption = files.length === 1 ? caption || null : null;
+    const createdImages = [];
+
+    for (let index = 0; index < preparedFiles.length; index += 1) {
+      const prepared = preparedFiles[index];
+      createdImages.push(
+        await tx.itemImage.create({
+          data: {
+            itemId: params.id,
+            path: prepared.target,
+            thumbPath: prepared.thumb,
+            isPrimary: images.length === 0 && index === 0,
+            sortOrder: images.length + index,
+            mime: prepared.file.type,
+            size: prepared.file.size,
+            caption: sharedCaption
+          }
+        })
+      );
+    }
+
+    return createdImages;
   });
 
   return NextResponse.json(created, { status: 201 });

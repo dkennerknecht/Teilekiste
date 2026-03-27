@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import {
+  Archive,
   ArrowLeft,
   CalendarDays,
   FolderOpen,
   Layers,
   Tag,
   User,
-  Barcode,
   Trash2,
   PencilLine,
   Save,
@@ -19,10 +20,10 @@ import {
   MapPin,
   Package2,
   Minus,
-  Plus
+  Plus,
+  RotateCcw
 } from "lucide-react";
 import { ItemImageGallery } from "@/components/item-image-gallery";
-import { ItemBomSection } from "@/components/item-bom-section";
 import { ItemAuditSection } from "@/components/item-audit-section";
 import { resolveCategoryCode } from "@/lib/label-catalog";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
@@ -33,6 +34,18 @@ type CategoryOption = { id: string; name: string; code?: string | null };
 type LocationOption = { id: string; name: string; code?: string | null };
 type ShelfOption = { id: string; name: string; storageLocationId: string };
 type TypeOption = { id: string; code: string; name: string };
+
+const movementReasonOptions = [
+  { value: "PURCHASE", label: "Einkauf" },
+  { value: "CONSUMPTION", label: "Verbrauch" },
+  { value: "CORRECTION", label: "Korrektur" },
+  { value: "INVENTORY", label: "Inventur" },
+  { value: "RESERVATION", label: "Reservierung" }
+] as const;
+
+function getMovementReasonLabel(reason: string) {
+  return movementReasonOptions.find((entry) => entry.value === reason)?.label || reason;
+}
 
 function buildItemFormState(data: any) {
   return {
@@ -45,7 +58,6 @@ function buildItemFormState(data: any) {
     minStock: data.minStock ?? "",
     manufacturer: data.manufacturer || "",
     mpn: data.mpn || "",
-    barcodeEan: data.barcodeEan || "",
     tagIds: (data.tags || []).map((t: any) => t.tagId),
     typeId: "",
     labelNumber: "",
@@ -54,6 +66,7 @@ function buildItemFormState(data: any) {
 }
 
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const [item, setItem] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState<any>(null);
@@ -73,6 +86,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [creatingTag, setCreatingTag] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveError, setArchiveError] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
 
@@ -133,14 +148,26 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     const movements = (item.movements || []).map((m: any) => ({
       id: `m-${m.id}`,
       createdAt: m.createdAt,
-      text: `${m.delta > 0 ? `+${m.delta}` : m.delta} (${m.reason}) ${m.note || ""}`.trim()
+      text: `${m.delta > 0 ? `+${m.delta}` : m.delta} (${getMovementReasonLabel(m.reason)}) ${m.note || ""}`.trim()
     }));
-    const reservations = (item.reservations || []).map((r: any) => ({
-      id: `r-${r.id}`,
-      createdAt: r.createdAt,
-      text: `Reservierung: ${r.reservedQty} x ${r.reservedFor}`
+    const reservationCreateIds = new Set(
+      (item.reservationHistoryEntries || [])
+        .filter((entry: any) => entry.action === "RESERVATION_CREATE" && entry.reservationId)
+        .map((entry: any) => entry.reservationId)
+    );
+    const reservationHistoryEntries = (item.reservationHistoryEntries || []).map((entry: any) => ({
+      id: `ra-${entry.id}`,
+      createdAt: entry.createdAt,
+      text: entry.text
     }));
-    return [...movements, ...reservations].sort(
+    const legacyReservations = (item.reservations || [])
+      .filter((reservation: any) => !reservationCreateIds.has(reservation.id))
+      .map((reservation: any) => ({
+        id: `r-${reservation.id}`,
+        createdAt: reservation.createdAt,
+        text: `Reservierung: ${reservation.reservedQty} x ${reservation.reservedFor}`
+      }));
+    return [...movements, ...reservationHistoryEntries, ...legacyReservations].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [item]);
@@ -167,6 +194,15 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   if (!item || !form) return <p>Lade...</p>;
 
   const owner = item.movements?.[0]?.user?.name || item.movements?.[0]?.user?.email || "-";
+  const displayName = String((editMode ? form.name : item.name) || item.name || "Item").trim() || "Item";
+  const showGallery = editMode || (item.images || []).length > 0;
+  const hasDescription = Boolean(String(item.description || "").trim());
+  const hasManufacturer = Boolean(String(item.manufacturer || "").trim());
+  const hasMpn = Boolean(String(item.mpn || "").trim());
+  const hasStorageArea = Boolean(String(item.storageArea || "").trim());
+  const hasBin = Boolean(String(item.bin || "").trim());
+  const hasTags = (item.tags || []).length > 0;
+  const hasCustomFieldValues = itemCustomValues.length > 0;
 
   async function quickStockAdjust(deltaValue: number) {
     await fetch(`/api/items/${item.id}/movements`, {
@@ -205,6 +241,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   async function setArchiveState(nextArchived: boolean) {
     setArchiveBusy(true);
     setArchiveError("");
+    setDeleteError("");
 
     const res = await fetch("/api/items/bulk", {
       method: "POST",
@@ -227,29 +264,71 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     await load();
   }
 
+  async function deleteItem() {
+    if (deleteBusy) return;
+    const confirmed = window.confirm("Item in den Papierkorb verschieben?");
+    if (!confirmed) return;
+
+    setDeleteBusy(true);
+    setDeleteError("");
+    setArchiveError("");
+    setSaveError("");
+
+    try {
+      const res = await fetch(`/api/items/${item.id}`, {
+        method: "DELETE"
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setDeleteError(data?.error || "Loeschen fehlgeschlagen.");
+        setDeleteBusy(false);
+        return;
+      }
+
+      router.push("/");
+      router.refresh();
+    } catch {
+      setDeleteError("Loeschen fehlgeschlagen.");
+      setDeleteBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-4 text-[var(--app-text)]">
       <div className="rounded-xl border border-workshop-200 bg-workshop-50 px-3 py-3 sm:px-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <button className="mt-0.5 text-workshop-800" onClick={() => window.history.back()}>
-              <ArrowLeft size={22} />
-            </button>
-            <div>
-              <p className="theme-muted text-sm">Inventar / {item.category?.name || "Item"}</p>
-              <h1 className="text-xl font-semibold leading-6 text-[var(--app-text)]">{editMode ? "Item bearbeiten" : "Item Details"}</h1>
-              {item.isArchived && (
-                <span className="theme-status-warning mt-2 inline-flex rounded-full border border-transparent px-3 py-1 text-xs font-medium">
-                  Archiviert
-                </span>
-              )}
+        <div className="grid grid-cols-[auto,1fr,auto] items-start gap-3 sm:gap-4">
+          <button
+            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-workshop-300 bg-[var(--app-surface)] text-workshop-800 shadow-sm transition-colors hover:bg-[var(--app-surface-alt)] sm:h-14 sm:w-14"
+            onClick={() => window.history.back()}
+            aria-label="Zurueck"
+          >
+            <ArrowLeft size={30} />
+          </button>
+
+          <div className="min-w-0">
+            <p className="theme-muted text-sm">Inventar / {item.category?.name || "Item"}</p>
+            <h1 className="mt-1 break-words text-2xl font-semibold leading-tight text-[var(--app-text)] sm:text-4xl">
+              {displayName}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-workshop-300 bg-[var(--app-surface)] px-3 py-1 text-sm font-medium text-[var(--app-text)]">
+                {item.labelCode}
+              </span>
+              <span className="theme-muted text-sm">{editMode ? "Item bearbeiten" : "Item Details"}</span>
             </div>
+            {item.isArchived && (
+              <span className="theme-status-warning mt-2 inline-flex rounded-full border border-transparent px-3 py-1 text-xs font-medium">
+                Archiviert
+              </span>
+            )}
           </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+
+          <div className={`flex shrink-0 flex-col gap-2 justify-self-end ${editMode ? "sm:flex-row" : ""}`}>
             {editMode ? (
               <>
                 <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-workshop-300 bg-[var(--app-surface)] px-4 py-2 text-sm font-medium text-[var(--app-text)] sm:w-auto"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-workshop-300 bg-[var(--app-surface)] px-4 py-2 text-sm font-medium text-[var(--app-text)]"
                   onClick={() => {
                     setEditMode(false);
                     setSaveError("");
@@ -259,7 +338,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   <X size={16} /> Abbrechen
                 </button>
                 <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--app-primary)] px-4 py-2 text-sm font-medium text-[var(--app-on-primary)] sm:w-auto"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--app-primary)] px-4 py-2 text-sm font-medium text-[var(--app-on-primary)]"
                   disabled={saveBusy}
                   onClick={async () => {
                     setSaveBusy(true);
@@ -280,7 +359,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         bin: form.bin,
                         manufacturer: form.manufacturer,
                         mpn: form.mpn,
-                        barcodeEan: form.barcodeEan,
                         tagIds: form.tagIds,
                         minStock: form.minStock === "" ? null : Number(form.minStock),
                         customValues: form.customValues,
@@ -312,36 +390,53 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
             ) : (
               <>
                 <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-workshop-300 bg-[var(--app-surface)] px-4 py-2 text-sm font-medium text-[var(--app-text)] sm:w-auto"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-workshop-300 bg-[var(--app-surface)] text-[var(--app-text)] sm:h-12 sm:w-12"
                   onClick={() => setArchiveState(!item.isArchived)}
-                  disabled={archiveBusy}
+                  disabled={archiveBusy || deleteBusy}
+                  aria-label={item.isArchived ? "Wiederherstellen" : "Archivieren"}
+                  title={item.isArchived ? "Wiederherstellen" : "Archivieren"}
                 >
-                  {archiveBusy ? (item.isArchived ? "Stellt wieder her..." : "Archiviert...") : item.isArchived ? "Wiederherstellen" : "Archivieren"}
+                  {item.isArchived ? <RotateCcw size={18} /> : <Archive size={18} />}
                 </button>
                 <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--app-primary)] px-4 py-2 text-sm font-medium text-[var(--app-on-primary)] sm:w-auto"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--app-primary)] text-[var(--app-on-primary)] sm:h-12 sm:w-12"
                   onClick={() => setEditMode(true)}
+                  disabled={deleteBusy}
+                  aria-label="Bearbeiten"
+                  title="Bearbeiten"
                 >
-                  <PencilLine size={16} /> Bearbeiten
+                  <PencilLine size={18} />
+                </button>
+                <button
+                  className="theme-status-danger inline-flex h-11 w-11 items-center justify-center rounded-xl border border-transparent sm:h-12 sm:w-12"
+                  onClick={deleteItem}
+                  disabled={deleteBusy}
+                  aria-label="Loeschen"
+                  title="Loeschen"
+                >
+                  <Trash2 size={18} />
                 </button>
               </>
             )}
           </div>
         </div>
         {archiveError && <p className="mt-3 text-sm text-red-700">{archiveError}</p>}
+        {deleteError && <p className="mt-3 text-sm text-red-700">{deleteError}</p>}
         {saveError && <p className="mt-3 text-sm text-red-700">{saveError}</p>}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
-        <section>
-          <ItemImageGallery
-            itemId={item.id}
-            itemName={item.name}
-            images={item.images || []}
-            editMode={editMode}
-            onReload={load}
-          />
-        </section>
+      <div className={`grid gap-6 ${showGallery ? "lg:grid-cols-[1fr_1.4fr]" : ""}`}>
+        {showGallery && (
+          <section>
+            <ItemImageGallery
+              itemId={item.id}
+              itemName={item.name}
+              images={item.images || []}
+              editMode={editMode}
+              onReload={load}
+            />
+          </section>
+        )}
 
         <section className="space-y-3">
           <div className="theme-muted grid grid-cols-1 gap-2 rounded-xl border border-workshop-200 bg-workshop-50 p-3 text-sm sm:text-[16px] md:grid-cols-3">
@@ -351,17 +446,19 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           </div>
 
           <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
-            <h2 className="mb-4 inline-flex items-center gap-2 text-[26px] font-semibold text-[var(--app-text)] sm:text-[34px]"><FolderOpen size={18} /> Details</h2>
+            <div className="mb-4 border-b border-workshop-200 pb-4">
+              <h2 className="inline-flex items-center gap-2 text-[26px] font-semibold text-[var(--app-text)] sm:text-[34px]"><FolderOpen size={18} /> Details</h2>
+              <p className="mt-2 break-words text-xl font-semibold text-[var(--app-text)] sm:text-2xl">{displayName}</p>
+              <p className="theme-muted mt-1 text-sm font-mono">{item.labelCode}</p>
+            </div>
 
             <div className="space-y-4 text-[var(--app-text)]">
+              {editMode && (
               <div>
                 <p className="theme-muted mb-1 text-[18px] font-medium">Name</p>
-                {editMode ? (
-                  <input className="input text-lg" value={form.name} onChange={(e) => setForm((v: any) => ({ ...v, name: e.target.value }))} />
-                ) : (
-                  <p className="text-xl">{item.name}</p>
-                )}
+                <input className="input text-lg" value={form.name} onChange={(e) => setForm((v: any) => ({ ...v, name: e.target.value }))} />
               </div>
+              )}
 
               <div>
                 <p className="theme-muted mb-1 text-[18px] font-medium"># ID</p>
@@ -400,16 +497,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 )}
               </div>
 
-              <div>
-                <p className="theme-muted mb-1 text-[18px] font-medium">Beschreibung</p>
-                {editMode ? (
-                  <textarea className="input min-h-28" value={form.description} onChange={(e) => setForm((v: any) => ({ ...v, description: e.target.value }))} />
-                ) : (
-                  <div className="text-lg leading-8 text-[var(--app-text)]">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{item.description || "-"}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
+              {(editMode || hasDescription) && (
+                <div>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">Beschreibung</p>
+                  {editMode ? (
+                    <textarea className="input min-h-28" value={form.description} onChange={(e) => setForm((v: any) => ({ ...v, description: e.target.value }))} />
+                  ) : (
+                    <div className="text-lg leading-8 text-[var(--app-text)]">
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{item.description}</ReactMarkdown>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
                 <div>
@@ -444,160 +543,149 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   )}
                 </div>
 
-                <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
-                  {editMode ? (
-                    <input className="input" value={form.manufacturer} onChange={(e) => setForm((v: any) => ({ ...v, manufacturer: e.target.value }))} />
-                  ) : (
-                    <p className="text-lg font-medium text-[var(--app-text)]">{item.manufacturer || "-"}</p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">MPN</p>
-                  {editMode ? (
-                    <input className="input" value={form.mpn} onChange={(e) => setForm((v: any) => ({ ...v, mpn: e.target.value }))} />
-                  ) : (
-                  <p className="text-lg font-mono text-[var(--app-text)]">{item.mpn || "-"}</p>
-                )}
               </div>
 
-              <div>
-                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><Barcode size={15} /> EAN</p>
-                  {editMode ? (
-                    <input className="input" value={form.barcodeEan} onChange={(e) => setForm((v: any) => ({ ...v, barcodeEan: e.target.value }))} />
-                  ) : (
-                    <p className="text-lg font-mono text-[var(--app-text)]">{item.barcodeEan || "-"}</p>
+              {(editMode || hasManufacturer || hasMpn) && (
+                <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
+                  {(editMode || hasManufacturer) && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
+                      {editMode ? (
+                        <input className="input" value={form.manufacturer} onChange={(e) => setForm((v: any) => ({ ...v, manufacturer: e.target.value }))} />
+                      ) : (
+                        <p className="text-lg font-medium text-[var(--app-text)]">{item.manufacturer}</p>
+                      )}
+                    </div>
                   )}
-                </div>
-              </div>
 
-              <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
-                <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">Regal / Bereich</p>
-                  {editMode ? (
-                    <select className="input" value={form.storageArea} onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}>
-                      <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
-                      {availableShelves.map((shelf) => (
-                        <option key={shelf.id} value={shelf.name}>
-                          {shelf.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="text-lg text-[var(--app-text)]">{item.storageArea || "-"}</p>
+                  {(editMode || hasMpn) && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">MPN</p>
+                      {editMode ? (
+                        <input className="input" value={form.mpn} onChange={(e) => setForm((v: any) => ({ ...v, mpn: e.target.value }))} />
+                      ) : (
+                        <p className="text-lg font-mono text-[var(--app-text)]">{item.mpn}</p>
+                      )}
+                    </div>
                   )}
                 </div>
-                <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">Fach / Bin</p>
-                  {editMode ? (
-                    <input className="input" value={form.bin} onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))} />
-                  ) : (
-                    <p className="text-lg text-[var(--app-text)]">{item.bin || "-"}</p>
-                  )}
-                </div>
-              </div>
+              )}
 
-              <div className="border-t border-workshop-200 pt-4">
-                <p className="theme-muted mb-2 inline-flex items-center gap-2 text-[18px] font-medium"><Tag size={15} /> Tags</p>
-                {editMode ? (
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map((tag) => (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          className={`rounded-full border px-3 py-1 text-sm ${
-                            form.tagIds.includes(tag.id)
-                              ? "border-[var(--app-primary)] bg-[var(--app-primary)] text-[var(--app-on-primary)]"
-                              : "border-workshop-200 bg-[var(--app-surface)] text-[var(--app-text)]"
-                          }`}
-                          onClick={() =>
-                            setForm((prev: any) => ({
-                              ...prev,
-                              tagIds: prev.tagIds.includes(tag.id)
-                                ? prev.tagIds.filter((id: string) => id !== tag.id)
-                                : [...prev.tagIds, tag.id]
-                            }))
-                          }
-                        >
-                          {tag.name}
+              {(editMode || hasStorageArea || hasBin) && (
+                <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
+                  {(editMode || hasStorageArea) && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">Regal / Bereich</p>
+                      {editMode ? (
+                        <select className="input" value={form.storageArea} onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}>
+                          <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+                          {availableShelves.map((shelf) => (
+                            <option key={shelf.id} value={shelf.name}>
+                              {shelf.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="text-lg text-[var(--app-text)]">{item.storageArea}</p>
+                      )}
+                    </div>
+                  )}
+                  {(editMode || hasBin) && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">Fach / Bin</p>
+                      {editMode ? (
+                        <input className="input" value={form.bin} onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))} />
+                      ) : (
+                        <p className="text-lg text-[var(--app-text)]">{item.bin}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(editMode || hasTags) && (
+                <div className="border-t border-workshop-200 pt-4">
+                  <p className="theme-muted mb-2 inline-flex items-center gap-2 text-[18px] font-medium"><Tag size={15} /> Tags</p>
+                  {editMode ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {tags.map((tag) => (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            className={`rounded-full border px-3 py-1 text-sm ${
+                              form.tagIds.includes(tag.id)
+                                ? "border-[var(--app-primary)] bg-[var(--app-primary)] text-[var(--app-on-primary)]"
+                                : "border-workshop-200 bg-[var(--app-surface)] text-[var(--app-text)]"
+                            }`}
+                            onClick={() =>
+                              setForm((prev: any) => ({
+                                ...prev,
+                                tagIds: prev.tagIds.includes(tag.id)
+                                  ? prev.tagIds.filter((id: string) => id !== tag.id)
+                                  : [...prev.tagIds, tag.id]
+                              }))
+                            }
+                          >
+                            {tag.name}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <input
+                          className="input w-full sm:max-w-xs"
+                          placeholder="Neuen Tag erstellen"
+                          value={newTagName}
+                          onChange={(e) => setNewTagName(e.target.value)}
+                        />
+                        <button type="button" className="btn-secondary w-full sm:w-auto" onClick={createTagInEdit} disabled={creatingTag || !newTagName.trim()}>
+                          {creatingTag ? "Anlegen..." : "Tag anlegen"}
                         </button>
-                      ))}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                      <input
-                        className="input w-full sm:max-w-xs"
-                        placeholder="Neuen Tag erstellen"
-                        value={newTagName}
-                        onChange={(e) => setNewTagName(e.target.value)}
-                      />
-                      <button type="button" className="btn-secondary w-full sm:w-auto" onClick={createTagInEdit} disabled={creatingTag || !newTagName.trim()}>
-                        {creatingTag ? "Anlegen..." : "Tag anlegen"}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {(item.tags || []).length ? (
-                      item.tags.map((t: any) => (
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {item.tags.map((t: any) => (
                         <span key={t.tag.id} className="rounded-full border border-workshop-200 bg-workshop-50 px-3 py-1 text-sm font-medium">
                           {t.tag.name}
                         </span>
-                      ))
-                    ) : (
-                      <span className="theme-muted text-sm">Keine Tags</span>
-                    )}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-              <div className="border-t border-workshop-200 pt-4">
-                <p className="theme-muted mb-2 text-[18px] font-medium">Custom Fields</p>
-                {editMode ? (
-                  <CustomFieldsEditor
-                    fields={customFields}
-                    values={form.customValues || {}}
-                    categoryId={form.categoryId}
-                    typeId={form.typeId}
-                    onChange={(customValues) => setForm((prev: any) => ({ ...prev, customValues }))}
-                  />
-                ) : itemCustomValues.length ? (
-                  <dl className="grid gap-3 md:grid-cols-2">
-                    {itemCustomValues.map((entry: any) => {
-                      const parsedValue = parseStoredCustomFieldValue(entry.valueJson);
-                      return (
-                        <div key={entry.id} className="rounded-lg border border-workshop-200 px-3 py-2">
-                          <dt className="theme-muted text-sm">
-                            {entry.customField?.name}
-                            {entry.customField?.unit ? ` (${entry.customField.unit})` : ""}
-                          </dt>
-                          <dd className="font-medium text-[var(--app-text)]">
-                            {formatCustomFieldValue(entry.customField, parsedValue)}
-                          </dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
-                ) : (
-                  <p className="theme-muted text-sm">Keine Custom Fields gepflegt.</p>
-                )}
-              </div>
-
-              <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-3">
-                <div>
-                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> Ort</p>
-                  <p className="text-lg text-[var(--app-text)]">{item.storageLocation?.name || "-"}</p>
+              {(editMode || hasCustomFieldValues) && (
+                <div className="border-t border-workshop-200 pt-4">
+                  <p className="theme-muted mb-2 text-[18px] font-medium">Custom Fields</p>
+                  {editMode ? (
+                    <CustomFieldsEditor
+                      fields={customFields}
+                      values={form.customValues || {}}
+                      categoryId={form.categoryId}
+                      typeId={form.typeId}
+                      onChange={(customValues) => setForm((prev: any) => ({ ...prev, customValues }))}
+                    />
+                  ) : (
+                    <dl className="grid gap-3 md:grid-cols-2">
+                      {itemCustomValues.map((entry: any) => {
+                        const parsedValue = parseStoredCustomFieldValue(entry.valueJson);
+                        return (
+                          <div key={entry.id} className="rounded-lg border border-workshop-200 px-3 py-2">
+                            <dt className="theme-muted text-sm">
+                              {entry.customField?.name}
+                              {entry.customField?.unit ? ` (${entry.customField.unit})` : ""}
+                            </dt>
+                            <dd className="font-medium text-[var(--app-text)]">
+                              {formatCustomFieldValue(entry.customField, parsedValue)}
+                            </dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  )}
                 </div>
-                <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">Regal</p>
-                  <p className="text-lg text-[var(--app-text)]">{item.storageArea || "-"}</p>
-                </div>
-                <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">Fach</p>
-                  <p className="text-lg text-[var(--app-text)]">{item.bin || "-"}</p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </section>
@@ -688,11 +776,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <input className="input w-full sm:w-28" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} />
             <select className="input w-full sm:w-auto" value={reason} onChange={(e) => setReason(e.target.value)}>
-              <option>PURCHASE</option>
-              <option>CONSUMPTION</option>
-              <option>CORRECTION</option>
-              <option>INVENTORY</option>
-              <option>RESERVATION</option>
+              {movementReasonOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
             <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Notiz" value={note} onChange={(e) => setNote(e.target.value)} />
             <button
@@ -723,15 +811,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           ))}
         </ul>
       </section>
-
-      <ItemBomSection
-        itemId={item.id}
-        bomChildren={item.bomChildren || []}
-        bomParents={item.bomParents || []}
-        editMode={editMode}
-        onChanged={load}
-      />
-
       <ItemAuditSection entries={item.auditEntries || []} />
     </div>
   );

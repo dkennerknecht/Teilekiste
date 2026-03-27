@@ -38,7 +38,6 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
       minStock: data.minStock ?? "",
       manufacturer: data.manufacturer || "",
       mpn: data.mpn || "",
-      barcodeEan: data.barcodeEan || "",
       tagIds: (data.tags || []).map((t: any) => t.tagId)
     });
     setImages((data.images || []).slice().sort((a: ItemImage, b: ItemImage) => a.sortOrder - b.sortOrder));
@@ -96,11 +95,6 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         <label className="text-sm">
           MPN
           <input className="input mt-1" value={form.mpn} onChange={(e) => setForm({ ...form, mpn: e.target.value })} />
-        </label>
-
-        <label className="text-sm">
-          EAN
-          <input className="input mt-1" value={form.barcodeEan} onChange={(e) => setForm({ ...form, barcodeEan: e.target.value })} />
         </label>
 
         <label className="text-sm">
@@ -210,10 +204,10 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
             await load();
           }}
         >
-          <input className="input" type="file" name="file" accept="image/*" capture="environment" required />
-          <input className="input sm:flex-1" type="text" name="caption" placeholder="Bildtitel (optional)" />
+          <input className="input" type="file" name="files" accept="image/*" capture="environment" multiple required />
+          <input className="input sm:flex-1" type="text" name="caption" placeholder="Bildtitel (optional bei Einzelupload)" />
           <button className="btn w-full sm:w-auto" type="submit">
-            Bild hochladen
+            Bilder hochladen
           </button>
         </form>
 

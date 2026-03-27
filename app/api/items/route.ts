@@ -106,7 +106,6 @@ export async function POST(req: NextRequest) {
             mpn: parsed.data.mpn || null,
             datasheetUrl: parsed.data.datasheetUrl || null,
             purchaseUrl: parsed.data.purchaseUrl || null,
-            barcodeEan: parsed.data.barcodeEan || null,
             tags: {
               create: parsed.data.tagIds.map((tagId) => ({ tagId }))
             }

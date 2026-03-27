@@ -75,6 +75,7 @@ type BackupSequenceCounter = {
 
 type BackupLabelConfig = {
   id?: string;
+  language?: string;
   separator?: string;
   digits?: number;
   prefix?: string | null;
@@ -149,7 +150,6 @@ type BackupItem = {
   mpn?: string | null;
   datasheetUrl?: string | null;
   purchaseUrl?: string | null;
-  barcodeEan?: string | null;
   isArchived?: boolean;
   deletedAt?: string | null;
   tags?: BackupItemTag[];
@@ -484,6 +484,7 @@ export async function restoreBackupData(input: {
     await prisma.labelConfig.upsert({
       where: { id: payload.labelConfig.id || "default" },
       update: {
+        language: payload.labelConfig.language ?? undefined,
         separator: payload.labelConfig.separator ?? undefined,
         digits: payload.labelConfig.digits ?? undefined,
         prefix: payload.labelConfig.prefix ?? null,
@@ -495,6 +496,7 @@ export async function restoreBackupData(input: {
       },
       create: {
         id: payload.labelConfig.id || "default",
+        language: payload.labelConfig.language || "de",
         separator: payload.labelConfig.separator || "-",
         digits: payload.labelConfig.digits ?? 3,
         prefix: payload.labelConfig.prefix ?? null,
@@ -608,7 +610,6 @@ export async function restoreBackupData(input: {
           mpn: item.mpn || null,
           datasheetUrl: item.datasheetUrl || null,
           purchaseUrl: item.purchaseUrl || null,
-          barcodeEan: item.barcodeEan || null,
           isArchived: !!item.isArchived,
           deletedAt: item.deletedAt ? new Date(item.deletedAt) : null
         },
@@ -628,7 +629,6 @@ export async function restoreBackupData(input: {
           mpn: item.mpn || null,
           datasheetUrl: item.datasheetUrl || null,
           purchaseUrl: item.purchaseUrl || null,
-          barcodeEan: item.barcodeEan || null,
           isArchived: !!item.isArchived,
           deletedAt: item.deletedAt ? new Date(item.deletedAt) : null
         }
