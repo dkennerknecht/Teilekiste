@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { Brand } from "@/components/brand";
@@ -11,6 +12,7 @@ export default function SignInPage() {
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
   const { t } = useAppLanguage();
+  const searchParams = useSearchParams();
 
   return (
     <div className="mx-auto mt-6 max-w-md px-1 sm:mt-12">
@@ -30,12 +32,19 @@ export default function SignInPage() {
           className="space-y-3"
           onSubmit={async (e) => {
             e.preventDefault();
+            setError("");
+            const callbackUrl = searchParams.get("callbackUrl") || "/";
             const result = await signIn("credentials", {
               email,
               password,
-              callbackUrl: "/"
+              callbackUrl,
+              redirect: false
             });
-            if (result?.error) setError(t("signInError"));
+            if (result?.error || !result?.ok || !result.url) {
+              setError(t("signInError"));
+              return;
+            }
+            window.location.assign(result.url);
           }}
         >
           <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("signInEmail")} />
