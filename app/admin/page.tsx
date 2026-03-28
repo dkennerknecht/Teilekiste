@@ -74,7 +74,6 @@ export default function AdminPage() {
   const [locations, setLocations] = useState<any[]>([]);
   const [shelves, setShelves] = useState<ShelfRow[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
-  const [labelConfig, setLabelConfig] = useState<any>(null);
   const [importResult, setImportResult] = useState<any>(null);
   const [feedback, setFeedback] = useState<string>("");
   const [restoreResult, setRestoreResult] = useState<any>(null);
@@ -113,7 +112,7 @@ export default function AdminPage() {
   const [newShelfLocationId, setNewShelfLocationId] = useState("");
 
   async function load() {
-    const [d, c, t, ty, l, sh, f, cfg, u, tokens] = await Promise.all([
+    const [d, c, t, ty, l, sh, f, u, tokens] = await Promise.all([
       fetch("/api/admin/dash", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/categories", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/tags", { cache: "no-store" }).then((r) => r.json()),
@@ -121,7 +120,6 @@ export default function AdminPage() {
       fetch("/api/admin/locations", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/shelves", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/custom-fields", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/admin/label-config", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/api-tokens", { cache: "no-store" }).then((r) => r.json())
     ]);
@@ -132,7 +130,6 @@ export default function AdminPage() {
     setLocations(l);
     setShelves(sh);
     setCustomFields(f);
-    setLabelConfig(cfg);
     setUsers(u);
     setApiTokens(tokens);
   }
@@ -1205,74 +1202,43 @@ export default function AdminPage() {
         </section>
       </div>
 
-      {labelConfig && (
-        <>
-        <section className="card space-y-3">
-          <h2 className="font-semibold">{t("adminAppSettingsTitle")}</h2>
-          <p className="theme-muted text-sm">{t("adminLanguageHint")}</p>
-          <form
-            className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const { res, data } = await apiJson("/api/admin/app-language", {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ language: appLanguageDraft })
-              });
-              setFeedback(res.ok ? tr("App-Sprache gespeichert", "App language saved") : tr(`App-Sprache fehlgeschlagen: ${data.error || unknownError}`, `App language failed: ${data.error || unknownError}`));
-              if (res.ok) {
-                setLanguage(data.language);
-                setAppLanguageDraft(data.language);
-              }
-            }}
-          >
-            <label className="text-sm">
-              {t("adminLanguageLabel")}
-              <select
-                className="input mt-1"
-                value={appLanguageDraft}
-                onChange={(e) => setAppLanguageDraft(e.target.value as AppLanguage)}
-                aria-label={t("adminLanguageLabel")}
-              >
-                {appLanguageOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="btn">{t("adminLanguageSave")}</button>
-          </form>
-        </section>
-
-        <section className="card space-y-2">
-          <h2 className="font-semibold">{t("adminLabelConfigTitle")}</h2>
-          <form className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" onSubmit={async (e) => {
+      <section className="card space-y-3">
+        <h2 className="font-semibold">{t("adminAppSettingsTitle")}</h2>
+        <p className="theme-muted text-sm">{t("adminLanguageHint")}</p>
+        <form
+          className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end"
+          onSubmit={async (e) => {
             e.preventDefault();
-            const fd = new FormData(e.currentTarget);
-            const { res, data } = await apiJson("/api/admin/label-config", {
-              method: "PATCH", headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                separator: fd.get("separator"), digits: Number(fd.get("digits")), prefix: fd.get("prefix"), suffix: fd.get("suffix"),
-                delimiter: fd.get("delimiter"), regenerateOnType: !!fd.get("regenerateOnType")
-              })
+            const { res, data } = await apiJson("/api/admin/app-language", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ language: appLanguageDraft })
             });
-            setFeedback(res.ok ? tr("Label-Code Einstellungen gespeichert", "Label code settings saved") : tr(`Label-Code Einstellungen fehlgeschlagen: ${data.error || unknownError}`, `Label code settings failed: ${data.error || unknownError}`));
+            setFeedback(res.ok ? tr("App-Sprache gespeichert", "App language saved") : tr(`App-Sprache fehlgeschlagen: ${data.error || unknownError}`, `App language failed: ${data.error || unknownError}`));
             if (res.ok) {
-              setLabelConfig(data);
+              setLanguage(data.language);
+              setAppLanguageDraft(data.language);
             }
-          }}>
-            <input className="input" name="separator" defaultValue={labelConfig.separator} placeholder="-" />
-            <input className="input" name="digits" type="number" min={2} max={6} defaultValue={labelConfig.digits} />
-            <input className="input" name="prefix" defaultValue={labelConfig.prefix || ""} placeholder={tr("Prefix", "Prefix")} />
-            <input className="input" name="suffix" defaultValue={labelConfig.suffix || ""} placeholder={tr("Suffix", "Suffix")} />
-            <input className="input" name="delimiter" defaultValue={labelConfig.delimiter || ";"} placeholder={tr("CSV Delimiter", "CSV delimiter")} />
-            <label className="text-sm sm:col-span-2 xl:col-span-1"><input type="checkbox" name="regenerateOnType" defaultChecked={labelConfig.regenerateOnType} /> {tr("Neuen Code bei Kategorie/Type Aenderung", "Generate new code when category/type changes")}</label>
-            <button className="btn sm:col-span-2 xl:col-span-2">{tr("Speichern", "Save")}</button>
-          </form>
-        </section>
-        </>
-      )}
+          }}
+        >
+          <label className="text-sm">
+            {t("adminLanguageLabel")}
+            <select
+              className="input mt-1"
+              value={appLanguageDraft}
+              onChange={(e) => setAppLanguageDraft(e.target.value as AppLanguage)}
+              aria-label={t("adminLanguageLabel")}
+            >
+              {appLanguageOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="btn">{t("adminLanguageSave")}</button>
+        </form>
+      </section>
     </div>
   );
 }

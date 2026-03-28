@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { Archive, CheckCheck, ChevronDown, ChevronUp, PencilLine, Trash2, X } from "lucide-react";
 import { fileHref } from "@/lib/file-href";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
 
@@ -80,16 +81,22 @@ export default function HomePage() {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState("");
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const searchQuery = searchParams.get("q")?.trim() || "";
+  const queryString = searchParams.toString();
+  const categoryFilter = searchParams.get("categoryId") || "";
+  const locationFilter = searchParams.get("storageLocationId") || "";
+  const tagFilter = searchParams.get("tagId") || "";
+  const lowStockFilter = searchParams.get("lowStock") === "1";
+  const hasImagesFilter = searchParams.get("hasImages") === "1";
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/items?q=${encodeURIComponent(searchQuery)}`);
+    const res = await fetch(`/api/items${queryString ? `?${queryString}` : ""}`);
     const data = await res.json();
     setItems(Array.isArray(data) ? data : data.items || []);
     setLoading(false);
-  }, [searchQuery]);
+  }, [queryString]);
 
   async function quickAdjust(itemId: string, delta: number) {
     await fetch(`/api/items/${itemId}/movements`, {
@@ -116,6 +123,23 @@ export default function HomePage() {
 
   function stopRowNavigation(event: React.SyntheticEvent) {
     event.stopPropagation();
+  }
+
+  function updateListQuery(update: (params: URLSearchParams) => void) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    update(nextParams);
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `/?${nextQuery}` : "/", { scroll: false });
+  }
+
+  function clearFilters() {
+    updateListQuery((params) => {
+      params.delete("categoryId");
+      params.delete("storageLocationId");
+      params.delete("tagId");
+      params.delete("lowStock");
+      params.delete("hasImages");
+    });
   }
 
   function toggleSelected(itemId: string, checked: boolean) {
@@ -319,37 +343,186 @@ export default function HomePage() {
   const selectedSet = new Set(selected);
   const allVisibleSelected = items.length > 0 && items.every((item) => selectedSet.has(item.id));
   const availableBulkShelves = shelves.filter((shelf) => shelf.storageLocationId === bulkForm.storageLocationId);
+  const hasActiveFilters = Boolean(categoryFilter || locationFilter || tagFilter || lowStockFilter || hasImagesFilter);
+  const activeFilterCount = [Boolean(categoryFilter), Boolean(locationFilter), Boolean(tagFilter), lowStockFilter, hasImagesFilter].filter(Boolean).length;
+
+  useEffect(() => {
+    if (hasActiveFilters) {
+      setMobileFiltersOpen(true);
+    }
+  }, [hasActiveFilters]);
 
   return (
     <div className="space-y-4">
       {selected.length > 0 && (
-        <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] px-3 py-2 shadow-sm">
-          <div className="flex items-center gap-2 overflow-x-auto">
-            <span className="whitespace-nowrap text-sm font-medium">{selected.length} ausgewaehlt</span>
-            {!allVisibleSelected && items.length > 1 && (
-              <button className="btn-secondary h-8 shrink-0 px-2.5 py-1 text-sm" onClick={() => toggleAllVisible(true)}>
-                Alle sichtbar
+        <div className="pointer-events-none fixed inset-x-3 bottom-4 z-40 flex justify-center">
+          <div className="pointer-events-auto rounded-2xl border border-workshop-200 bg-[var(--app-surface)] px-2 py-2 shadow-xl">
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-xl bg-[var(--app-surface-alt)] px-3 py-2 text-sm font-medium">
+                {selected.length}
+              </span>
+              {!allVisibleSelected && items.length > 1 && (
+                <button
+                  className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
+                  onClick={() => toggleAllVisible(true)}
+                  aria-label="Alle sichtbaren auswaehlen"
+                  title="Alle sichtbaren auswaehlen"
+                >
+                  <CheckCheck size={18} />
+                </button>
+              )}
+              <button
+                className="btn inline-flex h-10 w-10 items-center justify-center px-0 py-0"
+                onClick={() => setBulkEditorOpen(true)}
+                aria-label="Sammelbearbeitung"
+                title="Sammelbearbeitung"
+              >
+                <PencilLine size={18} />
               </button>
+              <button
+                className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
+                onClick={applyBulkArchive}
+                disabled={bulkArchiving}
+                aria-label="Archivieren"
+                title="Archivieren"
+              >
+                <Archive size={18} />
+              </button>
+              <button
+                className="theme-status-danger inline-flex h-10 w-10 items-center justify-center rounded-xl border border-transparent px-0 py-0"
+                onClick={() => setBulkDeleteOpen(true)}
+                aria-label="Loeschen"
+                title="Loeschen"
+              >
+                <Trash2 size={18} />
+              </button>
+              <button
+                className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
+                onClick={() => setSelected([])}
+                aria-label="Auswahl aufheben"
+                title="Auswahl aufheben"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {bulkActionError && (
+              <p className="mt-2 max-w-[16rem] text-sm text-red-700">{bulkActionError}</p>
             )}
-            <button className="btn h-8 shrink-0 px-2.5 py-1 text-sm" onClick={() => setBulkEditorOpen(true)}>
-              Bearbeiten
-            </button>
-            <button className="btn-secondary h-8 shrink-0 px-2.5 py-1 text-sm" onClick={applyBulkArchive} disabled={bulkArchiving}>
-              {bulkArchiving ? "Archiviert..." : "Archivieren"}
-            </button>
-            <button
-              className="theme-status-danger h-8 shrink-0 rounded-lg border border-transparent px-2.5 py-1 text-sm font-medium"
-              onClick={() => setBulkDeleteOpen(true)}
-            >
-              Loeschen
-            </button>
-            <button className="btn-secondary h-8 shrink-0 px-2.5 py-1 text-sm" onClick={() => setSelected([])}>
-              Abwaehlen
-            </button>
           </div>
-          {bulkActionError && <p className="mt-2 text-sm text-red-700">{bulkActionError}</p>}
         </div>
       )}
+
+      <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] px-3 py-2 shadow-sm">
+        <div className="md:hidden">
+          <button
+            type="button"
+            className="btn-secondary flex h-10 w-full items-center justify-between px-3 py-1 text-sm"
+            onClick={() => setMobileFiltersOpen((current) => !current)}
+            aria-expanded={mobileFiltersOpen}
+            aria-label="Filter umschalten"
+          >
+            <span>Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}</span>
+            {mobileFiltersOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+        </div>
+
+        <div
+          className={`${mobileFiltersOpen ? "grid" : "hidden"} mt-2 max-w-full gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] md:mt-0 md:grid`}
+        >
+          <select
+            className="input h-10 min-h-0 min-w-0"
+            value={categoryFilter}
+            onChange={(e) =>
+              updateListQuery((params) => {
+                if (e.target.value) params.set("categoryId", e.target.value);
+                else params.delete("categoryId");
+              })
+            }
+            aria-label="Nach Kategorie filtern"
+          >
+            <option value="">Alle Kategorien</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="input h-10 min-h-0 min-w-0"
+            value={locationFilter}
+            onChange={(e) =>
+              updateListQuery((params) => {
+                if (e.target.value) params.set("storageLocationId", e.target.value);
+                else params.delete("storageLocationId");
+              })
+            }
+            aria-label="Nach Lagerort filtern"
+          >
+            <option value="">Alle Orte</option>
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="input h-10 min-h-0 min-w-0"
+            value={tagFilter}
+            onChange={(e) =>
+              updateListQuery((params) => {
+                if (e.target.value) params.set("tagId", e.target.value);
+                else params.delete("tagId");
+              })
+            }
+            aria-label="Nach Tag filtern"
+          >
+            <option value="">Alle Tags</option>
+            {tags.map((tag) => (
+              <option key={tag.id} value={tag.id}>
+                {tag.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            className={`${lowStockFilter ? "btn" : "btn-secondary"} h-10 w-full px-3 py-1 text-sm xl:w-auto xl:whitespace-nowrap`}
+            onClick={() =>
+              updateListQuery((params) => {
+                if (lowStockFilter) params.delete("lowStock");
+                else params.set("lowStock", "1");
+              })
+            }
+          >
+            Unter Minimum
+          </button>
+
+          <button
+            type="button"
+            className={`${hasImagesFilter ? "btn" : "btn-secondary"} h-10 w-full px-3 py-1 text-sm xl:w-auto xl:whitespace-nowrap`}
+            onClick={() =>
+              updateListQuery((params) => {
+                if (hasImagesFilter) params.delete("hasImages");
+                else params.set("hasImages", "1");
+              })
+            }
+          >
+            Mit Bild
+          </button>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="btn-secondary h-10 w-full px-3 py-1 text-sm xl:w-auto xl:whitespace-nowrap"
+              onClick={clearFilters}
+            >
+              Filter zuruecksetzen
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="space-y-3 md:hidden">
         {loading ? (
