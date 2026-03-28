@@ -60,6 +60,11 @@ describe("Reservation availability guard", () => {
       { params: { id: "item-1" } }
     );
 
+    expect(response).toBeDefined();
+    if (!response) {
+      throw new Error("POST returned no response");
+    }
+
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: "Nicht genug verfuegbarer Bestand fuer diese Reservierung"
