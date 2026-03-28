@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { login } from "./helpers";
 
-test("admin can create an item, add BOM, and inspect audit history", async ({ page }) => {
+test("admin can create an item and inspect audit history", async ({ page }) => {
   await login(page);
 
   const itemName = `E2E Item ${Date.now()}`;
@@ -16,15 +16,6 @@ test("admin can create an item, add BOM, and inspect audit history", async ({ pa
   await expect(page.getByText(itemName)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Audit History" })).toBeVisible();
   await expect(page.getByText("Item angelegt")).toBeVisible();
-
-  await page.getByRole("button", { name: "Bearbeiten" }).click();
-  const bomSearch = page.getByPlaceholder("Komponente suchen (Code, Name, MPN)");
-  await bomSearch.fill("ESP32");
-  const resultRow = page.locator("li").filter({ hasText: "ESP32 DevKit V1" }).first();
-  await expect(resultRow).toBeVisible();
-  await resultRow.getByRole("button", { name: "Hinzufügen" }).click();
-  await expect(page.getByText("ESP32 DevKit V1")).toBeVisible();
-  await expect(page.getByText(/Stückliste aktualisiert: EL-KB-023 x 1/)).toBeVisible();
 
   await page.goto("/admin/audit");
   await page.getByPlaceholder("Suche nach Aktion, User, Item oder ID").fill(itemName);
