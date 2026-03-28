@@ -714,6 +714,7 @@ export default function HomePage() {
 
             <div className="max-h-[calc(90vh-8.5rem)] space-y-4 overflow-y-auto px-4 py-4">
               {bulkError && <p className="theme-status-danger rounded-lg border border-transparent px-3 py-2 text-sm">{bulkError}</p>}
+              <p className="text-xs text-workshop-700">Sobald du einen Wert waehlst oder eingibst, wird das jeweilige Feld automatisch aktiviert.</p>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
@@ -728,8 +729,13 @@ export default function HomePage() {
                   <select
                     className="input h-10 min-h-0"
                     value={bulkForm.categoryId}
-                    onChange={(e) => setBulkForm((prev) => ({ ...prev, categoryId: e.target.value }))}
-                    disabled={!bulkForm.categoryEnabled}
+                    onChange={(e) =>
+                      setBulkForm((prev) => ({
+                        ...prev,
+                        categoryId: e.target.value,
+                        categoryEnabled: prev.categoryEnabled || Boolean(e.target.value)
+                      }))
+                    }
                   >
                     <option value="">Kategorie waehlen</option>
                     {categories.map((category) => (
@@ -752,8 +758,14 @@ export default function HomePage() {
                   <select
                     className="input h-10 min-h-0"
                     value={bulkForm.storageLocationId}
-                    onChange={(e) => setBulkForm((prev) => ({ ...prev, storageLocationId: e.target.value, storageArea: "" }))}
-                    disabled={!bulkForm.storageLocationEnabled}
+                    onChange={(e) =>
+                      setBulkForm((prev) => ({
+                        ...prev,
+                        storageLocationId: e.target.value,
+                        storageArea: "",
+                        storageLocationEnabled: prev.storageLocationEnabled || Boolean(e.target.value)
+                      }))
+                    }
                   >
                     <option value="">Lagerort waehlen</option>
                     {locations.map((location) => (
@@ -776,8 +788,14 @@ export default function HomePage() {
                   <select
                     className="input h-10 min-h-0"
                     value={bulkForm.storageArea}
-                    onChange={(e) => setBulkForm((prev) => ({ ...prev, storageArea: e.target.value }))}
-                    disabled={!bulkForm.storageAreaEnabled || !bulkForm.storageLocationId}
+                    onChange={(e) =>
+                      setBulkForm((prev) => ({
+                        ...prev,
+                        storageArea: e.target.value,
+                        storageAreaEnabled: prev.storageAreaEnabled || Boolean(e.target.value)
+                      }))
+                    }
+                    disabled={!bulkForm.storageLocationId}
                   >
                     <option value="">
                       {!bulkForm.storageLocationId
@@ -806,8 +824,13 @@ export default function HomePage() {
                   <input
                     className="input h-10 min-h-0"
                     value={bulkForm.bin}
-                    onChange={(e) => setBulkForm((prev) => ({ ...prev, bin: e.target.value }))}
-                    disabled={!bulkForm.binEnabled}
+                    onChange={(e) =>
+                      setBulkForm((prev) => ({
+                        ...prev,
+                        bin: e.target.value,
+                        binEnabled: prev.binEnabled || e.target.value.trim().length > 0
+                      }))
+                    }
                     placeholder="Leer = Fach entfernen"
                   />
                 </div>
@@ -823,27 +846,31 @@ export default function HomePage() {
                   Tags ersetzen
                 </label>
                 <p className="text-xs text-workshop-700">Wenn aktiv, wird die Tag-Auswahl fuer alle markierten Items exakt auf diesen Stand gesetzt.</p>
-                {bulkForm.tagsEnabled && (
-                  tags.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-workshop-200 px-3 py-2 text-sm text-workshop-700">Keine Tags vorhanden.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map((tag) => (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          className={`rounded-full border px-3 py-1 text-sm ${
-                            bulkForm.tagIds.includes(tag.id)
-                              ? "border-[var(--app-primary)] bg-[var(--app-primary)] text-[var(--app-on-primary)]"
-                              : "border-workshop-200 bg-[var(--app-surface)] text-workshop-800"
-                          }`}
-                          onClick={() => toggleBulkTag(tag.id)}
-                        >
-                          {tag.name}
-                        </button>
-                      ))}
-                    </div>
-                  )
+                {tags.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-workshop-200 px-3 py-2 text-sm text-workshop-700">Keine Tags vorhanden.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        className={`rounded-full border px-3 py-1 text-sm ${
+                          bulkForm.tagIds.includes(tag.id)
+                            ? "border-[var(--app-primary)] bg-[var(--app-primary)] text-[var(--app-on-primary)]"
+                            : "border-workshop-200 bg-[var(--app-surface)] text-workshop-800"
+                        }`}
+                        onClick={() => {
+                          setBulkForm((prev) => ({
+                            ...prev,
+                            tagsEnabled: true
+                          }));
+                          toggleBulkTag(tag.id);
+                        }}
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

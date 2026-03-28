@@ -2,9 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
 import {
   Archive,
   ArrowLeft,
@@ -25,7 +22,6 @@ import {
 } from "lucide-react";
 import { ItemImageGallery } from "@/components/item-image-gallery";
 import { ItemAuditSection } from "@/components/item-audit-section";
-import { resolveCategoryCode } from "@/lib/label-catalog";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import { buildCustomValueMap, formatCustomFieldValue, parseStoredCustomFieldValue, type CustomFieldRow } from "@/lib/custom-fields";
 
@@ -60,7 +56,6 @@ function buildItemFormState(data: any) {
     mpn: data.mpn || "",
     tagIds: (data.tags || []).map((t: any) => t.tagId),
     typeId: "",
-    labelNumber: "",
     customValues: buildCustomValueMap(data.customValues || [])
   };
 }
@@ -76,7 +71,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [shelves, setShelves] = useState<ShelfOption[]>([]);
   const [types, setTypes] = useState<TypeOption[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
-  const [labelCfg, setLabelCfg] = useState({ separator: "-", digits: 3 });
   const [delta, setDelta] = useState(1);
   const [reason, setReason] = useState("PURCHASE");
   const [note, setNote] = useState("");
@@ -114,34 +108,21 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         setTypes(meta.types || []);
         setCustomFields(meta.customFields || []);
       });
-    fetch("/api/admin/label-config", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((cfg) => {
-        if (cfg) {
-          setLabelCfg({
-            separator: cfg.separator || "-",
-            digits: Number(cfg.digits || 3)
-          });
-        }
-      })
-      .catch(() => null);
   }, [editMode]);
 
   useEffect(() => {
     if (!editMode || !item || !types.length) return;
     if (form.typeId) return;
 
-    const parts = String(item.labelCode || "").split(labelCfg.separator);
+    const parts = String(item.labelCode || "").split("-");
     if (parts.length < 2) return;
     const typeCode = parts[parts.length - 2];
-    const numPart = parts[parts.length - 1];
     const type = types.find((t) => t.code === typeCode);
     setForm((prev: any) => ({
       ...prev,
-      typeId: type?.id || prev.typeId,
-      labelNumber: /^\\d+$/.test(numPart) ? numPart : prev.labelNumber
+      typeId: type?.id || prev.typeId
     }));
-  }, [editMode, item, types, labelCfg.separator, form?.typeId]);
+  }, [editMode, item, types, form?.typeId]);
 
   const history = useMemo(() => {
     if (!item) return [];
@@ -346,10 +327,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     try {
                       const selectedCategory = categories.find((c) => c.id === form.categoryId);
                       const selectedType = types.find((t) => t.id === form.typeId);
-                      const nextLabelCode =
-                        selectedCategory && selectedType && String(form.labelNumber || "").trim()
-                          ? `${resolveCategoryCode(selectedCategory)}${labelCfg.separator}${selectedType.code}${labelCfg.separator}${String(form.labelNumber).padStart(labelCfg.digits, "0")}`
-                          : undefined;
+                      const currentTypeCode = String(item.labelCode || "").split("-").at(-2) || "";
+                      const currentType = types.find((t) => t.code === currentTypeCode);
+                      const shouldSendTypeId =
+                        !!selectedType &&
+                        (selectedType.id !== currentType?.id || form.categoryId !== item.categoryId);
                       const payload = {
                         name: form.name,
                         description: form.description,
@@ -362,8 +344,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         tagIds: form.tagIds,
                         minStock: form.minStock === "" ? null : Number(form.minStock),
                         customValues: form.customValues,
-                        ...(selectedType ? { typeId: selectedType.id } : {}),
-                        ...(nextLabelCode ? { labelCode: nextLabelCode } : {})
+                        ...(shouldSendTypeId ? { typeId: selectedType.id } : {})
                       };
                       const res = await fetch(`/api/items/${item.id}`, {
                         method: "PATCH",
@@ -464,38 +445,26 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 <p className="theme-muted mb-1 text-[18px] font-medium"># ID</p>
                 {editMode ? (
                   <div className="space-y-2">
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <select className="input" value={form.typeId} onChange={(e) => setForm((v: any) => ({ ...v, typeId: e.target.value }))}>
-                        <option value="">Type (Label)</option>
-                        {types.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.code} - {t.name}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        className="input"
-                        type="number"
-                        min={1}
-                        value={form.labelNumber}
-                        placeholder="Nummer (z.B. 002)"
-                        onChange={(e) => setForm((v: any) => ({ ...v, labelNumber: e.target.value }))}
-                      />
-                    </div>
-                    <p className="theme-muted text-sm font-mono">
-                      Vorschau:{" "}
-                      {(() => {
-                        const selectedCategory = categories.find((c) => c.id === form.categoryId);
-                        const selectedType = types.find((t) => t.id === form.typeId);
-                        if (!selectedCategory || !selectedType || !String(form.labelNumber || "").trim()) return item.labelCode;
-                        return `${resolveCategoryCode(selectedCategory)}${labelCfg.separator}${selectedType.code}${labelCfg.separator}${String(form.labelNumber).padStart(labelCfg.digits, "0")}`;
-                      })()}
-                    </p>
+                    <p className="text-xl font-mono">{item.labelCode}</p>
+                    <p className="theme-muted text-sm">Wird automatisch neu vergeben, wenn Kategorie oder Type geaendert werden.</p>
                   </div>
                 ) : (
                   <p className="text-xl font-mono">{item.labelCode}</p>
                 )}
               </div>
+
+              {editMode && (
+                <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
+                  <div>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
+                    <input className="input" value={form.manufacturer} onChange={(e) => setForm((v: any) => ({ ...v, manufacturer: e.target.value }))} />
+                  </div>
+                  <div>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">MPN</p>
+                    <input className="input" value={form.mpn} onChange={(e) => setForm((v: any) => ({ ...v, mpn: e.target.value }))} />
+                  </div>
+                </div>
+              )}
 
               {(editMode || hasDescription) && (
                 <div>
@@ -503,14 +472,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   {editMode ? (
                     <textarea className="input min-h-28" value={form.description} onChange={(e) => setForm((v: any) => ({ ...v, description: e.target.value }))} />
                   ) : (
-                    <div className="text-lg leading-8 text-[var(--app-text)]">
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{item.description}</ReactMarkdown>
-                    </div>
+                    <p className="whitespace-pre-wrap text-lg leading-8 text-[var(--app-text)]">{item.description}</p>
                   )}
                 </div>
               )}
 
-              <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
+              <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-2" : "md:grid-cols-2"}`}>
                 <div>
                   <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><Layers size={15} /> Kategorie</p>
                   {editMode ? (
@@ -524,55 +491,60 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   )}
                 </div>
 
-                <div>
-                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> Ort</p>
-                  {editMode ? (
-                    <select
-                      className="input"
-                      value={form.storageLocationId}
-                      onChange={(e) => setForm((v: any) => ({ ...v, storageLocationId: e.target.value, storageArea: "" }))}
-                    >
-                      {locations.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.name} ({location.code || "--"})
+                {editMode && (
+                  <div>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">Type</p>
+                    <select className="input" value={form.typeId} onChange={(e) => setForm((v: any) => ({ ...v, typeId: e.target.value }))}>
+                      <option value="">Type (Label)</option>
+                      {types.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.code} - {t.name}
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <p className="text-lg font-medium text-[var(--app-text)]">{item.storageLocation?.name || "-"}</p>
-                  )}
-                </div>
-
+                  </div>
+                )}
               </div>
 
-              {(editMode || hasManufacturer || hasMpn) && (
+              {!editMode && (hasManufacturer || hasMpn) && (
                 <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
-                  {(editMode || hasManufacturer) && (
+                  {hasManufacturer && (
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
-                      {editMode ? (
-                        <input className="input" value={form.manufacturer} onChange={(e) => setForm((v: any) => ({ ...v, manufacturer: e.target.value }))} />
-                      ) : (
-                        <p className="text-lg font-medium text-[var(--app-text)]">{item.manufacturer}</p>
-                      )}
+                      <p className="text-lg font-medium text-[var(--app-text)]">{item.manufacturer}</p>
                     </div>
                   )}
 
-                  {(editMode || hasMpn) && (
+                  {hasMpn && (
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">MPN</p>
-                      {editMode ? (
-                        <input className="input" value={form.mpn} onChange={(e) => setForm((v: any) => ({ ...v, mpn: e.target.value }))} />
-                      ) : (
-                        <p className="text-lg font-mono text-[var(--app-text)]">{item.mpn}</p>
-                      )}
+                      <p className="text-lg font-mono text-[var(--app-text)]">{item.mpn}</p>
                     </div>
                   )}
                 </div>
               )}
 
-              {(editMode || hasStorageArea || hasBin) && (
-                <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
+              {(editMode || item.storageLocation || hasStorageArea || hasBin) && (
+                <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+                  <div>
+                    <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> Ort</p>
+                    {editMode ? (
+                      <select
+                        className="input"
+                        value={form.storageLocationId}
+                        onChange={(e) => setForm((v: any) => ({ ...v, storageLocationId: e.target.value, storageArea: "" }))}
+                      >
+                        {locations.map((location) => (
+                          <option key={location.id} value={location.id}>
+                            {location.name} ({location.code || "--"})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-lg font-medium text-[var(--app-text)]">{item.storageLocation?.name || "-"}</p>
+                    )}
+                  </div>
+
                   {(editMode || hasStorageArea) && (
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">Regal / Bereich</p>

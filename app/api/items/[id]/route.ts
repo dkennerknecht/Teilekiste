@@ -139,18 +139,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Bestand darf nicht unter die reservierte Menge fallen" }, { status: 400 });
   }
 
-  let labelCode = existing.labelCode;
-  const config = await prisma.labelConfig.findUnique({ where: { id: "default" } });
-  const hasManualCode = !!body.labelCode && auth.user!.role === "ADMIN" && config?.allowCodeEdit;
-  if (hasManualCode) {
-    labelCode = body.labelCode!;
-  }
-  if (!hasManualCode && body.typeId) {
-    if (config?.regenerateOnType) {
-      labelCode = await assignNextLabelCode(body.categoryId || existing.categoryId, body.typeId);
-    }
-  }
-
   const {
     tagIds,
     customValues: _customValues,
@@ -161,6 +149,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   } = body;
   const nextCategoryId = body.categoryId || existing.categoryId;
   const nextTypeId = body.typeId || null;
+  const shouldRegenerateLabel =
+    !!nextTypeId && ((!!body.categoryId && body.categoryId !== existing.categoryId) || !!body.typeId);
+  const labelCode = shouldRegenerateLabel ? await assignNextLabelCode(nextCategoryId, nextTypeId) : existing.labelCode;
 
   const item = await prisma.item.update({
     where: { id: params.id },

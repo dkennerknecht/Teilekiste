@@ -216,107 +216,8 @@ export default function NewItemPage() {
             <input className="input mt-1" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} disabled={!hasRequiredMeta} />
           </label>
 
-          <label className="text-sm">
-            MPN
-            <input className="input mt-1" value={form.mpn} onChange={(e) => setForm({ ...form, mpn: e.target.value })} disabled={!hasRequiredMeta} />
-          </label>
-
-          <label className="text-sm">
-            Kategorie
-            <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code ? `${c.code} - ${c.name}` : c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            Type (Label)
-            <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })} disabled={!hasRequiredMeta} required>
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code} - {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            Lagerort
-            <select
-              className="input mt-1"
-              value={form.storageLocationId}
-              onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "" })}
-              disabled={!hasRequiredMeta}
-              required
-            >
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            Regal / Bereich
-            <select
-              className="input mt-1"
-              value={form.storageArea}
-              onChange={(e) => setForm({ ...form, storageArea: e.target.value })}
-              disabled={!hasRequiredMeta || !form.storageLocationId || availableShelves.length === 0}
-            >
-              <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
-              {availableShelves.map((shelf) => (
-                <option key={shelf.id} value={shelf.name}>
-                  {shelf.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            Fach / Bin
-            <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta} />
-          </label>
-
-          <label className="text-sm">
-            Bestand
-            <input
-              className="input mt-1"
-              type="number"
-              value={form.stock}
-              onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
-              disabled={!hasRequiredMeta}
-            />
-          </label>
-
-          <label className="text-sm">
-            Mindestbestand (optional)
-            <input
-              className="input mt-1"
-              type="number"
-              value={form.minStock}
-              onChange={(e) => setForm({ ...form, minStock: e.target.value })}
-              placeholder="leer = kein Mindestbestand"
-              disabled={!hasRequiredMeta}
-            />
-          </label>
-
-          <label className="text-sm">
-            Einheit
-            <select className="input mt-1" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} disabled={!hasRequiredMeta}>
-              <option value="STK">Stk</option>
-              <option value="M">m</option>
-              <option value="SET">Set</option>
-              <option value="PACK">Pack</option>
-            </select>
-          </label>
-
-          <label className="text-sm md:col-span-2">
-            Beschreibung (Markdown)
+          <label className="text-sm md:col-span-1">
+            Beschreibung
             <textarea
               className="input mt-1 min-h-28"
               value={form.description}
@@ -324,6 +225,111 @@ export default function NewItemPage() {
               disabled={!hasRequiredMeta}
             />
           </label>
+
+          <label className="text-sm">
+            MPN
+            <input className="input mt-1" value={form.mpn} onChange={(e) => setForm({ ...form, mpn: e.target.value })} disabled={!hasRequiredMeta} />
+          </label>
+
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+            <label className="text-sm">
+              Kategorie
+              <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code ? `${c.code} - ${c.name}` : c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              Type (Label)
+              <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })} disabled={!hasRequiredMeta} required>
+                {types.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.code} - {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+            <label className="text-sm">
+              Lagerort
+              <select
+                className="input mt-1"
+                value={form.storageLocationId}
+                onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "" })}
+                disabled={!hasRequiredMeta}
+                required
+              >
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              Regal / Bereich
+              <select
+                className="input mt-1"
+                value={form.storageArea}
+                onChange={(e) => setForm({ ...form, storageArea: e.target.value })}
+                disabled={!hasRequiredMeta || !form.storageLocationId || availableShelves.length === 0}
+              >
+                <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+                {availableShelves.map((shelf) => (
+                  <option key={shelf.id} value={shelf.name}>
+                    {shelf.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              Fach / Bin
+              <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta} />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+            <label className="text-sm">
+              Bestand
+              <input
+                className="input mt-1"
+                type="number"
+                value={form.stock}
+                onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
+                disabled={!hasRequiredMeta}
+              />
+            </label>
+
+            <label className="text-sm">
+              Einheit
+              <select className="input mt-1" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} disabled={!hasRequiredMeta}>
+                <option value="STK">Stk</option>
+                <option value="M">m</option>
+                <option value="SET">Set</option>
+                <option value="PACK">Pack</option>
+              </select>
+            </label>
+
+            <label className="text-sm">
+              Mindestbestand
+              <input
+                className="input mt-1"
+                type="number"
+                value={form.minStock}
+                onChange={(e) => setForm({ ...form, minStock: e.target.value })}
+                placeholder="leer = kein Mindestbestand"
+                disabled={!hasRequiredMeta}
+              />
+            </label>
+          </div>
 
           <CustomFieldsEditor
             fields={customFields}
