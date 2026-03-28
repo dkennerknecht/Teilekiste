@@ -32,9 +32,17 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
     <header className="border-b border-workshop-200 bg-[var(--app-surface)]">
       <div className="mx-auto max-w-7xl px-3 py-3 sm:px-4">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Link href="/" className="min-w-0 flex-1 text-workshop-800" onClick={closeMobileMenu}>
-            <Brand textClassName="text-base font-semibold text-workshop-800 sm:text-lg" />
-          </Link>
+          <div className="min-w-0 flex-1">
+            <Link
+              href="/"
+              className="inline-flex max-w-full text-workshop-800"
+              onClick={closeMobileMenu}
+              aria-label="Zur Startseite"
+              title="Startseite"
+            >
+              <Brand textClassName="text-base font-semibold text-workshop-800 sm:text-lg" />
+            </Link>
+          </div>
 
           <button
             type="button"
