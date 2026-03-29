@@ -219,15 +219,24 @@ export const bulkItemSchema = z.object({
   archiveItems: z.boolean().optional(),
   unarchiveItems: z.boolean().optional(),
   categoryId: uuidSchema.optional(),
-  storageLocationId: uuidSchema.optional(),
-  storageArea: z.string().max(120).optional().nullable(),
-  bin: z.string().max(120).optional().nullable(),
   minStock: z.number().finite().optional().nullable(),
   unit: z.enum(["STK", "M", "SET", "PACK"]).optional(),
   setTagIds: z.array(uuidSchema).optional(),
   addTagIds: z.array(uuidSchema).optional(),
   removeTagIds: z.array(uuidSchema).optional(),
   typeId: uuidSchema.optional(),
+  dryRun: z.boolean().optional()
+});
+
+export const itemTransferSchema = z.object({
+  storageLocationId: uuidSchema,
+  storageArea: z.string().max(120).optional().nullable(),
+  bin: z.string().max(120).optional().nullable(),
+  note: z.string().max(500).optional().nullable()
+});
+
+export const bulkTransferSchema = itemTransferSchema.extend({
+  itemIds: z.array(uuidSchema).min(1),
   dryRun: z.boolean().optional()
 });
 

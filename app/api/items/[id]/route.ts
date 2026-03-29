@@ -6,6 +6,7 @@ import { auditLog } from "@/lib/audit";
 import { summarizeAuditEntry } from "@/lib/audit-view";
 import { assignNextLabelCode } from "@/lib/label-code";
 import { loadItemBom } from "@/lib/item-bom";
+import { applyItemTransfer, validateTransferTarget } from "@/lib/item-transfer";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { canSetStock, getAvailableQty, getReservedQty } from "@/lib/stock";
 import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
@@ -37,6 +38,19 @@ function serializeItemDetailQuantities(item: any, reservedQty: number) {
     reservedQty: serializeStoredQuantity(item.unit, reservedQty),
     availableStock: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reservedQty))
   };
+}
+
+function mapTransferError(error: unknown) {
+  switch ((error as Error).message) {
+    case "TRANSFER_TARGET_FORBIDDEN":
+      return { status: 403, body: { error: "Forbidden" } };
+    case "TRANSFER_TARGET_LOCATION_NOT_FOUND":
+      return { status: 400, body: { error: "Ziel-Lagerort nicht gefunden" } };
+    case "TRANSFER_TARGET_SHELF_INVALID":
+      return { status: 400, body: { error: "Regal/Bereich ist fuer den Ziel-Lagerort ungueltig" } };
+    default:
+      return null;
+  }
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -220,7 +234,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     customValues: _customValues,
     typeId: _typeId,
     categoryId,
-    storageLocationId,
+    storageLocationId: _storageLocationId,
+    storageArea: _storageArea,
+    bin: _bin,
     stock: _stock,
     unit: _unit,
     minStock: _minStock,
@@ -248,70 +264,141 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const item = await prisma.item.update({
-    where: { id: params.id },
-    data: {
-      ...itemData,
-      labelCode,
-      ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
-      ...(storageLocationId ? { storageLocation: { connect: { id: storageLocationId } } } : {}),
-      ...(nextStock !== undefined ? { stock: nextStock } : {}),
-      ...(body.unit !== undefined ? { unit: nextUnit } : {}),
-      ...(body.typeId !== undefined
-        ? nextTypeId
-          ? { labelType: { connect: { id: nextTypeId } } }
-          : { labelType: { disconnect: true } }
-        : {}),
-      storageArea: itemData.storageArea || undefined,
-      bin: itemData.bin || undefined,
-      minStock: nextMinStock === undefined ? undefined : nextMinStock,
-      manufacturer: itemData.manufacturer || null,
-      mpn: itemData.mpn || null,
-      ...(tagIds
-        ? {
-            tags: {
-              deleteMany: {},
-              create: tagIds.map((tagId) => ({ tagId }))
-            }
-          }
-        : {})
-    }
-  });
+  const targetStorageLocationId = body.storageLocationId || existing.storageLocationId;
+  const targetStorageArea =
+    body.storageArea !== undefined
+      ? body.storageArea?.trim() || null
+      : body.storageLocationId && body.storageLocationId !== existing.storageLocationId
+        ? null
+        : existing.storageArea || null;
+  const targetBin = body.bin !== undefined ? body.bin?.trim() || null : existing.bin || null;
+  const locationChanged =
+    targetStorageLocationId !== existing.storageLocationId ||
+    targetStorageArea !== (existing.storageArea || null) ||
+    targetBin !== (existing.bin || null);
+  const hasRequestedNonTransferChanges = Object.keys(body).some(
+    (key) => !["storageLocationId", "storageArea", "bin"].includes(key)
+  );
 
-  if (customFieldWrites) {
-    await Promise.all(
-      customFieldWrites.upserts.map((entry) =>
-        prisma.itemCustomFieldValue.upsert({
-          where: { itemId_customFieldId: { itemId: item.id, customFieldId: entry.customFieldId } },
-          update: { valueJson: entry.valueJson },
-          create: { itemId: item.id, customFieldId: entry.customFieldId, valueJson: entry.valueJson }
-        })
-      )
-    );
-    if (customFieldWrites.deletions.length) {
-      await prisma.itemCustomFieldValue.deleteMany({
-        where: {
-          itemId: item.id,
-          customFieldId: { in: customFieldWrites.deletions }
-        }
-      });
-    }
+  if (!locationChanged && !hasRequestedNonTransferChanges) {
+    return NextResponse.json({
+      ...existing,
+      stock: serializeStoredQuantity(existing.unit, existing.stock),
+      minStock: serializeStoredQuantity(existing.unit, existing.minStock)
+    });
   }
 
-  await auditLog({
-    userId: auth.user!.id,
-    action: "ITEM_UPDATE",
-    entity: "Item",
-    entityId: item.id,
-    before: existing,
-    after: item
-  });
+  try {
+    const item = await prisma.$transaction(async (tx) => {
+      let workingItem = existing;
 
-  return NextResponse.json({
-    ...item,
-    stock: serializeStoredQuantity(item.unit, item.stock),
-    minStock: serializeStoredQuantity(item.unit, item.minStock)
-  });
+      if (locationChanged) {
+        const validatedTarget = await validateTransferTarget(tx, {
+          storageLocationId: targetStorageLocationId,
+          storageArea: targetStorageArea,
+          allowedLocationIds
+        });
+        const transferResult = await applyItemTransfer(tx, {
+          item: existing,
+          target: {
+            storageLocationId: validatedTarget.location.id,
+            storageArea: validatedTarget.storageArea,
+            bin: targetBin
+          },
+          userId: auth.user!.id,
+          sourceLocation: null,
+          targetLocation: validatedTarget.location
+        });
+        workingItem = transferResult.item as typeof existing;
+      }
+
+      if (!hasRequestedNonTransferChanges) {
+        return workingItem;
+      }
+
+      const nextLabelCode = shouldRegenerateLabel ? await assignNextLabelCode(nextCategoryId, nextTypeId, tx) : existing.labelCode;
+      const updatedItem = await tx.item.update({
+        where: { id: params.id },
+        data: {
+          ...itemData,
+          labelCode: nextLabelCode,
+          ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
+          ...(nextStock !== undefined ? { stock: nextStock } : {}),
+          ...(body.unit !== undefined ? { unit: nextUnit } : {}),
+          ...(body.typeId !== undefined
+            ? nextTypeId
+              ? { labelType: { connect: { id: nextTypeId } } }
+              : { labelType: { disconnect: true } }
+            : {}),
+          minStock: nextMinStock === undefined ? undefined : nextMinStock,
+          manufacturer: itemData.manufacturer || null,
+          mpn: itemData.mpn || null,
+          ...(tagIds
+            ? {
+                tags: {
+                  deleteMany: {},
+                  create: tagIds.map((tagId) => ({ tagId }))
+                }
+              }
+            : {})
+        }
+      });
+
+      if (customFieldWrites) {
+        await Promise.all(
+          customFieldWrites.upserts.map((entry) =>
+            tx.itemCustomFieldValue.upsert({
+              where: { itemId_customFieldId: { itemId: updatedItem.id, customFieldId: entry.customFieldId } },
+              update: { valueJson: entry.valueJson },
+              create: { itemId: updatedItem.id, customFieldId: entry.customFieldId, valueJson: entry.valueJson }
+            })
+          )
+        );
+        if (customFieldWrites.deletions.length) {
+          await tx.itemCustomFieldValue.deleteMany({
+            where: {
+              itemId: updatedItem.id,
+              customFieldId: { in: customFieldWrites.deletions }
+            }
+          });
+        }
+      }
+
+      const auditBefore = locationChanged
+        ? {
+            ...existing,
+            storageLocationId: targetStorageLocationId,
+            storageArea: targetStorageArea,
+            bin: targetBin
+          }
+        : existing;
+      await auditLog(
+        {
+          userId: auth.user!.id,
+          action: "ITEM_UPDATE",
+          entity: "Item",
+          entityId: updatedItem.id,
+          before: auditBefore,
+          after: updatedItem
+        },
+        tx
+      );
+
+      return updatedItem;
+    });
+
+    return NextResponse.json({
+      ...item,
+      stock: serializeStoredQuantity(item.unit, item.stock),
+      minStock: serializeStoredQuantity(item.unit, item.minStock)
+    });
+  } catch (error) {
+    const transferError = mapTransferError(error);
+    if (transferError) {
+      return NextResponse.json(transferError.body, { status: transferError.status });
+    }
+    throw error;
+  }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

@@ -31,6 +31,12 @@ type CategoryOption = { id: string; name: string; code?: string | null };
 type LocationOption = { id: string; name: string; code?: string | null };
 type ShelfOption = { id: string; name: string; storageLocationId: string };
 type TypeOption = { id: string; code: string; name: string };
+type TransferFormState = {
+  storageLocationId: string;
+  storageArea: string;
+  bin: string;
+  note: string;
+};
 
 const movementReasonOptions = [
   { value: "PURCHASE", label: "Einkauf" },
@@ -61,11 +67,34 @@ function buildItemFormState(data: any) {
   };
 }
 
+function buildTransferFormState(data: any): TransferFormState {
+  return {
+    storageLocationId: data.storageLocationId || "",
+    storageArea: data.storageArea || "",
+    bin: data.bin || "",
+    note: ""
+  };
+}
+
+function formatStoragePlace(data: {
+  storageLocation?: { name?: string | null } | null;
+  storageArea?: string | null;
+  bin?: string | null;
+}) {
+  return [data.storageLocation?.name || null, data.storageArea || null, data.bin || null].filter(Boolean).join(" / ") || "-";
+}
+
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [item, setItem] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState<any>(null);
+  const [transferForm, setTransferForm] = useState<TransferFormState>({
+    storageLocationId: "",
+    storageArea: "",
+    bin: "",
+    note: ""
+  });
   const [tags, setTags] = useState<TagOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -85,6 +114,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [deleteError, setDeleteError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
+  const [transferError, setTransferError] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/items/${params.id}`, { cache: "no-store" });
@@ -95,6 +126,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     }
     setItem(data);
     setForm(buildItemFormState(data));
+    setTransferForm(buildTransferFormState(data));
   }, [params.id, router]);
 
   useEffect(() => {
@@ -102,7 +134,6 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   }, [load]);
 
   useEffect(() => {
-    if (!editMode) return;
     fetch("/api/meta", { cache: "no-store" })
       .then((r) => r.json())
       .then((meta) => {
@@ -113,7 +144,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         setTypes(meta.types || []);
         setCustomFields(meta.customFields || []);
       });
-  }, [editMode]);
+  }, []);
 
   useEffect(() => {
     if (!editMode || !item || !types.length) return;
@@ -169,6 +200,16 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     return [{ id: `legacy-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
   }, [form?.storageArea, form?.storageLocationId, shelves]);
 
+  const availableTransferShelves = useMemo(() => {
+    const currentLocationId = transferForm.storageLocationId || "";
+    const currentStorageArea = transferForm.storageArea || "";
+    const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
+    if (!currentStorageArea || filtered.some((shelf) => shelf.name === currentStorageArea)) {
+      return filtered;
+    }
+    return [{ id: `legacy-transfer-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
+  }, [shelves, transferForm.storageArea, transferForm.storageLocationId]);
+
   const itemCustomValues = useMemo(
     () =>
       (item?.customValues || []).filter((entry: any) => {
@@ -190,6 +231,14 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const hasBin = Boolean(String(item.bin || "").trim());
   const hasTags = (item.tags || []).length > 0;
   const hasCustomFieldValues = itemCustomValues.length > 0;
+  const currentStoragePlace = formatStoragePlace(item);
+  const targetStoragePlace = [
+    locations.find((location) => location.id === transferForm.storageLocationId)?.name || null,
+    transferForm.storageArea || null,
+    transferForm.bin || null
+  ]
+    .filter(Boolean)
+    .join(" / ");
 
   async function quickStockAdjust(deltaValue: number) {
     await fetch(`/api/items/${item.id}/movements`, {
@@ -278,6 +327,46 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     } catch {
       setDeleteError("Loeschen fehlgeschlagen.");
       setDeleteBusy(false);
+    }
+  }
+
+  async function submitTransfer() {
+    if (!transferForm.storageLocationId) {
+      setTransferError("Bitte einen Ziel-Lagerort auswaehlen.");
+      return;
+    }
+
+    setTransferBusy(true);
+    setTransferError("");
+
+    try {
+      const res = await fetch(`/api/items/${item.id}/transfer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          storageLocationId: transferForm.storageLocationId,
+          storageArea: transferForm.storageArea.trim() || null,
+          bin: transferForm.bin.trim() || null,
+          note: transferForm.note.trim() || null
+        })
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setTransferError(data?.error || "Umlagerung fehlgeschlagen.");
+        return;
+      }
+
+      if (!data?.transferred) {
+        setTransferError("Item befindet sich bereits an diesem Platz.");
+        return;
+      }
+
+      await load();
+    } catch {
+      setTransferError("Umlagerung fehlgeschlagen.");
+    } finally {
+      setTransferBusy(false);
     }
   }
 
@@ -578,6 +667,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   )}
                 </div>
               )}
+              {editMode && (
+                <p className="theme-muted border-t border-workshop-200 pt-4 text-sm">
+                  Standortwechsel werden als Umlagerung protokolliert. Fuer schnelle Lagerwechsel ist der Transfer-Block unterhalb der Details der bevorzugte Weg.
+                </p>
+              )}
 
               {(editMode || hasTags) && (
                 <div className="border-t border-workshop-200 pt-4">
@@ -666,6 +760,103 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           </div>
         </section>
       </div>
+
+      {!editMode && (
+        <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[var(--app-text)]">
+                <MapPin size={18} /> Umlagerung
+              </h3>
+              <p className="theme-muted mt-1 text-sm">Volltransfer des gesamten Items ohne Bestandsbuchung.</p>
+            </div>
+            <span className="rounded-full border border-workshop-200 bg-workshop-50 px-3 py-1 text-sm font-medium text-workshop-800">
+              Aktuell: {currentStoragePlace}
+            </span>
+          </div>
+
+          {transferError && <p className="theme-status-danger mb-3 rounded-lg border border-transparent px-3 py-2 text-sm">{transferError}</p>}
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
+              <span className="text-sm font-medium">Ziel-Lagerort</span>
+              <select
+                className="input"
+                value={transferForm.storageLocationId}
+                onChange={(e) =>
+                  setTransferForm((prev) => ({
+                    ...prev,
+                    storageLocationId: e.target.value,
+                    storageArea: ""
+                  }))
+                }
+              >
+                <option value="">Lagerort waehlen</option>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name} ({location.code || "--"})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
+              <span className="text-sm font-medium">Ziel-Regal / Bereich</span>
+              <select
+                className="input"
+                value={transferForm.storageArea}
+                onChange={(e) => setTransferForm((prev) => ({ ...prev, storageArea: e.target.value }))}
+                disabled={!transferForm.storageLocationId}
+              >
+                <option value="">
+                  {!transferForm.storageLocationId
+                    ? "Erst Lagerort waehlen"
+                    : availableTransferShelves.length
+                      ? "Kein Regal"
+                      : "Keine Regale fuer Lagerort"}
+                </option>
+                {availableTransferShelves.map((shelf) => (
+                  <option key={shelf.id} value={shelf.name}>
+                    {shelf.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
+              <span className="text-sm font-medium">Ziel-Fach / Bin</span>
+              <input
+                className="input"
+                value={transferForm.bin}
+                onChange={(e) => setTransferForm((prev) => ({ ...prev, bin: e.target.value }))}
+                placeholder="Leer = Fach entfernen"
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
+              <span className="text-sm font-medium">Notiz</span>
+              <textarea
+                className="input min-h-24"
+                value={transferForm.note}
+                onChange={(e) => setTransferForm((prev) => ({ ...prev, note: e.target.value }))}
+                placeholder="Optional fuer Audit und Nachvollziehbarkeit"
+              />
+            </label>
+
+            <div className="flex flex-col justify-between gap-3 rounded-xl border border-workshop-200 p-3">
+              <div className="text-sm text-workshop-700">
+                <p className="font-medium text-[var(--app-text)]">Ziel</p>
+                <p>{targetStoragePlace || "Noch kein Ziel gewaehlt"}</p>
+              </div>
+              <button type="button" className="btn w-full" onClick={submitTransfer} disabled={transferBusy}>
+                {transferBusy ? "Speichert..." : "Umlagerung ausfuehren"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

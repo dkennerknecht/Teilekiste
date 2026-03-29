@@ -52,6 +52,14 @@ function summarizeDiff(before: Record<string, unknown> | null, after: Record<str
   return `Geändert: ${fields.map(humanFieldName).join(", ")}`;
 }
 
+function formatStoragePlace(payload: Record<string, unknown> | null) {
+  if (!payload) return "Unbekannt";
+  const location = String(payload.storageLocationName || payload.storageLocationId || "").trim() || "Unbekannt";
+  const storageArea = String(payload.storageArea || "").trim();
+  const bin = String(payload.bin || "").trim();
+  return [location, storageArea || null, bin || null].filter(Boolean).join(" / ");
+}
+
 export function summarizeAuditEntry(entry: AuditLike) {
   const before = safeParseJson(entry.before);
   const after = safeParseJson(entry.after);
@@ -68,6 +76,13 @@ export function summarizeAuditEntry(entry: AuditLike) {
       return "Item angelegt";
     case "ITEM_UPDATE":
       return summarizeDiff(before, after);
+    case "ITEM_TRANSFER": {
+      const from = formatStoragePlace(before);
+      const to = formatStoragePlace(after);
+      const note = String(after?.note || before?.note || "").trim();
+      const base = `Umlagerung: ${from} -> ${to}`;
+      return note ? `${base} (${note})` : base;
+    }
     case "ITEM_SOFT_DELETE":
       return "Item in den Papierkorb verschoben";
     case "ITEM_ARCHIVE":

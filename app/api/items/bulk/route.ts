@@ -28,9 +28,6 @@ export async function POST(req: NextRequest) {
   if (allowedLocationIds) {
     const forbidden = items.some((item) => !allowedLocationIds.includes(item.storageLocationId));
     if (forbidden) return NextResponse.json({ error: "Forbidden by storage scope" }, { status: 403 });
-    if (body.storageLocationId && !allowedLocationIds.includes(body.storageLocationId)) {
-      return NextResponse.json({ error: "Target location not allowed" }, { status: 403 });
-    }
   }
 
   const previewCodes: Array<{ itemId: string; oldCode: string; newCode: string }> = [];
@@ -159,9 +156,6 @@ export async function POST(req: NextRequest) {
           data: {
             categoryId: body.categoryId || undefined,
             typeId: body.typeId || undefined,
-            storageLocationId: body.storageLocationId || undefined,
-            storageArea: body.storageArea !== undefined ? body.storageArea : undefined,
-            bin: body.bin !== undefined ? body.bin : undefined,
             ...(nextStock !== undefined ? { stock: nextStock } : {}),
             minStock: nextMinStock === undefined ? undefined : nextMinStock,
             unit: body.unit || undefined,

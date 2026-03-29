@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Archive, CheckCheck, ChevronDown, ChevronUp, PencilLine, Trash2, X } from "lucide-react";
+import { Archive, CheckCheck, ChevronDown, ChevronUp, MapPin, PencilLine, Trash2, X } from "lucide-react";
 import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
@@ -42,27 +42,29 @@ type ShelfOption = {
 type BulkForm = {
   categoryEnabled: boolean;
   categoryId: string;
-  storageLocationEnabled: boolean;
-  storageLocationId: string;
-  storageAreaEnabled: boolean;
-  storageArea: string;
-  binEnabled: boolean;
-  bin: string;
   tagsEnabled: boolean;
   tagIds: string[];
+};
+
+type BulkTransferForm = {
+  storageLocationId: string;
+  storageArea: string;
+  bin: string;
+  note: string;
 };
 
 const initialBulkForm: BulkForm = {
   categoryEnabled: false,
   categoryId: "",
-  storageLocationEnabled: false,
-  storageLocationId: "",
-  storageAreaEnabled: false,
-  storageArea: "",
-  binEnabled: false,
-  bin: "",
   tagsEnabled: false,
   tagIds: []
+};
+
+const initialBulkTransferForm: BulkTransferForm = {
+  storageLocationId: "",
+  storageArea: "",
+  bin: "",
+  note: ""
 };
 
 export default function HomePage() {
@@ -75,8 +77,13 @@ export default function HomePage() {
   const [shelves, setShelves] = useState<ShelfOption[]>([]);
   const [tags, setTags] = useState<Option[]>([]);
   const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
+  const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkForm, setBulkForm] = useState<BulkForm>(initialBulkForm);
+  const [bulkTransferForm, setBulkTransferForm] = useState<BulkTransferForm>(initialBulkTransferForm);
+  const [bulkTransferPreview, setBulkTransferPreview] = useState<any>(null);
+  const [bulkTransferError, setBulkTransferError] = useState("");
+  const [bulkTransferBusy, setBulkTransferBusy] = useState(false);
   const [bulkActionError, setBulkActionError] = useState("");
   const [bulkError, setBulkError] = useState("");
   const [bulkArchiving, setBulkArchiving] = useState(false);
@@ -164,6 +171,14 @@ export default function HomePage() {
     setBulkSaving(false);
   }
 
+  function resetBulkTransfer() {
+    setBulkTransferOpen(false);
+    setBulkTransferForm(initialBulkTransferForm);
+    setBulkTransferPreview(null);
+    setBulkTransferError("");
+    setBulkTransferBusy(false);
+  }
+
   function resetBulkDelete() {
     setBulkDeleteOpen(false);
     setBulkDeleteError("");
@@ -185,9 +200,6 @@ export default function HomePage() {
 
     if (
       !bulkForm.categoryEnabled &&
-      !bulkForm.storageLocationEnabled &&
-      !bulkForm.storageAreaEnabled &&
-      !bulkForm.binEnabled &&
       !bulkForm.tagsEnabled
     ) {
       setBulkError("Bitte mindestens ein Feld fuer die Sammelbearbeitung aktivieren.");
@@ -199,16 +211,6 @@ export default function HomePage() {
       return;
     }
 
-    if (bulkForm.storageLocationEnabled && !bulkForm.storageLocationId) {
-      setBulkError("Bitte einen Lagerort auswaehlen.");
-      return;
-    }
-
-    if (bulkForm.storageAreaEnabled && !bulkForm.storageLocationId) {
-      setBulkError("Bitte zuerst einen Lagerort waehlen, damit ein Regal gesetzt werden kann.");
-      return;
-    }
-
     setBulkSaving(true);
     setBulkError("");
 
@@ -216,15 +218,6 @@ export default function HomePage() {
 
     if (bulkForm.categoryEnabled) {
       payload.categoryId = bulkForm.categoryId;
-    }
-    if (bulkForm.storageLocationEnabled) {
-      payload.storageLocationId = bulkForm.storageLocationId;
-    }
-    if (bulkForm.storageAreaEnabled) {
-      payload.storageArea = bulkForm.storageArea.trim() || null;
-    }
-    if (bulkForm.binEnabled) {
-      payload.bin = bulkForm.bin.trim() || null;
     }
     if (bulkForm.tagsEnabled) {
       payload.setTagIds = bulkForm.tagIds;
@@ -245,6 +238,83 @@ export default function HomePage() {
 
     setSelected([]);
     resetBulkEditor();
+    await load();
+  }
+
+  async function previewBulkTransfer() {
+    if (!selected.length) {
+      setBulkTransferError("Bitte zuerst mindestens ein Item auswaehlen.");
+      return;
+    }
+    if (!bulkTransferForm.storageLocationId) {
+      setBulkTransferError("Bitte einen Ziel-Lagerort auswaehlen.");
+      return;
+    }
+
+    setBulkTransferBusy(true);
+    setBulkTransferError("");
+
+    const res = await fetch("/api/items/bulk-transfer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        itemIds: selected,
+        storageLocationId: bulkTransferForm.storageLocationId,
+        storageArea: bulkTransferForm.storageArea.trim() || null,
+        bin: bulkTransferForm.bin.trim() || null,
+        note: bulkTransferForm.note.trim() || null,
+        dryRun: true
+      })
+    });
+    const data = await res.json().catch(() => null);
+    setBulkTransferBusy(false);
+
+    if (!res.ok && !data) {
+      setBulkTransferError("Transfer-Vorschau konnte nicht geladen werden.");
+      return;
+    }
+
+    setBulkTransferPreview(data);
+    if (!res.ok) {
+      setBulkTransferError(data?.targetError || data?.error || "Transfer-Vorschau hat Blocker.");
+    }
+  }
+
+  async function applyBulkTransfer() {
+    if (!selected.length) {
+      setBulkTransferError("Bitte zuerst mindestens ein Item auswaehlen.");
+      return;
+    }
+    if (!bulkTransferForm.storageLocationId) {
+      setBulkTransferError("Bitte einen Ziel-Lagerort auswaehlen.");
+      return;
+    }
+
+    setBulkTransferBusy(true);
+    setBulkTransferError("");
+
+    const res = await fetch("/api/items/bulk-transfer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        itemIds: selected,
+        storageLocationId: bulkTransferForm.storageLocationId,
+        storageArea: bulkTransferForm.storageArea.trim() || null,
+        bin: bulkTransferForm.bin.trim() || null,
+        note: bulkTransferForm.note.trim() || null
+      })
+    });
+    const data = await res.json().catch(() => null);
+    setBulkTransferBusy(false);
+
+    if (!res.ok) {
+      setBulkTransferPreview(data);
+      setBulkTransferError(data?.targetError || data?.error || "Die Sammelumlagerung konnte nicht gespeichert werden.");
+      return;
+    }
+
+    setSelected([]);
+    resetBulkTransfer();
     await load();
   }
 
@@ -333,6 +403,9 @@ export default function HomePage() {
     if (!selected.length && bulkEditorOpen) {
       resetBulkEditor();
     }
+    if (!selected.length && bulkTransferOpen) {
+      resetBulkTransfer();
+    }
     if (!selected.length && bulkDeleteOpen) {
       resetBulkDelete();
     }
@@ -340,11 +413,11 @@ export default function HomePage() {
       setBulkActionError("");
       setBulkArchiving(false);
     }
-  }, [bulkDeleteOpen, bulkEditorOpen, selected.length]);
+  }, [bulkDeleteOpen, bulkEditorOpen, bulkTransferOpen, selected.length]);
 
   const selectedSet = new Set(selected);
   const allVisibleSelected = items.length > 0 && items.every((item) => selectedSet.has(item.id));
-  const availableBulkShelves = shelves.filter((shelf) => shelf.storageLocationId === bulkForm.storageLocationId);
+  const availableBulkTransferShelves = shelves.filter((shelf) => shelf.storageLocationId === bulkTransferForm.storageLocationId);
   const hasActiveFilters = Boolean(categoryFilter || locationFilter || tagFilter || lowStockFilter || hasImagesFilter);
   const activeFilterCount = [Boolean(categoryFilter), Boolean(locationFilter), Boolean(tagFilter), lowStockFilter, hasImagesFilter].filter(Boolean).length;
 
@@ -380,6 +453,14 @@ export default function HomePage() {
                 title="Sammelbearbeitung"
               >
                 <PencilLine size={18} />
+              </button>
+              <button
+                className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
+                onClick={() => setBulkTransferOpen(true)}
+                aria-label="Sammelumlagerung"
+                title="Sammelumlagerung"
+              >
+                <MapPin size={18} />
               </button>
               <button
                 className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
@@ -716,7 +797,9 @@ export default function HomePage() {
 
             <div className="max-h-[calc(90vh-8.5rem)] space-y-4 overflow-y-auto px-4 py-4">
               {bulkError && <p className="theme-status-danger rounded-lg border border-transparent px-3 py-2 text-sm">{bulkError}</p>}
-              <p className="text-xs text-workshop-700">Sobald du einen Wert waehlst oder eingibst, wird das jeweilige Feld automatisch aktiviert.</p>
+              <p className="text-xs text-workshop-700">
+                Kategorie und Tags koennen hier gemeinsam gesetzt werden. Lagerwechsel laufen separat ueber die Sammelumlagerung.
+              </p>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
@@ -748,94 +831,6 @@ export default function HomePage() {
                   </select>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <input
-                      type="checkbox"
-                      checked={bulkForm.storageLocationEnabled}
-                      onChange={(e) => setBulkForm((prev) => ({ ...prev, storageLocationEnabled: e.target.checked }))}
-                    />
-                    Lagerort setzen
-                  </label>
-                  <select
-                    className="input h-10 min-h-0"
-                    value={bulkForm.storageLocationId}
-                    onChange={(e) =>
-                      setBulkForm((prev) => ({
-                        ...prev,
-                        storageLocationId: e.target.value,
-                        storageArea: "",
-                        storageLocationEnabled: prev.storageLocationEnabled || Boolean(e.target.value)
-                      }))
-                    }
-                  >
-                    <option value="">Lagerort waehlen</option>
-                    {locations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <input
-                      type="checkbox"
-                      checked={bulkForm.storageAreaEnabled}
-                      onChange={(e) => setBulkForm((prev) => ({ ...prev, storageAreaEnabled: e.target.checked }))}
-                    />
-                    Regal setzen
-                  </label>
-                  <select
-                    className="input h-10 min-h-0"
-                    value={bulkForm.storageArea}
-                    onChange={(e) =>
-                      setBulkForm((prev) => ({
-                        ...prev,
-                        storageArea: e.target.value,
-                        storageAreaEnabled: prev.storageAreaEnabled || Boolean(e.target.value)
-                      }))
-                    }
-                    disabled={!bulkForm.storageLocationId}
-                  >
-                    <option value="">
-                      {!bulkForm.storageLocationId
-                        ? "Erst Lagerort waehlen"
-                        : availableBulkShelves.length
-                        ? "Kein Regal"
-                        : "Keine Regale fuer Lagerort"}
-                    </option>
-                    {availableBulkShelves.map((shelf) => (
-                      <option key={shelf.id} value={shelf.name}>
-                        {shelf.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <input
-                      type="checkbox"
-                      checked={bulkForm.binEnabled}
-                      onChange={(e) => setBulkForm((prev) => ({ ...prev, binEnabled: e.target.checked }))}
-                    />
-                    Fach setzen
-                  </label>
-                  <input
-                    className="input h-10 min-h-0"
-                    value={bulkForm.bin}
-                    onChange={(e) =>
-                      setBulkForm((prev) => ({
-                        ...prev,
-                        bin: e.target.value,
-                        binEnabled: prev.binEnabled || e.target.value.trim().length > 0
-                      }))
-                    }
-                    placeholder="Leer = Fach entfernen"
-                  />
-                </div>
               </div>
 
               <div className="space-y-3 rounded-xl border border-workshop-200 p-3">
@@ -883,6 +878,151 @@ export default function HomePage() {
               </button>
               <button type="button" className="btn w-full sm:w-auto" onClick={applyBulkEdit} disabled={bulkSaving}>
                 {bulkSaving ? "Speichert..." : "Aenderungen uebernehmen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkTransferOpen && (
+        <div className="fixed inset-0 z-[55] flex items-end bg-black/45 p-3 sm:items-center sm:justify-center sm:p-4" onClick={resetBulkTransfer}>
+          <div
+            className="max-h-[90vh] w-full overflow-hidden rounded-2xl border border-workshop-200 bg-[var(--app-surface)] shadow-xl sm:max-w-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-workshop-200 px-4 py-3">
+              <div>
+                <p className="text-base font-semibold">Sammelumlagerung</p>
+                <p className="text-sm text-workshop-700">{selected.length} Items werden an denselben Zielplatz verschoben.</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-workshop-200 text-lg"
+                onClick={resetBulkTransfer}
+                aria-label="Sammelumlagerung schliessen"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="max-h-[calc(90vh-8.5rem)] space-y-4 overflow-y-auto px-4 py-4">
+              {bulkTransferError && <p className="theme-status-danger rounded-lg border border-transparent px-3 py-2 text-sm">{bulkTransferError}</p>}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2 rounded-xl border border-workshop-200 p-3 sm:col-span-2">
+                  <label className="text-sm font-medium">Ziel-Lagerort</label>
+                  <select
+                    className="input h-10 min-h-0"
+                    value={bulkTransferForm.storageLocationId}
+                    onChange={(e) =>
+                      setBulkTransferForm((prev) => ({
+                        ...prev,
+                        storageLocationId: e.target.value,
+                        storageArea: ""
+                      }))
+                    }
+                  >
+                    <option value="">Lagerort waehlen</option>
+                    {locations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                  <label className="text-sm font-medium">Ziel-Regal / Bereich</label>
+                  <select
+                    className="input h-10 min-h-0"
+                    value={bulkTransferForm.storageArea}
+                    onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, storageArea: e.target.value }))}
+                    disabled={!bulkTransferForm.storageLocationId}
+                  >
+                    <option value="">
+                      {!bulkTransferForm.storageLocationId
+                        ? "Erst Lagerort waehlen"
+                        : availableBulkTransferShelves.length
+                        ? "Kein Regal"
+                        : "Keine Regale fuer Lagerort"}
+                    </option>
+                    {availableBulkTransferShelves.map((shelf) => (
+                      <option key={shelf.id} value={shelf.name}>
+                        {shelf.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                  <label className="text-sm font-medium">Ziel-Fach / Bin</label>
+                  <input
+                    className="input h-10 min-h-0"
+                    value={bulkTransferForm.bin}
+                    onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, bin: e.target.value }))}
+                    placeholder="Leer = Fach entfernen"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                <label className="text-sm font-medium">Notiz</label>
+                <textarea
+                  className="input min-h-24"
+                  value={bulkTransferForm.note}
+                  onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, note: e.target.value }))}
+                  placeholder="Optional fuer Audit und Nachvollziehbarkeit"
+                />
+              </div>
+
+              {bulkTransferPreview && (
+                <div className="space-y-3 rounded-xl border border-workshop-200 p-3">
+                  <div className="text-sm text-workshop-700">
+                    <p>Items: {bulkTransferPreview.count} | uebertragbar: {bulkTransferPreview.transferableCount}</p>
+                    <p>
+                      Ziel: {bulkTransferPreview.target.storageLocationName || "-"}
+                      {bulkTransferPreview.target.storageArea ? ` / ${bulkTransferPreview.target.storageArea}` : ""}
+                      {bulkTransferPreview.target.bin ? ` / ${bulkTransferPreview.target.bin}` : ""}
+                    </p>
+                    {bulkTransferPreview.targetError && <p className="text-red-700">{bulkTransferPreview.targetError}</p>}
+                  </div>
+
+                  {!!bulkTransferPreview.sourceGroups?.length && (
+                    <div className="space-y-1 text-sm">
+                      <p className="font-medium">Quellplaetze</p>
+                      {bulkTransferPreview.sourceGroups.map((group: any) => (
+                        <p key={`${group.storageLocationId}:${group.storageArea || ""}:${group.bin || ""}`}>
+                          {group.count}x {group.storageLocationName}
+                          {group.storageArea ? ` / ${group.storageArea}` : ""}
+                          {group.bin ? ` / ${group.bin}` : ""}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {!!bulkTransferPreview.blockedItems?.length && (
+                    <div className="space-y-1 text-sm text-red-700">
+                      <p className="font-medium">Blockierte Items</p>
+                      {bulkTransferPreview.blockedItems.map((entry: any) => (
+                        <p key={`${entry.itemId}:${entry.reason}`}>
+                          {(entry.labelCode || entry.itemId) + (entry.name ? ` (${entry.name})` : "")}: {entry.reason}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-workshop-200 px-4 py-3 sm:flex-row sm:justify-end">
+              <button type="button" className="btn-secondary w-full sm:w-auto" onClick={resetBulkTransfer}>
+                Abbrechen
+              </button>
+              <button type="button" className="btn-secondary w-full sm:w-auto" onClick={previewBulkTransfer} disabled={bulkTransferBusy}>
+                {bulkTransferBusy ? "Laedt..." : "Vorschau"}
+              </button>
+              <button type="button" className="btn w-full sm:w-auto" onClick={applyBulkTransfer} disabled={bulkTransferBusy}>
+                {bulkTransferBusy ? "Speichert..." : "Umlagerung ausfuehren"}
               </button>
             </div>
           </div>
