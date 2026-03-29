@@ -122,7 +122,6 @@ export default function AdminPage() {
   const [shelves, setShelves] = useState<ShelfRow[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
   const [technicalFieldAssignments, setTechnicalFieldAssignments] = useState<TechnicalFieldAssignmentRow[]>([]);
-  const [importResult, setImportResult] = useState<any>(null);
   const [feedback, setFeedback] = useState<string>("");
   const [restoreResult, setRestoreResult] = useState<any>(null);
   const [backupResult, setBackupResult] = useState<any>(null);
@@ -366,9 +365,14 @@ export default function AdminPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t("adminTitle")}</h1>
-        <Link className="btn-secondary" href="/admin/audit">
-          {t("adminAuditHistory")}
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link className="btn-secondary" href="/admin/data-quality">
+            Datenqualitaet
+          </Link>
+          <Link className="btn-secondary" href="/admin/audit">
+            {t("adminAuditHistory")}
+          </Link>
+        </div>
       </div>
       {feedback && <div className="rounded border border-workshop-300 bg-workshop-100 p-2 text-sm">{feedback}</div>}
 
@@ -499,61 +503,20 @@ export default function AdminPage() {
       )}
 
       <section className="card space-y-2">
-        <h2 className="font-semibold">{tr("CSV Import (Dry-run + Apply)", "CSV Import (Dry run + Apply)")}</h2>
-        <p className="text-sm text-workshop-700">{tr("Die Kategorie kommt aus jeder CSV-Zeile. Hier waehlt man nur den Type fuer die ID-Vergabe.", "Category comes from each CSV row. Only the type for label generation is selected here.")}</p>
-        <form
-          className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const form = new FormData(e.currentTarget);
-            const { data } = await apiJson("/api/import", { method: "POST", body: form });
-            setImportResult(data);
-          }}
-        >
-          <input className="input sm:col-span-2" type="file" name="file" accept=".csv,text/csv" required />
-          <select className="input" name="typeId" required>
-            <option value="">{tr("Type", "Type")}</option>
-            {types.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.code} - {type.name}
-              </option>
-            ))}
-          </select>
-          <select className="input" name="dryRun"><option value="1">{tr("Dry-run", "Dry run")}</option><option value="0">{tr("Apply", "Apply")}</option></select>
-          <button className="btn sm:col-span-2">{tr("Import starten", "Start import")}</button>
-        </form>
-        {importResult && (
-          <div className="space-y-2 rounded border border-workshop-200 p-2 text-sm">
-            <p>
-              {tr("Rows", "Rows")}: {importResult.totalRows} | {tr("Created", "Created")}: {importResult.created} | DryRun: {String(importResult.dryRun)}
-              {" "} | {tr("Errors", "Errors")}: {importResult.errorsCount || 0} | {tr("Warnings", "Warnings")}: {importResult.warningsCount || 0}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">{tr("Import", "Import")}</h2>
+            <p className="text-sm text-workshop-700">
+              {tr(
+                "CSV-Import, Profile, Mapping und Preview laufen jetzt ueber die eigene Admin-Seite.",
+                "CSV import, profiles, mapping and preview now live on the dedicated admin page."
+              )}
             </p>
-            {!!importResult.createdItems?.length && (
-              <p>
-                {tr("Angelegt", "Created")}: {importResult.createdItems.map((item: any) => `${item.labelCode} (${item.name})`).join(", ")}
-              </p>
-            )}
-            <div className="space-y-2">
-              {(importResult.rows || []).slice(0, 20).map((row: any) => (
-                <div
-                  key={row.lineNumber}
-                  className={`rounded border px-3 py-2 ${row.status === "ready" ? "border-green-300 bg-green-50" : "border-red-300 bg-red-50"}`}
-                >
-                  <p className="font-medium">
-                    {tr("Zeile", "Line")} {row.lineNumber} - {row.status === "ready" ? tr("bereit", "ready") : tr("fehlerhaft", "invalid")}
-                  </p>
-                  {row.input && (
-                    <p>
-                      {row.input.name} | {row.input.categoryName} | {row.input.locationName}
-                    </p>
-                  )}
-                  {!!row.errors?.length && <p className="text-red-700">{tr("Fehler", "Errors")}: {row.errors.join(" | ")}</p>}
-                  {!!row.warnings?.length && <p className="text-amber-700">{tr("Warnungen", "Warnings")}: {row.warnings.join(" | ")}</p>}
-                </div>
-              ))}
-            </div>
           </div>
-        )}
+          <Link className="btn-secondary" href="/admin/import">
+            {tr("Zum Import-Workflow", "Open import workflow")}
+          </Link>
+        </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-3">

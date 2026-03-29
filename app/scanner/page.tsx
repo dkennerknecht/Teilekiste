@@ -23,6 +23,12 @@ export default function ScannerPage() {
       return;
     }
     const detail = await fetch(`/api/items/${exact.id}`).then((r) => r.json());
+    if (detail?.redirectToItemId) {
+      const redirectedDetail = await fetch(`/api/items/${detail.redirectToItemId}`).then((r) => r.json());
+      setItem(redirectedDetail);
+      setMessage("");
+      return;
+    }
     setItem(detail);
     setMessage("");
   }

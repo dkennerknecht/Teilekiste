@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
           where: { id: item.id },
           data: {
             categoryId: body.categoryId || undefined,
+            typeId: body.typeId || undefined,
             storageLocationId: body.storageLocationId || undefined,
             storageArea: body.storageArea !== undefined ? body.storageArea : undefined,
             bin: body.bin !== undefined ? body.bin : undefined,

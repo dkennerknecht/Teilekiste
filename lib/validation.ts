@@ -9,6 +9,15 @@ const customFieldCatalogEntrySchema = z.object({
   aliases: z.array(z.string().trim().min(1).max(120)).default([]),
   sortOrder: z.number().int().min(0).optional()
 });
+const importProfileAssignmentSchema = z.object({
+  targetKey: z.string().trim().min(1).max(160),
+  sourceType: z.enum(["column", "fixed", "ignore"]),
+  column: z.string().trim().min(1).max(200).optional().nullable(),
+  fixedValue: z.string().trim().max(200).optional().nullable()
+});
+export const importProfileMappingConfigSchema = z.object({
+  assignments: z.array(importProfileAssignmentSchema).default([])
+});
 
 export const itemSchema = z.object({
   labelCode: z.string().optional(),
@@ -149,6 +158,28 @@ export const technicalFieldScopeAssignmentUpdateSchema = technicalFieldScopeAssi
 
 export const technicalFieldScopeAssignmentDeleteSchema = z.object({
   id: uuidSchema
+});
+
+export const importProfileCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).optional().nullable(),
+  headerFingerprint: z.string().trim().max(500).optional().nullable(),
+  delimiterMode: z.enum(["AUTO", "COMMA", "SEMICOLON", "TAB"]).optional().default("AUTO"),
+  mappingConfig: importProfileMappingConfigSchema
+});
+
+export const importProfileUpdateSchema = importProfileCreateSchema.partial().extend({
+  id: uuidSchema
+});
+
+export const duplicateMergePreviewSchema = z.object({
+  sourceItemId: uuidSchema,
+  targetItemId: uuidSchema
+});
+
+export const duplicateMergeSchema = duplicateMergePreviewSchema.extend({
+  fieldSelections: z.record(z.enum(["source", "target"])).optional().default({}),
+  customFieldSelections: z.record(z.enum(["source", "target"])).optional().default({})
 });
 
 export const areaCreateSchema = z.object({

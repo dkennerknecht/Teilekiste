@@ -12,6 +12,9 @@ export async function buildBackupPayload(input?: {
 }) {
   const allowedLocationIds = input?.allowedLocationIds ?? null;
   const locationFilter = buildLocationFilter(allowedLocationIds);
+  const importProfileTable = (prisma as any).importProfile as {
+    findMany: (args?: unknown) => Promise<any[]>;
+  };
 
   const items = await prisma.item.findMany({
     where: { storageLocationId: locationFilter },
@@ -26,7 +29,7 @@ export async function buildBackupPayload(input?: {
   });
 
   const itemIds = items.map((item) => item.id);
-  const [categories, tags, locations, shelves, customFields, technicalFieldScopeAssignments, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
+  const [categories, tags, locations, shelves, customFields, technicalFieldScopeAssignments, importProfiles, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
     await Promise.all([
       prisma.category.findMany(),
       prisma.tag.findMany(),
@@ -38,6 +41,7 @@ export async function buildBackupPayload(input?: {
       }),
       prisma.customField.findMany(),
       prisma.technicalFieldScopeAssignment.findMany(),
+      importProfileTable.findMany(),
       prisma.area.findMany(),
       prisma.labelType.findMany(),
       prisma.labelConfig.findUnique({ where: { id: "default" } }),
@@ -89,20 +93,21 @@ export async function buildBackupPayload(input?: {
     shelves,
     customFields,
     technicalFieldScopeAssignments,
+    importProfiles,
     areas,
     types,
     labelConfig,
     sequenceCounters,
     ...(input?.includeUsers
       ? {
-          users: users.map((user) => ({
+          users: users.map((user: any) => ({
             id: user.id,
             name: user.name,
             email: user.email,
             role: user.role,
             isActive: user.isActive,
             passwordHash: user.passwordHash,
-            allowedLocationIds: user.allowedScopes.map((scope) => scope.storageLocationId)
+            allowedLocationIds: user.allowedScopes.map((scope: any) => scope.storageLocationId)
           }))
         }
       : {}),

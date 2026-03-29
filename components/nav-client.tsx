@@ -84,6 +84,12 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
                   <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/audit">
                     {t("navAudit")}
                   </Link>
+                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/data-quality">
+                    Datenqualitaet
+                  </Link>
+                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/import">
+                    Import
+                  </Link>
                   <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/trash">
                     {t("navTrash")}
                   </Link>
@@ -163,6 +169,12 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
                         </Link>
                         <Link className="btn-secondary w-full" href="/admin/audit" onClick={closeMobileMenu}>
                           {t("navAudit")}
+                        </Link>
+                        <Link className="btn-secondary w-full" href="/admin/data-quality" onClick={closeMobileMenu}>
+                          Datenqualitaet
+                        </Link>
+                        <Link className="btn-secondary w-full" href="/admin/import" onClick={closeMobileMenu}>
+                          Import
                         </Link>
                         <Link className="btn-secondary w-full" href="/trash" onClick={closeMobileMenu}>
                           {t("navTrash")}

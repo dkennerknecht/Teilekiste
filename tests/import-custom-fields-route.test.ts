@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const requireWriteAccessMock = vi.fn();
+const requireAdminMock = vi.fn();
 const resolveAllowedLocationIdsMock = vi.fn();
 const assignNextLabelCodeMock = vi.fn();
 const auditLogMock = vi.fn();
@@ -9,12 +9,13 @@ const transactionMock = vi.fn();
 const categoryFindManyMock = vi.fn();
 const storageLocationFindManyMock = vi.fn();
 const customFieldFindManyMock = vi.fn();
-const labelTypeFindUniqueMock = vi.fn();
+const importProfileFindManyMock = vi.fn();
+const labelTypeFindManyMock = vi.fn();
 const itemFindManyMock = vi.fn();
 const itemCustomFieldValueFindManyMock = vi.fn();
 
 vi.mock("@/lib/api", () => ({
-  requireWriteAccess: requireWriteAccessMock
+  requireAdmin: requireAdminMock
 }));
 
 vi.mock("@/lib/permissions", () => ({
@@ -34,7 +35,8 @@ vi.mock("@/lib/prisma", () => ({
     category: { findMany: categoryFindManyMock },
     storageLocation: { findMany: storageLocationFindManyMock },
     customField: { findMany: customFieldFindManyMock },
-    labelType: { findUnique: labelTypeFindUniqueMock },
+    importProfile: { findMany: importProfileFindManyMock },
+    labelType: { findMany: labelTypeFindManyMock },
     item: { findMany: itemFindManyMock },
     itemCustomFieldValue: { findMany: itemCustomFieldValueFindManyMock },
     $transaction: transactionMock
@@ -48,11 +50,15 @@ afterEach(() => {
 
 describe("import route custom fields", () => {
   it("canonicalizes imported custom field values before persisting them", async () => {
+    const categoryId = "11111111-1111-4111-8111-111111111111";
+    const typeId = "22222222-2222-4222-8222-222222222222";
+    const locationId = "33333333-3333-4333-8333-333333333333";
+    const customFieldId = "44444444-4444-4444-8444-444444444444";
     const tx = {
       customField: {
         findMany: vi.fn().mockResolvedValue([
           {
-            id: "field-color",
+            id: customFieldId,
             name: "Farbe",
             key: "farbe",
             type: "TEXT",
@@ -65,7 +71,7 @@ describe("import route custom fields", () => {
             sortOrder: 0,
             required: false,
             isActive: true,
-            categoryId: "cat-1",
+            categoryId,
             typeId: null
           }
         ])
@@ -89,16 +95,17 @@ describe("import route custom fields", () => {
       }
     };
 
-    requireWriteAccessMock.mockResolvedValue({
-      user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
+    requireAdminMock.mockResolvedValue({
+      user: { id: "user-1", role: "ADMIN", email: "admin@example.com" }
     });
-    resolveAllowedLocationIdsMock.mockResolvedValue(["loc-1"]);
+    resolveAllowedLocationIdsMock.mockResolvedValue([locationId]);
     assignNextLabelCodeMock.mockResolvedValue("EL-KB-001");
-    categoryFindManyMock.mockResolvedValue([{ id: "cat-1", name: "Kabel" }]);
-    storageLocationFindManyMock.mockResolvedValue([{ id: "loc-1", name: "Werkstatt" }]);
+    categoryFindManyMock.mockResolvedValue([{ id: categoryId, name: "Kabel", code: "KB" }]);
+    storageLocationFindManyMock.mockResolvedValue([{ id: locationId, name: "Werkstatt", code: "WERK" }]);
+    importProfileFindManyMock.mockResolvedValue([]);
     customFieldFindManyMock.mockResolvedValue([
       {
-        id: "field-color",
+        id: customFieldId,
         name: "Farbe",
         key: "farbe",
         type: "TEXT",
@@ -108,12 +115,12 @@ describe("import route custom fields", () => {
         sortOrder: 0,
         required: false,
         isActive: true,
-        categoryId: "cat-1",
+        categoryId,
         typeId: null
       }
     ]);
     itemCustomFieldValueFindManyMock.mockResolvedValue([]);
-    labelTypeFindUniqueMock.mockResolvedValue({ id: "type-1", code: "KB", name: "Kleinbauteil" });
+    labelTypeFindManyMock.mockResolvedValue([{ id: typeId, code: "KB", name: "Kleinbauteil" }]);
     itemFindManyMock.mockResolvedValue([]);
     transactionMock.mockImplementation(async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx));
 
@@ -121,7 +128,7 @@ describe("import route custom fields", () => {
     const form = new FormData();
     form.set("file", new File([csv], "import.csv", { type: "text/csv" }));
     form.set("dryRun", "0");
-    form.set("typeId", "type-1");
+    form.set("typeId", typeId);
 
     const { POST } = await import("@/app/api/import/route");
     const request = new NextRequest(
@@ -137,8 +144,8 @@ describe("import route custom fields", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           name: "Kabelrolle",
-          categoryId: "cat-1",
-          storageLocationId: "loc-1",
+          categoryId,
+          storageLocationId: locationId,
           stock: 12500,
           unit: "M"
         })
@@ -154,7 +161,7 @@ describe("import route custom fields", () => {
     expect(tx.itemCustomFieldValue.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
-          customFieldId: "field-color",
+          customFieldId,
           valueJson: JSON.stringify("Rot")
         })
       })

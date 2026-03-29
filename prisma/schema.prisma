@@ -108,6 +108,7 @@ model LabelType {
   customFields     CustomField[]
   categoryCounters CategoryTypeCounter[]
   technicalFieldAssignments TechnicalFieldScopeAssignment[]
+  items            Item[]
 
   @@unique([areaId, code])
 }
@@ -156,6 +157,7 @@ model Item {
   name              String
   description       String
   categoryId        String
+  typeId            String?
   storageLocationId String
   storageArea       String?
   bin               String?
@@ -168,10 +170,15 @@ model Item {
   purchaseUrl       String?
   isArchived        Boolean             @default(false)
   deletedAt         DateTime?
+  mergedIntoItemId  String?
+  mergedAt          DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   category          Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  labelType         LabelType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
   storageLocation   StorageLocation     @relation(fields: [storageLocationId], references: [id], onDelete: Restrict)
+  mergedIntoItem    Item?               @relation("MergedItems", fields: [mergedIntoItemId], references: [id], onDelete: SetNull)
+  mergedSourceItems Item[]              @relation("MergedItems")
   tags              ItemTag[]
   images            ItemImage[]
   attachments       Attachment[]
@@ -187,8 +194,10 @@ model Item {
   @@index([labelCode])
   @@index([mpn])
   @@index([manufacturer])
+  @@index([typeId])
   @@index([storageLocationId])
   @@index([deletedAt])
+  @@index([mergedIntoItemId])
   @@index([minStock, stock])
 }
 
@@ -314,6 +323,19 @@ model TechnicalFieldScopeAssignment {
 
   @@unique([categoryId, typeId])
   @@index([typeId])
+}
+
+model ImportProfile {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  description      String?
+  headerFingerprint String?
+  delimiterMode    String   @default("AUTO")
+  mappingConfig    String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([headerFingerprint])
 }
 
 model ItemCustomFieldValue {

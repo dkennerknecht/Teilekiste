@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     where: {
       deletedAt: null,
       isArchived: false,
+      mergedIntoItemId: null,
       OR: [
         { labelCode: { equals: q } },
         { labelCode: { contains: q } },
@@ -31,5 +32,58 @@ export async function GET(req: NextRequest) {
     orderBy: { updatedAt: "desc" }
   });
 
-  return NextResponse.json(items);
+  const mergedMatch = await prisma.item.findFirst({
+    where: {
+      labelCode: q,
+      mergedIntoItemId: { not: null }
+    },
+    select: {
+      mergedIntoItemId: true
+    }
+  });
+
+  if (!mergedMatch?.mergedIntoItemId) {
+    return NextResponse.json(items);
+  }
+
+  if (items.some((item) => item.id === mergedMatch.mergedIntoItemId)) {
+    return NextResponse.json(items);
+  }
+
+  const mergedTarget = await prisma.item.findUnique({
+    where: { id: mergedMatch.mergedIntoItemId },
+    select: {
+      id: true,
+      labelCode: true,
+      name: true,
+      categoryId: true,
+      typeId: true,
+      storageLocationId: true,
+      storageArea: true,
+      bin: true,
+      stock: true,
+      unit: true,
+      minStock: true,
+      manufacturer: true,
+      mpn: true,
+      datasheetUrl: true,
+      purchaseUrl: true,
+      isArchived: true,
+      deletedAt: true,
+      mergedIntoItemId: true,
+      mergedAt: true,
+      createdAt: true,
+      updatedAt: true
+    }
+  });
+
+  if (!mergedTarget || mergedTarget.deletedAt || mergedTarget.isArchived) {
+    return NextResponse.json(items);
+  }
+
+  if (allowedLocationIds && !allowedLocationIds.includes(mergedTarget.storageLocationId)) {
+    return NextResponse.json(items);
+  }
+
+  return NextResponse.json([mergedTarget, ...items].slice(0, limit));
 }

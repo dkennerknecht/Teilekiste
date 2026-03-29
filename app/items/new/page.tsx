@@ -29,7 +29,9 @@ export default function NewItemPage() {
   const [tags, setTags] = useState<Option[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
   const [labelPreview, setLabelPreview] = useState("");
-  const [duplicates, setDuplicates] = useState<Array<{ id: string; labelCode: string; name: string }>>([]);
+  const [duplicates, setDuplicates] = useState<
+    Array<{ id: string; labelCode: string; name: string; score: number; reasons: string[] }>
+  >([]);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
@@ -86,13 +88,16 @@ export default function NewItemPage() {
   }, [form.categoryId, form.typeId]);
 
   useEffect(() => {
-    if (!form.name && !form.mpn) return;
+    if (!form.name && !form.mpn && !form.manufacturer) {
+      setDuplicates([]);
+      return;
+    }
     fetch(
-      `/api/items/duplicates?name=${encodeURIComponent(form.name)}&mpn=${encodeURIComponent(form.mpn)}`
+      `/api/items/duplicates?name=${encodeURIComponent(form.name)}&manufacturer=${encodeURIComponent(form.manufacturer)}&mpn=${encodeURIComponent(form.mpn)}&categoryId=${encodeURIComponent(form.categoryId)}&typeId=${encodeURIComponent(form.typeId)}&unit=${encodeURIComponent(form.unit)}`
     )
       .then((r) => r.json())
       .then(setDuplicates);
-  }, [form.name, form.mpn]);
+  }, [form.name, form.manufacturer, form.mpn, form.categoryId, form.typeId, form.unit]);
 
   async function createTag() {
     const name = newTagName.trim();
@@ -150,7 +155,7 @@ export default function NewItemPage() {
         )}
         {duplicates.length > 0 && (
           <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
-            Moegliche Duplikate: {duplicates.map((d) => `${d.labelCode} (${d.name})`).join(", ")}
+            Moegliche Duplikate: {duplicates.map((d) => `${d.labelCode} (${d.score}, ${d.reasons.join("/")})`).join(", ")}
           </div>
         )}
         <form

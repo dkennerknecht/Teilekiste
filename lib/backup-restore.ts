@@ -63,6 +63,15 @@ type BackupTechnicalFieldScopeAssignment = {
   presetKey: string;
 };
 
+type BackupImportProfile = {
+  id: string;
+  name: string;
+  description?: string | null;
+  headerFingerprint?: string | null;
+  delimiterMode?: string | null;
+  mappingConfig: unknown;
+};
+
 type BackupArea = {
   id: string;
   code: string;
@@ -152,6 +161,7 @@ type BackupItem = {
   name: string;
   description: string;
   categoryId: string;
+  typeId?: string | null;
   storageLocationId: string;
   storageArea?: string | null;
   bin?: string | null;
@@ -164,6 +174,8 @@ type BackupItem = {
   purchaseUrl?: string | null;
   isArchived?: boolean;
   deletedAt?: string | null;
+  mergedIntoItemId?: string | null;
+  mergedAt?: string | null;
   tags?: BackupItemTag[];
   customValues?: BackupCustomValue[];
   images?: BackupItemImage[];
@@ -197,6 +209,7 @@ export type BackupPayload = {
   tags?: BackupTag[];
   customFields?: BackupCustomField[];
   technicalFieldScopeAssignments?: BackupTechnicalFieldScopeAssignment[];
+  importProfiles?: BackupImportProfile[];
   areas?: BackupArea[];
   types?: BackupLabelType[];
   sequenceCounters?: BackupSequenceCounter[];
@@ -223,6 +236,7 @@ export type RestoreResult = {
   restoredAreas: number;
   restoredTypes: number;
   restoredSequenceCounters: number;
+  restoredImportProfiles: number;
   restoredItems: number;
   restoredBomEntries: number;
   restoredAuditLogs: number;
@@ -319,6 +333,9 @@ export async function restoreBackupData(input: {
   fallbackUserId: string;
 }) {
   const { payload, strategy, fallbackUserId } = input;
+  const importProfileTable = (prisma as any).importProfile as {
+    upsert: (args: unknown) => Promise<any>;
+  };
   const conflicts = {
     categories: [] as string[],
     locations: [] as string[],
@@ -573,6 +590,26 @@ export async function restoreBackupData(input: {
     });
   }
 
+  for (const profile of payload.importProfiles || []) {
+    await importProfileTable.upsert({
+      where: { name: profile.name },
+      update: {
+        description: profile.description ?? null,
+        headerFingerprint: profile.headerFingerprint ?? null,
+        delimiterMode: profile.delimiterMode || "AUTO",
+        mappingConfig: serializeJsonValue(profile.mappingConfig) || JSON.stringify({ assignments: [] })
+      },
+      create: {
+        id: profile.id,
+        name: profile.name,
+        description: profile.description ?? null,
+        headerFingerprint: profile.headerFingerprint ?? null,
+        delimiterMode: profile.delimiterMode || "AUTO",
+        mappingConfig: serializeJsonValue(profile.mappingConfig) || JSON.stringify({ assignments: [] })
+      }
+    });
+  }
+
   for (const field of payload.customFields || []) {
     const restoredField = await prisma.customField.upsert({
       where: { key: field.key },
@@ -656,6 +693,7 @@ export async function restoreBackupData(input: {
           name: item.name,
           description: item.description,
           categoryId: resolvedCategoryId,
+          typeId: item.typeId ? typeIdMap.get(item.typeId) || item.typeId : null,
           storageLocationId: resolvedLocationId,
           storageArea: item.storageArea || null,
           bin: item.bin || null,
@@ -667,7 +705,9 @@ export async function restoreBackupData(input: {
           datasheetUrl: item.datasheetUrl || null,
           purchaseUrl: item.purchaseUrl || null,
           isArchived: !!item.isArchived,
-          deletedAt: item.deletedAt ? new Date(item.deletedAt) : null
+          deletedAt: item.deletedAt ? new Date(item.deletedAt) : null,
+          mergedIntoItemId: null,
+          mergedAt: null
         },
         create: {
           id: item.id,
@@ -675,6 +715,7 @@ export async function restoreBackupData(input: {
           name: item.name,
           description: item.description,
           categoryId: resolvedCategoryId,
+          typeId: item.typeId ? typeIdMap.get(item.typeId) || item.typeId : null,
           storageLocationId: resolvedLocationId,
           storageArea: item.storageArea || null,
           bin: item.bin || null,
@@ -686,7 +727,9 @@ export async function restoreBackupData(input: {
           datasheetUrl: item.datasheetUrl || null,
           purchaseUrl: item.purchaseUrl || null,
           isArchived: !!item.isArchived,
-          deletedAt: item.deletedAt ? new Date(item.deletedAt) : null
+          deletedAt: item.deletedAt ? new Date(item.deletedAt) : null,
+          mergedIntoItemId: null,
+          mergedAt: null
         }
       });
     } catch {
@@ -822,6 +865,20 @@ export async function restoreBackupData(input: {
     }
   }
 
+  for (const item of payload.items || []) {
+    const mergedIntoItemId = item.mergedIntoItemId || null;
+    if (!mergedIntoItemId && !item.mergedAt) continue;
+
+    const mergedTarget = mergedIntoItemId ? await prisma.item.findUnique({ where: { id: mergedIntoItemId }, select: { id: true } }) : null;
+    await prisma.item.update({
+      where: { id: item.id },
+      data: {
+        mergedIntoItemId: mergedTarget?.id || null,
+        mergedAt: item.mergedAt ? new Date(item.mergedAt) : null
+      }
+    });
+  }
+
   let restoredBomEntries = 0;
   for (const bom of payload.boms || []) {
     await prisma.billOfMaterial.upsert({
@@ -876,6 +933,7 @@ export async function restoreBackupData(input: {
     restoredAreas: (payload.areas || []).length,
     restoredTypes: (payload.types || []).length,
     restoredSequenceCounters: (payload.sequenceCounters || []).length,
+    restoredImportProfiles: (payload.importProfiles || []).length,
     restoredItems: (payload.items || []).length,
     restoredBomEntries,
     restoredAuditLogs,
@@ -977,6 +1035,7 @@ export async function previewBackupRestore(input: {
       areas: (payload.areas || []).length,
       types: (payload.types || []).length,
       sequenceCounters: (payload.sequenceCounters || []).length,
+      importProfiles: (payload.importProfiles || []).length,
       items: (payload.items || []).length,
       boms: (payload.boms || []).length,
       auditLogs: (payload.auditLogs || []).length

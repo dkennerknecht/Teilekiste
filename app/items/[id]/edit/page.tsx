@@ -30,6 +30,10 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
 
   const load = useCallback(async () => {
     const data = await fetch(`/api/items/${params.id}`, { cache: "no-store" }).then((r) => r.json());
+    if (data?.redirectToItemId) {
+      router.replace(`/items/${data.redirectToItemId}/edit`);
+      return;
+    }
     setForm({
       name: data.name,
       description: data.description,
@@ -43,7 +47,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
       tagIds: (data.tags || []).map((t: any) => t.tagId)
     });
     setImages((data.images || []).slice().sort((a: ItemImage, b: ItemImage) => a.sortOrder - b.sortOrder));
-  }, [params.id]);
+  }, [params.id, router]);
 
   useEffect(() => {
     fetch("/api/meta", { cache: "no-store" })

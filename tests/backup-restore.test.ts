@@ -14,6 +14,7 @@ const locationCreateMock = vi.fn();
 const tagFindFirstMock = vi.fn();
 const tagUpdateMock = vi.fn();
 const tagCreateMock = vi.fn();
+const importProfileUpsertMock = vi.fn();
 const customFieldUpsertMock = vi.fn();
 const itemFindUniqueMock = vi.fn();
 const itemUpsertMock = vi.fn();
@@ -49,6 +50,9 @@ vi.mock("@/lib/prisma", () => ({
       findFirst: tagFindFirstMock,
       update: tagUpdateMock,
       create: tagCreateMock
+    },
+    importProfile: {
+      upsert: importProfileUpsertMock
     },
     customField: {
       upsert: customFieldUpsertMock
@@ -91,6 +95,7 @@ describe("Backup restore", () => {
     categoryFindFirstMock.mockResolvedValue({ id: "cat-existing", name: "Passive" });
     locationFindFirstMock.mockResolvedValue({ id: "loc-existing", name: "Shelf" });
     tagFindFirstMock.mockResolvedValue({ id: "tag-existing", name: "SMD" });
+    importProfileUpsertMock.mockResolvedValue({ id: "profile-existing" });
     customFieldUpsertMock.mockResolvedValue({ id: "field-existing" });
     itemFindUniqueMock.mockResolvedValue(null);
     itemUpsertMock.mockResolvedValue({ id: "item-1" });
@@ -120,6 +125,17 @@ describe("Backup restore", () => {
         categories: [{ id: "cat-backup", name: "Passive" }],
         locations: [{ id: "loc-backup", name: "Shelf", code: "SH" }],
         tags: [{ id: "tag-backup", name: "SMD" }],
+        importProfiles: [
+          {
+            id: "profile-backup",
+            name: "Supplier CSV",
+            headerFingerprint: "name|typ|lagerort",
+            delimiterMode: "SEMICOLON",
+            mappingConfig: {
+              assignments: [{ targetKey: "name", sourceType: "column", column: "Artikelname" }]
+            }
+          }
+        ],
         customFields: [
           {
             id: "field-backup",
@@ -221,6 +237,19 @@ describe("Backup restore", () => {
         })
       })
     );
+
+    expect(importProfileUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          name: "Supplier CSV",
+          delimiterMode: "SEMICOLON"
+        }),
+        update: expect.objectContaining({
+          headerFingerprint: "name|typ|lagerort"
+        })
+      })
+    );
+    expect(result.restoredImportProfiles).toBe(1);
 
     expect(itemImageUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({

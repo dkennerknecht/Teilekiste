@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
             name: parsed.data.name,
             description: parsed.data.description,
             categoryId: parsed.data.categoryId,
+            typeId: parsed.data.typeId,
             storageLocationId: parsed.data.storageLocationId,
             storageArea: parsed.data.storageArea || null,
             bin: parsed.data.bin || null,

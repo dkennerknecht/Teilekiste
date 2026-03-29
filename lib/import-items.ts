@@ -1,210 +1,618 @@
-import { z } from "zod";
-import type { CustomFieldRow } from "@/lib/custom-fields";
-import { filterApplicableCustomFields } from "@/lib/custom-fields";
-import { QuantityValidationError, toStoredQuantity } from "@/lib/quantity";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import {
+  CustomFieldValidationError,
+  fieldAppliesToSelection,
+  filterApplicableCustomFields,
+  formatCustomFieldValue,
+  prepareCustomFieldValueWrites,
+  type CustomFieldRow
+} from "@/lib/custom-fields";
+import { findDuplicateCandidates, type DuplicateItemRecord } from "@/lib/item-duplicates";
+import {
+  buildImportHeaderFingerprint,
+  buildSuggestedImportMappingConfig,
+  getImportProfileMatchScore,
+  hydrateImportProfile,
+  mergeImportMappingConfigs,
+  normalizeImportLookup,
+  parseImportCsv,
+  parseImportProfileMappingConfig,
+  type ImportProfileAssignment,
+  type ImportProfileMappingConfig,
+  type ImportProfileRow
+} from "@/lib/import-profiles";
+import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
+import { itemSchema } from "@/lib/validation";
 
-const csvRowSchema = z.object({
-  name: z.string().trim().min(1).max(180),
-  description: z.string().max(8000).default(""),
-  storageArea: z.string().max(120).optional().nullable(),
-  bin: z.string().max(120).optional().nullable(),
-  stock: z.number().finite(),
-  minStock: z.number().finite().nullable(),
-  unit: z.enum(["STK", "M", "SET", "PACK"]),
-  manufacturer: z.string().max(180).optional().nullable(),
-  mpn: z.string().max(180).optional().nullable()
-});
+type ImportDb =
+  | Pick<PrismaClient, "customField" | "itemCustomFieldValue" | "category" | "labelType" | "storageLocation" | "item">
+  | Pick<Prisma.TransactionClient, "customField" | "itemCustomFieldValue" | "category" | "labelType" | "storageLocation" | "item">;
 
-export type ImportReadyRow = {
-  lineNumber: number;
-  input: z.infer<typeof csvRowSchema> & {
-    categoryId: string;
-    storageLocationId: string;
-    customValues: Record<string, unknown>;
-  };
-  warnings: string[];
+type LookupRow = {
+  id: string;
+  name: string;
+  code?: string | null;
 };
 
-export type ImportAnalyzedRow = {
+export type ImportStructuredMessage = {
+  fieldKey: string;
+  message: string;
+};
+
+export type ImportHeaderPreview = {
+  header: string;
+  mappedTargetKeys: string[];
+  suggestedTargetKeys: string[];
+  status: "mapped" | "suggested" | "ignored" | "unmapped";
+};
+
+export type ImportResolvedCustomFieldPreview = {
+  customFieldId: string;
+  fieldName: string;
+  displayValue: string;
+};
+
+export type ImportResolvedRowPreview = {
+  name: string;
+  category: { id: string; name: string; code?: string | null } | null;
+  type: { id: string; name: string; code?: string | null } | null;
+  storageLocation: { id: string; name: string; code?: string | null } | null;
+  unit: string;
+  stock: number;
+  minStock: number | null;
+  manufacturer: string | null;
+  mpn: string | null;
+  datasheetUrl: string | null;
+  purchaseUrl: string | null;
+  customFields: ImportResolvedCustomFieldPreview[];
+};
+
+export type ImportPreviewRow = {
   lineNumber: number;
   status: "ready" | "error";
-  input: (ImportReadyRow["input"] & { categoryName: string; locationName: string }) | null;
-  errors: string[];
-  warnings: string[];
+  input: Record<string, string>;
+  resolved: ImportResolvedRowPreview | null;
+  errors: ImportStructuredMessage[];
+  warnings: ImportStructuredMessage[];
 };
 
-function parseNumber(value: string | undefined, fallback = 0) {
+type PreparedImportRow = {
+  lineNumber: number;
+  itemInput: ReturnType<typeof itemSchema.parse>;
+  rawCustomValues: Record<string, unknown>;
+  responseRow: ImportPreviewRow;
+};
+
+export type ImportMappingIssue = {
+  fieldKey: string;
+  message: string;
+};
+
+export type ImportPreviewProfileMatch = {
+  id: string;
+  name: string;
+  description?: string | null;
+  score: number;
+  delimiterMode: string;
+};
+
+export type ImportPreviewResult = {
+  delimiter: string;
+  delimiterMode: string;
+  headerFingerprint: string;
+  headers: ImportHeaderPreview[];
+  mappingConfig: ImportProfileMappingConfig;
+  mappingIssues: ImportMappingIssue[];
+  profileMatches: ImportPreviewProfileMatch[];
+  totalRows: number;
+  readyRowsCount: number;
+  errorsCount: number;
+  warningsCount: number;
+  rows: ImportPreviewRow[];
+  preparedRows: PreparedImportRow[];
+};
+
+type BuildPreviewInput = {
+  db: ImportDb;
+  text: string;
+  allowedLocationIds: string[] | null;
+  categories: LookupRow[];
+  types: LookupRow[];
+  locations: LookupRow[];
+  customFields: CustomFieldRow[];
+  duplicateItems: DuplicateItemRecord[];
+  profiles?: ImportProfileRow[];
+  selectedProfileId?: string | null;
+  mappingDraft?: unknown;
+  forcedTypeId?: string | null;
+};
+
+function parseNumber(value: string | null | undefined, fallback = 0) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return fallback;
-  const num = Number(trimmed.replace(",", "."));
-  if (!Number.isFinite(num)) return Number.NaN;
-  return num;
+  const numeric = Number(trimmed.replace(",", "."));
+  return Number.isFinite(numeric) ? numeric : Number.NaN;
 }
 
-function normalizeImportLookup(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/ß/g, "ss")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+function resolveLookupMaps(rows: LookupRow[]) {
+  const byId = new Map<string, LookupRow>();
+  const byLookup = new Map<string, LookupRow>();
+
+  for (const row of rows) {
+    byId.set(row.id, row);
+    const normalizedName = normalizeImportLookup(row.name);
+    if (normalizedName && !byLookup.has(normalizedName)) {
+      byLookup.set(normalizedName, row);
+    }
+    const normalizedCode = normalizeImportLookup(row.code || "");
+    if (normalizedCode && !byLookup.has(normalizedCode)) {
+      byLookup.set(normalizedCode, row);
+    }
+    const normalizedId = normalizeImportLookup(row.id);
+    if (normalizedId && !byLookup.has(normalizedId)) {
+      byLookup.set(normalizedId, row);
+    }
+  }
+
+  return { byId, byLookup };
 }
 
-export function analyzeImportRows(input: {
-  rows: Record<string, string>[];
-  categoryMap: Map<string, string>;
-  locationMap: Map<string, string>;
-  allowedLocationIds: string[] | null;
-  duplicateCandidatesByKey: Map<string, Array<{ id: string; labelCode: string; name: string }>>;
-  customFields: CustomFieldRow[];
-  typeId?: string | null;
-}) {
-  const seenNames = new Map<string, number>();
-  const seenMpns = new Map<string, number>();
+function normalizeUnit(value: string | null | undefined) {
+  const unit = String(value || "STK").trim().toUpperCase();
+  return ["STK", "M", "SET", "PACK"].includes(unit) ? unit : unit;
+}
 
-  const analyzedRows: ImportAnalyzedRow[] = input.rows.map((row, idx) => {
-    const lineNumber = idx + 2;
-    const errors: string[] = [];
-    const warnings: string[] = [];
+function buildAssignmentMap(config: ImportProfileMappingConfig) {
+  return new Map(config.assignments.map((assignment) => [assignment.targetKey, assignment]));
+}
 
-    const categoryName = String(row.category || "").trim();
-    const locationName = String(row.storageLocation || "").trim();
-    const categoryId = input.categoryMap.get(categoryName.toLowerCase());
-    const storageLocationId = input.locationMap.get(locationName.toLowerCase());
+function getAssignmentValue(assignment: ImportProfileAssignment | undefined, row: Record<string, string>) {
+  if (!assignment || assignment.sourceType === "ignore") return null;
+  if (assignment.sourceType === "fixed") return String(assignment.fixedValue || "").trim() || null;
+  return String(row[assignment.column || ""] || "").trim() || null;
+}
 
-    if (!categoryId) errors.push("Kategorie unbekannt");
-    if (!storageLocationId) errors.push("Lagerort unbekannt");
-    if (storageLocationId && input.allowedLocationIds && !input.allowedLocationIds.includes(storageLocationId)) {
-      errors.push("Lagerort nicht erlaubt");
+function createResolvedPreview(itemInput: ReturnType<typeof itemSchema.parse>, categories: Map<string, LookupRow>, types: Map<string, LookupRow>, locations: Map<string, LookupRow>, customFields: CustomFieldRow[], normalizedCustomValues: Array<{ customFieldId: string; valueJson: string }>) {
+  return {
+    name: itemInput.name,
+    category: categories.get(itemInput.categoryId) || null,
+    type: types.get(itemInput.typeId) || null,
+    storageLocation: locations.get(itemInput.storageLocationId) || null,
+    unit: itemInput.unit,
+    stock: serializeStoredQuantity(itemInput.unit, itemInput.stock) || 0,
+    minStock: serializeStoredQuantity(itemInput.unit, itemInput.minStock),
+    manufacturer: itemInput.manufacturer || null,
+    mpn: itemInput.mpn || null,
+    datasheetUrl: itemInput.datasheetUrl || null,
+    purchaseUrl: itemInput.purchaseUrl || null,
+    customFields: normalizedCustomValues
+      .map((entry) => {
+        const field = customFields.find((candidate) => candidate.id === entry.customFieldId);
+        if (!field) return null;
+        let parsedValue: unknown = entry.valueJson;
+        try {
+          parsedValue = JSON.parse(entry.valueJson);
+        } catch {
+          parsedValue = entry.valueJson;
+        }
+        return {
+          customFieldId: entry.customFieldId,
+          fieldName: field.name,
+          displayValue: formatCustomFieldValue(field, parsedValue)
+        };
+      })
+      .filter((entry): entry is ImportResolvedCustomFieldPreview => !!entry)
+  };
+}
+
+function buildDuplicateWarnings(
+  duplicateItems: DuplicateItemRecord[],
+  candidate: {
+    name: string;
+    manufacturer?: string | null;
+    mpn?: string | null;
+    categoryId?: string | null;
+    typeId?: string | null;
+    unit?: string | null;
+  }
+) {
+  const matches = findDuplicateCandidates(duplicateItems, candidate, { limit: 5 });
+  if (!matches.length) return [] as ImportStructuredMessage[];
+  return [
+    {
+      fieldKey: "duplicate",
+      message: `Moegliche Duplikate: ${matches
+        .map((entry) => `${entry.item.labelCode} (${entry.score}; ${entry.reasons.join("/")})`)
+        .join(", ")}`
+    }
+  ];
+}
+
+function pickProfileMatches(profiles: ImportProfileRow[], headerFingerprint: string) {
+  return profiles
+    .map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      description: profile.description || null,
+      score: getImportProfileMatchScore(profile.headerFingerprint || null, headerFingerprint),
+      delimiterMode: profile.delimiterMode
+    }))
+    .filter((profile) => profile.score > 0)
+    .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "de"))
+    .slice(0, 5);
+}
+
+export async function loadImportReferenceData(db: ImportDb) {
+  const importProfileTable = (db as any).importProfile as {
+    findMany: (args?: unknown) => Promise<ImportProfileRow[]>;
+  };
+  const [categories, types, locations, customFields, profiles, duplicateItems] = await Promise.all([
+    db.category.findMany({
+      select: { id: true, name: true, code: true },
+      orderBy: { name: "asc" }
+    }),
+    db.labelType.findMany({
+      where: { active: true },
+      select: { id: true, name: true, code: true },
+      orderBy: [{ code: "asc" }, { name: "asc" }]
+    }),
+    db.storageLocation.findMany({
+      select: { id: true, name: true, code: true },
+      orderBy: { name: "asc" }
+    }),
+    db.customField.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        key: true,
+        type: true,
+        unit: true,
+        options: true,
+        valueCatalog: true,
+        sortOrder: true,
+        required: true,
+        isActive: true,
+        categoryId: true,
+        typeId: true
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+    }),
+    importProfileTable.findMany({
+      orderBy: [{ name: "asc" }]
+    }),
+    db.item.findMany({
+      where: {
+        deletedAt: null,
+        mergedIntoItemId: null
+      },
+      select: {
+        id: true,
+        labelCode: true,
+        name: true,
+        categoryId: true,
+        typeId: true,
+        unit: true,
+        manufacturer: true,
+        mpn: true,
+        isArchived: true,
+        deletedAt: true,
+        mergedIntoItemId: true,
+        mergedAt: true,
+        category: {
+          select: { id: true, name: true, code: true }
+        },
+        labelType: {
+          select: { id: true, code: true, name: true }
+        }
+      }
+    })
+  ]);
+
+  return { categories, types, locations, customFields, profiles, duplicateItems };
+}
+
+function buildHeaderPreview(headers: string[], mappingConfig: ImportProfileMappingConfig, suggestionConfig: ImportProfileMappingConfig) {
+  const mappedByHeader = new Map<string, string[]>();
+  const suggestedByHeader = new Map<string, string[]>();
+
+  for (const assignment of mappingConfig.assignments) {
+    if (assignment.sourceType !== "column" || !assignment.column) continue;
+    mappedByHeader.set(assignment.column, [...(mappedByHeader.get(assignment.column) || []), assignment.targetKey]);
+  }
+
+  for (const assignment of suggestionConfig.assignments) {
+    if (assignment.sourceType !== "column" || !assignment.column) continue;
+    suggestedByHeader.set(assignment.column, [...(suggestedByHeader.get(assignment.column) || []), assignment.targetKey]);
+  }
+
+  return headers.map((header) => {
+    const mappedTargetKeys = mappedByHeader.get(header) || [];
+    const suggestedTargetKeys = suggestedByHeader.get(header) || [];
+    const ignored = mappingConfig.assignments.some(
+      (assignment) => assignment.sourceType === "ignore" && assignment.column === header
+    );
+
+    return {
+      header,
+      mappedTargetKeys,
+      suggestedTargetKeys,
+      status: mappedTargetKeys.length
+        ? "mapped"
+        : suggestedTargetKeys.length
+          ? "suggested"
+          : ignored
+            ? "ignored"
+            : "unmapped"
+    } as ImportHeaderPreview;
+  });
+}
+
+function collectMappingIssues(headers: string[], mappingConfig: ImportProfileMappingConfig, customFields: CustomFieldRow[]) {
+  const headerSet = new Set(headers);
+  const customFieldIds = new Set(customFields.map((field) => field.id));
+  const issues: ImportMappingIssue[] = [];
+
+  for (const assignment of mappingConfig.assignments) {
+    if (assignment.sourceType === "column" && assignment.column && !headerSet.has(assignment.column)) {
+      issues.push({
+        fieldKey: assignment.targetKey,
+        message: `Zuordnung verweist auf fehlende Spalte: ${assignment.column}`
+      });
+    }
+    if (assignment.targetKey.startsWith("customField:")) {
+      const fieldId = assignment.targetKey.slice("customField:".length);
+      if (!customFieldIds.has(fieldId)) {
+        issues.push({
+          fieldKey: assignment.targetKey,
+          message: "Zuordnung verweist auf ein fehlendes oder inaktives Custom Field"
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+export async function buildImportPreview(input: BuildPreviewInput): Promise<ImportPreviewResult> {
+  const selectedProfile = hydrateImportProfile(
+    (input.profiles || []).find((profile) => profile.id === input.selectedProfileId) || null
+  );
+  const parsedCsv = parseImportCsv(input.text, selectedProfile?.delimiterMode || "AUTO");
+  const headers = parsedCsv.headers;
+  const rows = parsedCsv.rows;
+  const headerFingerprint = buildImportHeaderFingerprint(headers);
+  const suggestionConfig = buildSuggestedImportMappingConfig(headers, input.customFields);
+
+  const forcedTypeMapping = input.forcedTypeId
+    ? {
+        assignments: [
+          {
+            targetKey: "type",
+            sourceType: "fixed" as const,
+            fixedValue: input.forcedTypeId,
+            column: null
+          }
+        ]
+      }
+    : null;
+
+  const mappingConfig = mergeImportMappingConfigs(
+    suggestionConfig,
+    selectedProfile?.mappingConfig || null,
+    forcedTypeMapping,
+    parseImportProfileMappingConfig(input.mappingDraft || { assignments: [] })
+  );
+
+  const mappingIssues = collectMappingIssues(headers, mappingConfig, input.customFields);
+  const profileMatches = pickProfileMatches(input.profiles || [], headerFingerprint);
+  const headerPreview = buildHeaderPreview(headers, mappingConfig, suggestionConfig);
+  const assignmentMap = buildAssignmentMap(mappingConfig);
+  const categoryLookup = resolveLookupMaps(input.categories);
+  const typeLookup = resolveLookupMaps(input.types);
+  const locationLookup = resolveLookupMaps(input.locations);
+
+  const preparedRows: PreparedImportRow[] = [];
+  const responseRows: ImportPreviewRow[] = [];
+
+  for (const [index, rawRow] of rows.entries()) {
+    const lineNumber = index + 2;
+    const errors: ImportStructuredMessage[] = [];
+    const warnings: ImportStructuredMessage[] = [];
+
+    const rawCategory = getAssignmentValue(assignmentMap.get("category"), rawRow);
+    const rawType = getAssignmentValue(assignmentMap.get("type"), rawRow);
+    const rawLocation = getAssignmentValue(assignmentMap.get("storageLocation"), rawRow);
+    const resolvedCategory = rawCategory ? categoryLookup.byLookup.get(normalizeImportLookup(rawCategory)) || null : null;
+    const resolvedType = rawType ? typeLookup.byLookup.get(normalizeImportLookup(rawType)) || null : null;
+    const resolvedLocation = rawLocation ? locationLookup.byLookup.get(normalizeImportLookup(rawLocation)) || null : null;
+
+    if (!rawCategory) errors.push({ fieldKey: "category", message: "Kategorie ist nicht zugeordnet" });
+    else if (!resolvedCategory) errors.push({ fieldKey: "category", message: `Kategorie unbekannt: ${rawCategory}` });
+
+    if (!rawType) errors.push({ fieldKey: "type", message: "Type ist nicht zugeordnet" });
+    else if (!resolvedType) errors.push({ fieldKey: "type", message: `Type unbekannt: ${rawType}` });
+
+    if (!rawLocation) errors.push({ fieldKey: "storageLocation", message: "Lagerort ist nicht zugeordnet" });
+    else if (!resolvedLocation) errors.push({ fieldKey: "storageLocation", message: `Lagerort unbekannt: ${rawLocation}` });
+
+    if (resolvedLocation && input.allowedLocationIds && !input.allowedLocationIds.includes(resolvedLocation.id)) {
+      errors.push({ fieldKey: "storageLocation", message: "Lagerort nicht erlaubt" });
     }
 
-    const stock = parseNumber(row.stock, 0);
-    const minStockRaw = String(row.minStock || "").trim();
-    const minStock = minStockRaw ? parseNumber(minStockRaw, 0) : null;
-    const candidate = {
-      name: String(row.name || "").trim(),
-      description: String(row.description || "").trim(),
-      storageArea: String(row.storageArea || "").trim() || null,
-      bin: String(row.bin || "").trim() || null,
-      stock,
-      minStock,
-      unit: String(row.unit || "STK").trim().toUpperCase(),
-      manufacturer: String(row.manufacturer || "").trim() || null,
-      mpn: String(row.mpn || "").trim() || null
+    const applicableFields = filterApplicableCustomFields(
+      input.customFields,
+      resolvedCategory?.id || null,
+      resolvedType?.id || null
+    );
+
+    const rawCustomValues: Record<string, unknown> = {};
+    for (const assignment of mappingConfig.assignments) {
+      if (!assignment.targetKey.startsWith("customField:")) continue;
+      const fieldId = assignment.targetKey.slice("customField:".length);
+      const rawValue = getAssignmentValue(assignment, rawRow);
+      if (!rawValue) continue;
+
+      const field = input.customFields.find((candidate) => candidate.id === fieldId);
+      if (!field) continue;
+      if (!fieldAppliesToSelection(field, resolvedCategory?.id || null, resolvedType?.id || null)) {
+        warnings.push({
+          fieldKey: assignment.targetKey,
+          message: `${field.name} ist fuer diesen Kategorie-/Type-Scope nicht aktiv und wird ignoriert`
+        });
+        continue;
+      }
+      rawCustomValues[fieldId] = rawValue;
+    }
+
+    const candidateInput = {
+      name: getAssignmentValue(assignmentMap.get("name"), rawRow) || "",
+      description: getAssignmentValue(assignmentMap.get("description"), rawRow) || "",
+      categoryId: resolvedCategory?.id || "",
+      typeId: resolvedType?.id || "",
+      storageLocationId: resolvedLocation?.id || "",
+      storageArea: getAssignmentValue(assignmentMap.get("storageArea"), rawRow),
+      bin: getAssignmentValue(assignmentMap.get("bin"), rawRow),
+      unit: normalizeUnit(getAssignmentValue(assignmentMap.get("unit"), rawRow) || "STK"),
+      stock: parseNumber(getAssignmentValue(assignmentMap.get("stock"), rawRow), 0),
+      minStock: (() => {
+        const rawValue = getAssignmentValue(assignmentMap.get("minStock"), rawRow);
+        if (!rawValue) return null;
+        return parseNumber(rawValue, 0);
+      })(),
+      manufacturer: getAssignmentValue(assignmentMap.get("manufacturer"), rawRow),
+      mpn: getAssignmentValue(assignmentMap.get("mpn"), rawRow),
+      datasheetUrl: getAssignmentValue(assignmentMap.get("datasheetUrl"), rawRow),
+      purchaseUrl: getAssignmentValue(assignmentMap.get("purchaseUrl"), rawRow),
+      tagIds: [],
+      customValues: {}
     };
 
-    const parsed = csvRowSchema.safeParse(candidate);
-    if (!parsed.success) {
-      errors.push(...parsed.error.issues.map((issue) => issue.path.join(".") || issue.message));
-    }
-    let normalizedInput: ImportAnalyzedRow["input"] = null;
-    if (parsed.success && categoryId && storageLocationId) {
+    let parsedItemInput: ReturnType<typeof itemSchema.parse> | null = null;
+    const baseParsed = itemSchema.safeParse(candidateInput);
+    if (!baseParsed.success) {
+      for (const issue of baseParsed.error.issues) {
+        errors.push({
+          fieldKey: String(issue.path[0] || "row"),
+          message: issue.message
+        });
+      }
+    } else {
       try {
-        normalizedInput = {
-          ...parsed.data,
-          stock: toStoredQuantity(parsed.data.unit, parsed.data.stock, {
+        parsedItemInput = {
+          ...baseParsed.data,
+          stock: toStoredQuantity(baseParsed.data.unit, baseParsed.data.stock, {
             field: "Bestand",
             allowNegative: false
           })!,
-          minStock: toStoredQuantity(parsed.data.unit, parsed.data.minStock, {
+          minStock: toStoredQuantity(baseParsed.data.unit, baseParsed.data.minStock, {
             field: "Mindestbestand",
             allowNegative: false,
             nullable: true
-          }),
-          categoryId,
-          storageLocationId,
-          customValues: Object.fromEntries(
-            (() => {
-              const applicableFields = filterApplicableCustomFields(input.customFields, categoryId, input.typeId || null);
-              const byKey = new Map(applicableFields.map((field) => [normalizeImportLookup(field.key), field]));
-              const nameCounts = new Map<string, number>();
-              for (const field of applicableFields) {
-                const normalizedName = normalizeImportLookup(field.name);
-                nameCounts.set(normalizedName, (nameCounts.get(normalizedName) || 0) + 1);
-              }
-              const byName = new Map(
-                applicableFields
-                  .filter((field) => nameCounts.get(normalizeImportLookup(field.name)) === 1)
-                  .map((field) => [normalizeImportLookup(field.name), field])
-              );
-
-              return Object.entries(row)
-                .map(([header, rawValue]) => {
-                  const normalizedHeader = normalizeImportLookup(header);
-                  const field = byKey.get(normalizedHeader) || byName.get(normalizedHeader);
-                  const value = String(rawValue || "").trim();
-                  if (!field || !value) return null;
-                  return [field.id, value] as const;
-                })
-                .filter((entry): entry is readonly [string, string] => !!entry);
-            })()
-          ),
-          categoryName,
-          locationName
+          })
         };
       } catch (error) {
         if (error instanceof QuantityValidationError) {
-          errors.push(error.message);
+          errors.push({ fieldKey: "stock", message: error.message });
         } else {
           throw error;
         }
       }
     }
 
-    const normalizedName = candidate.name.toLowerCase();
-    const normalizedMpn = (candidate.mpn || "").toLowerCase();
-
-    if (normalizedName) {
-      if (seenNames.has(normalizedName)) warnings.push(`Name bereits in CSV, zuerst in Zeile ${seenNames.get(normalizedName)}`);
-      else seenNames.set(normalizedName, lineNumber);
-    }
-    if (normalizedMpn) {
-      if (seenMpns.has(normalizedMpn)) warnings.push(`MPN bereits in CSV, zuerst in Zeile ${seenMpns.get(normalizedMpn)}`);
-      else seenMpns.set(normalizedMpn, lineNumber);
-    }
-
-    const duplicateKeys = [normalizedName, normalizedMpn].filter(Boolean);
-    const duplicateCandidates = duplicateKeys.flatMap((key) => input.duplicateCandidatesByKey.get(key) || []);
-    if (duplicateCandidates.length) {
-      warnings.push(
-        `Mögliche Duplikate vorhanden: ${Array.from(new Set(duplicateCandidates.map((entry) => entry.labelCode))).join(", ")}`
-      );
-    }
-
-    if (errors.length || !parsed.success || !categoryId || !storageLocationId) {
-      return {
-        lineNumber,
-        status: "error" as const,
-        input: normalizedInput,
-        errors,
-        warnings
-      };
+    let normalizedCustomValues: Array<{ customFieldId: string; valueJson: string }> = [];
+    if (parsedItemInput) {
+      try {
+        const preparedCustomValues = await prepareCustomFieldValueWrites(input.db, {
+          rawValues: rawCustomValues,
+          categoryId: parsedItemInput.categoryId,
+          typeId: parsedItemInput.typeId
+        });
+        normalizedCustomValues = preparedCustomValues.upserts;
+      } catch (error) {
+        if (error instanceof CustomFieldValidationError) {
+          errors.push({
+            fieldKey: error.fieldId ? `customField:${error.fieldId}` : "customField",
+            message: error.message
+          });
+        } else {
+          throw error;
+        }
+      }
     }
 
-    return {
+    warnings.push(
+      ...buildDuplicateWarnings(input.duplicateItems, {
+        name: candidateInput.name,
+        manufacturer: candidateInput.manufacturer,
+        mpn: candidateInput.mpn,
+        categoryId: resolvedCategory?.id || null,
+        typeId: resolvedType?.id || null,
+        unit: candidateInput.unit
+      })
+    );
+
+    const responseRow: ImportPreviewRow = {
       lineNumber,
-      status: "ready" as const,
-      input: normalizedInput,
+      status: errors.length ? "error" : "ready",
+      input: rawRow,
+      resolved:
+        parsedItemInput && !errors.length
+          ? createResolvedPreview(
+              parsedItemInput,
+              categoryLookup.byId,
+              typeLookup.byId,
+              locationLookup.byId,
+              applicableFields,
+              normalizedCustomValues
+            )
+          : null,
       errors,
       warnings
     };
-  });
+
+    if (!errors.length && parsedItemInput) {
+      preparedRows.push({
+        lineNumber,
+        itemInput: parsedItemInput,
+        rawCustomValues,
+        responseRow
+      });
+    }
+
+    responseRows.push(responseRow);
+  }
 
   return {
-    analyzedRows,
-    readyRows: analyzedRows
-      .filter((row): row is ImportAnalyzedRow & { input: NonNullable<ImportAnalyzedRow["input"]> } => row.status === "ready" && !!row.input)
-      .map((row) => ({
-        lineNumber: row.lineNumber,
-        input: {
-          ...row.input,
-          categoryId: row.input.categoryId,
-          storageLocationId: row.input.storageLocationId
-        },
-        warnings: row.warnings
-      })) as ImportReadyRow[],
-    errorsCount: analyzedRows.reduce((count, row) => count + row.errors.length, 0),
-    warningsCount: analyzedRows.reduce((count, row) => count + row.warnings.length, 0)
+    delimiter: parsedCsv.delimiter,
+    delimiterMode: parsedCsv.delimiterMode,
+    headerFingerprint,
+    headers: headerPreview,
+    mappingConfig,
+    mappingIssues,
+    profileMatches,
+    totalRows: rows.length,
+    readyRowsCount: preparedRows.length,
+    errorsCount: mappingIssues.length + responseRows.reduce((count, row) => count + row.errors.length, 0),
+    warningsCount: responseRows.reduce((count, row) => count + row.warnings.length, 0),
+    rows: responseRows,
+    preparedRows
+  };
+}
+
+export function serializeImportPreview(result: ImportPreviewResult) {
+  return {
+    delimiter: result.delimiter,
+    delimiterMode: result.delimiterMode,
+    headerFingerprint: result.headerFingerprint,
+    headers: result.headers,
+    mappingConfig: result.mappingConfig,
+    mappingIssues: result.mappingIssues,
+    profileMatches: result.profileMatches,
+    totalRows: result.totalRows,
+    readyRows: result.readyRowsCount,
+    errorsCount: result.errorsCount,
+    warningsCount: result.warningsCount,
+    rows: result.rows
   };
 }

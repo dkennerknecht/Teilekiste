@@ -47,6 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id },
     include: {
       category: true,
+      labelType: true,
       storageLocation: true,
       tags: { include: { tag: true } },
       images: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
@@ -58,6 +59,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   });
 
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (item.mergedIntoItemId) {
+    const mergedTarget = await prisma.item.findUnique({
+      where: { id: item.mergedIntoItemId },
+      select: { id: true, storageLocationId: true }
+    });
+    if (!mergedTarget) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const mergedAllowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
+    if (mergedAllowedLocationIds && !mergedAllowedLocationIds.includes(mergedTarget.storageLocationId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return NextResponse.json({ redirectToItemId: mergedTarget.id });
+  }
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
@@ -211,7 +227,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     ...itemData
   } = body;
   const nextCategoryId = body.categoryId || existing.categoryId;
-  const nextTypeId = body.typeId || null;
+  const nextTypeId = body.typeId === undefined ? existing.typeId || null : body.typeId || null;
   const shouldRegenerateLabel =
     !!nextTypeId && ((!!body.categoryId && body.categoryId !== existing.categoryId) || !!body.typeId);
   const labelCode = shouldRegenerateLabel ? await assignNextLabelCode(nextCategoryId, nextTypeId) : existing.labelCode;
@@ -241,6 +257,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(storageLocationId ? { storageLocation: { connect: { id: storageLocationId } } } : {}),
       ...(nextStock !== undefined ? { stock: nextStock } : {}),
       ...(body.unit !== undefined ? { unit: nextUnit } : {}),
+      ...(body.typeId !== undefined
+        ? nextTypeId
+          ? { labelType: { connect: { id: nextTypeId } } }
+          : { labelType: { disconnect: true } }
+        : {}),
       storageArea: itemData.storageArea || undefined,
       bin: itemData.bin || undefined,
       minStock: nextMinStock === undefined ? undefined : nextMinStock,

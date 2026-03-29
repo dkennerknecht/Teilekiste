@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       isArchived: false,
       storageLocationId: allowedLocationIds ? { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } : undefined
     },
-    include: { category: true, storageLocation: true, tags: { include: { tag: true } }, reservations: true }
+    include: { category: true, labelType: true, storageLocation: true, tags: { include: { tag: true } }, reservations: true }
   });
 
   const delimiter = req.nextUrl.searchParams.get("delimiter") || ",";
@@ -31,6 +31,9 @@ export async function GET(req: NextRequest) {
         name: item.name,
         description: item.description,
         category: item.category.name,
+        typeId: item.typeId,
+        typeCode: item.labelType?.code || null,
+        typeName: item.labelType?.name || null,
         storageLocation: item.storageLocation.name,
         storageArea: item.storageArea,
         bin: item.bin,

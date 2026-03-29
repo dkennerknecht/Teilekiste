@@ -56,7 +56,7 @@ function buildItemFormState(data: any) {
     manufacturer: data.manufacturer || "",
     mpn: data.mpn || "",
     tagIds: (data.tags || []).map((t: any) => t.tagId),
-    typeId: "",
+    typeId: data.typeId || "",
     customValues: buildCustomValueMap(data.customValues || [])
   };
 }
@@ -89,9 +89,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const load = useCallback(async () => {
     const res = await fetch(`/api/items/${params.id}`, { cache: "no-store" });
     const data = await res.json();
+    if (data?.redirectToItemId) {
+      router.replace(`/items/${data.redirectToItemId}`);
+      return;
+    }
     setItem(data);
     setForm(buildItemFormState(data));
-  }, [params.id]);
+  }, [params.id, router]);
 
   useEffect(() => {
     load();
@@ -119,9 +123,10 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     if (parts.length < 2) return;
     const typeCode = parts[parts.length - 2];
     const type = types.find((t) => t.code === typeCode);
+    if (!type) return;
     setForm((prev: any) => ({
       ...prev,
-      typeId: type?.id || prev.typeId
+      typeId: type.id
     }));
   }, [editMode, item, types, form?.typeId]);
 
@@ -328,11 +333,9 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     try {
                       const selectedCategory = categories.find((c) => c.id === form.categoryId);
                       const selectedType = types.find((t) => t.id === form.typeId);
-                      const currentTypeCode = String(item.labelCode || "").split("-").at(-2) || "";
-                      const currentType = types.find((t) => t.code === currentTypeCode);
                       const shouldSendTypeId =
                         !!selectedType &&
-                        (selectedType.id !== currentType?.id || form.categoryId !== item.categoryId);
+                        (selectedType.id !== item.typeId || form.categoryId !== item.categoryId || !item.typeId);
                       const payload = {
                         name: form.name,
                         description: form.description,

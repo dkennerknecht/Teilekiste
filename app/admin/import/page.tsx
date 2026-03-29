@@ -1,0 +1,718 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { importCoreTargets, type ImportProfileMappingConfig } from "@/lib/import-profiles";
+
+type LookupRow = {
+  id: string;
+  name: string;
+  code?: string | null;
+};
+
+type CustomFieldRow = {
+  id: string;
+  name: string;
+  key: string;
+  categoryId?: string | null;
+  typeId?: string | null;
+};
+
+type ImportProfileRow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  headerFingerprint?: string | null;
+  delimiterMode: string;
+  mappingConfig: ImportProfileMappingConfig;
+};
+
+type ImportPreview = {
+  ok: boolean;
+  delimiter: string;
+  delimiterMode: string;
+  headerFingerprint: string;
+  headers: Array<{
+    header: string;
+    mappedTargetKeys: string[];
+    suggestedTargetKeys: string[];
+    status: "mapped" | "suggested" | "ignored" | "unmapped";
+  }>;
+  mappingConfig: ImportProfileMappingConfig;
+  mappingIssues: Array<{ fieldKey: string; message: string }>;
+  profileMatches: Array<{ id: string; name: string; description?: string | null; score: number; delimiterMode: string }>;
+  totalRows: number;
+  readyRows: number;
+  errorsCount: number;
+  warningsCount: number;
+  rows: Array<{
+    lineNumber: number;
+    status: "ready" | "error";
+    input: Record<string, string>;
+    resolved: {
+      name: string;
+      category: { name: string; code?: string | null } | null;
+      type: { name: string; code?: string | null } | null;
+      storageLocation: { name: string; code?: string | null } | null;
+      unit: string;
+      stock: number;
+      minStock: number | null;
+      manufacturer: string | null;
+      mpn: string | null;
+      datasheetUrl: string | null;
+      purchaseUrl: string | null;
+      customFields: Array<{ customFieldId: string; fieldName: string; displayValue: string }>;
+    } | null;
+    errors: Array<{ fieldKey: string; message: string }>;
+    warnings: Array<{ fieldKey: string; message: string }>;
+  }>;
+  created?: number;
+  createdItems?: Array<{ id: string; labelCode: string; name: string }>;
+};
+
+const emptyMappingConfig = (): ImportProfileMappingConfig => ({
+  assignments: []
+});
+
+function getAssignment(config: ImportProfileMappingConfig, targetKey: string) {
+  return config.assignments.find((assignment) => assignment.targetKey === targetKey) || null;
+}
+
+function upsertAssignment(
+  config: ImportProfileMappingConfig,
+  nextAssignment: { targetKey: string; sourceType: "column" | "fixed" | "ignore"; column?: string | null; fixedValue?: string | null }
+) {
+  const assignments = config.assignments.filter((assignment) => assignment.targetKey !== nextAssignment.targetKey);
+  assignments.push({
+    targetKey: nextAssignment.targetKey,
+    sourceType: nextAssignment.sourceType,
+    column: nextAssignment.column ?? null,
+    fixedValue: nextAssignment.fixedValue ?? null
+  });
+  assignments.sort((left, right) => left.targetKey.localeCompare(right.targetKey, "de"));
+  return { assignments };
+}
+
+function targetLabel(targetKey: string, customFields: CustomFieldRow[]) {
+  const core = importCoreTargets.find((entry) => entry.key === targetKey);
+  if (core) return core.label;
+  if (!targetKey.startsWith("customField:")) return targetKey;
+  const fieldId = targetKey.slice("customField:".length);
+  const field = customFields.find((entry) => entry.id === fieldId);
+  return field ? `${field.name} [Custom Field]` : `${targetKey} [fehlt]`;
+}
+
+function buildTargetList(customFields: CustomFieldRow[]) {
+  return [
+    ...importCoreTargets.map((entry) => ({ key: entry.key, label: entry.label, kind: "core" as const })),
+    ...customFields.map((field) => ({
+      key: `customField:${field.id}`,
+      label: `${field.name} [Custom Field]`,
+      kind: "custom" as const
+    }))
+  ];
+}
+
+function createProfileDraft(profile: ImportProfileRow | null) {
+  return {
+    name: profile?.name || "",
+    description: profile?.description || ""
+  };
+}
+
+export default function AdminImportPage() {
+  const [categories, setCategories] = useState<LookupRow[]>([]);
+  const [types, setTypes] = useState<LookupRow[]>([]);
+  const [locations, setLocations] = useState<LookupRow[]>([]);
+  const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
+  const [profiles, setProfiles] = useState<ImportProfileRow[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [profileDraft, setProfileDraft] = useState({ name: "", description: "" });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [mappingDraft, setMappingDraft] = useState<ImportProfileMappingConfig>(emptyMappingConfig);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+
+  const selectedProfile = useMemo(
+    () => profiles.find((profile) => profile.id === selectedProfileId) || null,
+    [profiles, selectedProfileId]
+  );
+
+  const mappingTargets = useMemo(() => buildTargetList(customFields), [customFields]);
+  const availableHeaders = preview?.headers.map((entry) => entry.header) || [];
+
+  const load = useCallback(async () => {
+    const [categoryData, typeData, locationData, fieldData, profileData] = await Promise.all([
+      fetch("/api/admin/categories", { cache: "no-store" }).then((res) => res.json()),
+      fetch("/api/admin/types", { cache: "no-store" }).then((res) => res.json()),
+      fetch("/api/admin/locations", { cache: "no-store" }).then((res) => res.json()),
+      fetch("/api/admin/custom-fields", { cache: "no-store" }).then((res) => res.json()),
+      fetch("/api/admin/import-profiles", { cache: "no-store" }).then((res) => res.json())
+    ]);
+
+    setCategories(categoryData);
+    setTypes(typeData);
+    setLocations(locationData);
+    setCustomFields((fieldData || []).filter((field: any) => field.isActive !== false));
+    setProfiles(profileData || []);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (selectedProfile) {
+      setProfileDraft(createProfileDraft(selectedProfile));
+      setMappingDraft(selectedProfile.mappingConfig || emptyMappingConfig());
+      setFeedback("");
+      setError("");
+    }
+  }, [selectedProfile]);
+
+  async function runPreview() {
+    if (!selectedFile) {
+      setError("Bitte zuerst eine CSV-Datei waehlen.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setFeedback("");
+
+    const form = new FormData();
+    form.set("file", selectedFile);
+    if (selectedProfileId) form.set("profileId", selectedProfileId);
+    form.set("mappingDraft", JSON.stringify(mappingDraft));
+
+    const res = await fetch("/api/admin/import/preview", {
+      method: "POST",
+      body: form
+    });
+    const data = await res.json().catch(() => null);
+    setBusy(false);
+
+    if (!res.ok) {
+      setPreview(null);
+      setError(data?.error || "Preview konnte nicht geladen werden.");
+      return;
+    }
+
+    setPreview(data);
+    setMappingDraft(data.mappingConfig || emptyMappingConfig());
+    setFeedback(`Preview geladen: ${data.readyRows}/${data.totalRows} Zeilen bereit.`);
+  }
+
+  async function runApply() {
+    if (!selectedFile || !preview) return;
+    setBusy(true);
+    setError("");
+    setFeedback("");
+
+    const form = new FormData();
+    form.set("file", selectedFile);
+    if (selectedProfileId) form.set("profileId", selectedProfileId);
+    form.set("mappingDraft", JSON.stringify(mappingDraft));
+
+    const res = await fetch("/api/admin/import/apply", {
+      method: "POST",
+      body: form
+    });
+    const data = await res.json().catch(() => null);
+    setBusy(false);
+
+    if (!res.ok) {
+      setPreview(data);
+      setError(data?.error || "Import fehlgeschlagen.");
+      return;
+    }
+
+    setPreview(data);
+    setFeedback(`Import abgeschlossen: ${data.created || 0} Artikel angelegt.`);
+  }
+
+  async function saveProfile(mode: "create" | "update") {
+    if (!profileDraft.name.trim()) {
+      setError("Profilname fehlt.");
+      return;
+    }
+
+    setProfileBusy(true);
+    setError("");
+    setFeedback("");
+
+    const payload = {
+      ...(mode === "update" && selectedProfileId ? { id: selectedProfileId } : {}),
+      name: profileDraft.name.trim(),
+      description: profileDraft.description.trim() || null,
+      headerFingerprint: preview?.headerFingerprint || null,
+      delimiterMode: preview?.delimiterMode || selectedProfile?.delimiterMode || "AUTO",
+      mappingConfig: mappingDraft
+    };
+
+    const res = await fetch("/api/admin/import-profiles", {
+      method: mode === "create" ? "POST" : "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => null);
+    setProfileBusy(false);
+
+    if (!res.ok) {
+      setError(data?.error || "Profil konnte nicht gespeichert werden.");
+      return;
+    }
+
+    await load();
+    setSelectedProfileId(data.id);
+    setFeedback(mode === "create" ? "Profil gespeichert." : "Profil aktualisiert.");
+  }
+
+  async function deleteProfile() {
+    if (!selectedProfileId) return;
+    setProfileBusy(true);
+    setError("");
+    setFeedback("");
+
+    const res = await fetch("/api/admin/import-profiles", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: selectedProfileId })
+    });
+    const data = await res.json().catch(() => null);
+    setProfileBusy(false);
+
+    if (!res.ok) {
+      setError(data?.error || "Profil konnte nicht geloescht werden.");
+      return;
+    }
+
+    setSelectedProfileId("");
+    setProfileDraft({ name: "", description: "" });
+    setMappingDraft(emptyMappingConfig());
+    await load();
+    setFeedback("Profil geloescht.");
+  }
+
+  function setAssignmentSourceType(targetKey: string, sourceType: "column" | "fixed" | "ignore") {
+    const current = getAssignment(mappingDraft, targetKey);
+    setMappingDraft(
+      upsertAssignment(mappingDraft, {
+        targetKey,
+        sourceType,
+        column: sourceType === "column" ? current?.column || availableHeaders[0] || null : null,
+        fixedValue: sourceType === "fixed" ? current?.fixedValue || null : null
+      })
+    );
+  }
+
+  function setAssignmentColumn(targetKey: string, column: string) {
+    const current = getAssignment(mappingDraft, targetKey);
+    setMappingDraft(
+      upsertAssignment(mappingDraft, {
+        targetKey,
+        sourceType: current?.sourceType === "fixed" ? "fixed" : "column",
+        column,
+        fixedValue: current?.fixedValue || null
+      })
+    );
+  }
+
+  function setAssignmentFixedValue(targetKey: string, fixedValue: string) {
+    const current = getAssignment(mappingDraft, targetKey);
+    setMappingDraft(
+      upsertAssignment(mappingDraft, {
+        targetKey,
+        sourceType: "fixed",
+        column: current?.column || null,
+        fixedValue
+      })
+    );
+  }
+
+  function renderFixedValueInput(targetKey: string) {
+    const assignment = getAssignment(mappingDraft, targetKey);
+    const value = assignment?.fixedValue || "";
+
+    if (targetKey === "category") {
+      return (
+        <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
+          <option value="">Kategorie waehlen</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name} ({category.code || "--"})
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (targetKey === "type") {
+      return (
+        <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
+          <option value="">Type waehlen</option>
+          {types.map((type) => (
+            <option key={type.id} value={type.id}>
+              {(type.code || "--")} - {type.name}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (targetKey === "storageLocation") {
+      return (
+        <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
+          <option value="">Lagerort waehlen</option>
+          {locations.map((location) => (
+            <option key={location.id} value={location.id}>
+              {location.name} ({location.code || "--"})
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (targetKey === "unit") {
+      return (
+        <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
+          <option value="">Einheit waehlen</option>
+          {["STK", "M", "SET", "PACK"].map((unit) => (
+            <option key={unit} value={unit}>
+              {unit}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    return (
+      <input
+        className="input"
+        value={value}
+        onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}
+        placeholder="Fester Wert"
+      />
+    );
+  }
+
+  const canApply = Boolean(
+    selectedFile &&
+      preview &&
+      preview.mappingIssues.length === 0 &&
+      preview.rows.every((row) => row.status === "ready")
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Import</h1>
+          <p className="text-sm text-workshop-700">Admin-Wizard fuer CSV-Profile, Feldzuordnung, Preview und strikten Apply.</p>
+        </div>
+        <div className="flex gap-2">
+          <Link className="btn-secondary" href="/admin">
+            Zurueck zu Admin
+          </Link>
+          <Link className="btn-secondary" href="/admin/data-quality">
+            Datenqualitaet
+          </Link>
+        </div>
+      </div>
+
+      {feedback && <div className="rounded border border-workshop-300 bg-workshop-100 p-2 text-sm">{feedback}</div>}
+      {error && <div className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-700">{error}</div>}
+
+      <section className="card space-y-3">
+        <h2 className="text-lg font-semibold">1. Datei und Profil</h2>
+        <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-3">
+            <input
+              className="input"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => {
+                setSelectedFile(e.target.files?.[0] || null);
+                setPreview(null);
+              }}
+            />
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <select
+                className="input"
+                value={selectedProfileId}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  setSelectedProfileId(nextId);
+                  const nextProfile = profiles.find((profile) => profile.id === nextId) || null;
+                  setProfileDraft(createProfileDraft(nextProfile));
+                  setMappingDraft(nextProfile?.mappingConfig || emptyMappingConfig());
+                }}
+              >
+                <option value="">Kein Profil</option>
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+              <button className="btn-secondary" type="button" disabled={busy || !selectedFile} onClick={runPreview}>
+                {busy ? "Laedt..." : "Preview laden"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+            <p className="text-sm font-semibold">Profilpflege</p>
+            <input
+              className="input"
+              value={profileDraft.name}
+              onChange={(e) => setProfileDraft((current) => ({ ...current, name: e.target.value }))}
+              placeholder="Profilname"
+            />
+            <textarea
+              className="input min-h-24"
+              value={profileDraft.description}
+              onChange={(e) => setProfileDraft((current) => ({ ...current, description: e.target.value }))}
+              placeholder="Beschreibung der Quelle"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-secondary" type="button" disabled={profileBusy} onClick={() => saveProfile("create")}>
+                Als neues Profil speichern
+              </button>
+              <button
+                className="btn-secondary"
+                type="button"
+                disabled={profileBusy || !selectedProfileId}
+                onClick={() => saveProfile("update")}
+              >
+                Profil aktualisieren
+              </button>
+              <button
+                className="btn-secondary"
+                type="button"
+                disabled={profileBusy || !selectedProfileId}
+                onClick={deleteProfile}
+              >
+                Profil loeschen
+              </button>
+            </div>
+            {preview && (
+              <div className="text-sm text-workshop-700">
+                <p>Fingerprint: <span className="font-mono text-xs">{preview.headerFingerprint || "-"}</span></p>
+                <p>Delimiter: {preview.delimiterMode} ({preview.delimiter})</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {!!preview?.profileMatches?.length && (
+          <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+            <p className="text-sm font-semibold">Profilvorschlaege</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {preview.profileMatches.map((match) => (
+                <div key={match.id} className="rounded-lg border border-workshop-200 p-3 text-sm">
+                  <p className="font-semibold">{match.name}</p>
+                  <p className="text-workshop-700">Score {match.score} / Delimiter {match.delimiterMode}</p>
+                  {match.description && <p className="text-workshop-700">{match.description}</p>}
+                  <button
+                    className="btn-secondary mt-2"
+                    type="button"
+                    onClick={() => {
+                      const nextProfile = profiles.find((profile) => profile.id === match.id) || null;
+                      setSelectedProfileId(match.id);
+                      setProfileDraft(createProfileDraft(nextProfile));
+                      setMappingDraft(nextProfile?.mappingConfig || emptyMappingConfig());
+                    }}
+                  >
+                    Profil uebernehmen
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold">2. Mapping</h2>
+            <p className="text-sm text-workshop-700">Nach der ersten Preview koennen Zuordnungen angepasst und erneut ausgewertet werden.</p>
+          </div>
+          <button className="btn-secondary" type="button" disabled={!selectedFile || busy} onClick={runPreview}>
+            Mapping neu auswerten
+          </button>
+        </div>
+
+        {!preview ? (
+          <div className="rounded border border-dashed border-workshop-300 p-4 text-sm text-workshop-700">
+            Erst eine Datei auswaehlen und Preview laden.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {preview.mappingIssues.length > 0 && (
+              <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                {preview.mappingIssues.map((issue) => (
+                  <p key={`${issue.fieldKey}:${issue.message}`}>
+                    {targetLabel(issue.fieldKey, customFields)}: {issue.message}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              {mappingTargets.map((target) => {
+                const assignment = getAssignment(mappingDraft, target.key);
+                return (
+                  <div key={target.key} className="rounded-xl border border-workshop-200 p-3">
+                    <p className="text-sm font-semibold">{target.label}</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]">
+                      <select
+                        className="input"
+                        value={assignment?.sourceType || "ignore"}
+                        onChange={(e) => setAssignmentSourceType(target.key, e.target.value as "column" | "fixed" | "ignore")}
+                      >
+                        <option value="ignore">Ignorieren</option>
+                        <option value="column">CSV-Spalte</option>
+                        <option value="fixed">Fester Wert</option>
+                      </select>
+
+                      {assignment?.sourceType === "column" ? (
+                        <select
+                          className="input"
+                          value={assignment.column || ""}
+                          onChange={(e) => setAssignmentColumn(target.key, e.target.value)}
+                        >
+                          <option value="">Spalte waehlen</option>
+                          {availableHeaders.map((header) => (
+                            <option key={header} value={header}>
+                              {header}
+                            </option>
+                          ))}
+                        </select>
+                      ) : assignment?.sourceType === "fixed" ? (
+                        renderFixedValueInput(target.key)
+                      ) : (
+                        <div className="rounded border border-dashed border-workshop-300 px-3 py-2 text-sm text-workshop-600">
+                          Keine Zuordnung
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold">3. Preview und Apply</h2>
+            {preview && (
+              <p className="text-sm text-workshop-700">
+                Zeilen: {preview.totalRows} | bereit: {preview.readyRows} | Fehler: {preview.errorsCount} | Warnungen: {preview.warningsCount}
+              </p>
+            )}
+          </div>
+          <button className="btn" type="button" disabled={!canApply || busy} onClick={runApply}>
+            {busy ? "Laeuft..." : "Apply ausfuehren"}
+          </button>
+        </div>
+
+        {!preview ? (
+          <div className="rounded border border-dashed border-workshop-300 p-4 text-sm text-workshop-700">
+            Noch keine Preview vorhanden.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {!!preview.createdItems?.length && (
+              <div className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Angelegt: {preview.createdItems.map((item) => `${item.labelCode} (${item.name})`).join(", ")}
+              </div>
+            )}
+
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {preview.headers.map((entry) => (
+                <div key={entry.header} className="rounded-lg border border-workshop-200 p-3 text-sm">
+                  <p className="font-semibold">{entry.header}</p>
+                  <p className="text-workshop-700">
+                    {entry.status === "mapped"
+                      ? `Mapped: ${entry.mappedTargetKeys.join(", ")}`
+                      : entry.status === "suggested"
+                        ? `Vorschlag: ${entry.suggestedTargetKeys.join(", ")}`
+                        : entry.status === "ignored"
+                          ? "Ignoriert"
+                          : "Nicht zugeordnet"}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              {preview.rows.slice(0, 50).map((row) => (
+                <article
+                  key={row.lineNumber}
+                  className={`rounded-xl border p-3 ${
+                    row.status === "ready" ? "border-emerald-300 bg-emerald-50" : "border-red-300 bg-red-50"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold">
+                      Zeile {row.lineNumber} - {row.status === "ready" ? "bereit" : "fehlerhaft"}
+                    </p>
+                    {row.resolved && (
+                      <p className="text-sm text-workshop-700">
+                        {row.resolved.category?.name || "-"} / {row.resolved.type?.code || row.resolved.type?.name || "-"} / {row.resolved.storageLocation?.name || "-"}
+                      </p>
+                    )}
+                  </div>
+
+                  {row.resolved && (
+                    <div className="mt-2 grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
+                      <p>Name: {row.resolved.name}</p>
+                      <p>Bestand: {row.resolved.stock} {row.resolved.unit}</p>
+                      <p>Mindestbestand: {row.resolved.minStock ?? "-"} {row.resolved.unit}</p>
+                      <p>Hersteller: {row.resolved.manufacturer || "-"}</p>
+                      <p>MPN: {row.resolved.mpn || "-"}</p>
+                      <p>Datenblatt: {row.resolved.datasheetUrl || "-"}</p>
+                      {!!row.resolved.customFields.length && (
+                        <p className="md:col-span-2 xl:col-span-3">
+                          Custom Fields: {row.resolved.customFields.map((field) => `${field.fieldName}: ${field.displayValue}`).join(" | ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!!row.errors.length && (
+                    <div className="mt-2 text-sm text-red-700">
+                      {row.errors.map((entry) => (
+                        <p key={`${row.lineNumber}:${entry.fieldKey}:${entry.message}`}>
+                          {targetLabel(entry.fieldKey, customFields)}: {entry.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {!!row.warnings.length && (
+                    <div className="mt-2 text-sm text-amber-700">
+                      {row.warnings.map((entry) => (
+                        <p key={`${row.lineNumber}:${entry.fieldKey}:${entry.message}`}>
+                          {targetLabel(entry.fieldKey, customFields)}: {entry.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

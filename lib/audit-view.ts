@@ -74,6 +74,11 @@ export function summarizeAuditEntry(entry: AuditLike) {
       return "Item archiviert";
     case "ITEM_UNARCHIVE":
       return "Item aus dem Archiv wiederhergestellt";
+    case "ITEM_MERGE": {
+      const sourceLabel = String(before?.sourceLabelCode || after?.sourceLabelCode || "Quelle");
+      const targetLabel = String(before?.targetLabelCode || after?.targetLabelCode || "Ziel");
+      return `Items zusammengefuehrt: ${sourceLabel} -> ${targetLabel}`;
+    }
     case "STOCK_MOVEMENT": {
       const previous = typeof before?.stock === "number" ? before.stock : null;
       const next = typeof after?.stock === "number" ? after.stock : null;
