@@ -1,76 +1,174 @@
-# Teilekiste - Self-hosted Werkstatt Inventory (Next.js + Prisma + SQLite)
+# Teilekiste
 
-Self-hostbare Inventar-Webapp fuer kleine Werkstaetten mit Docker Compose, lokaler SQLite, Uploads und serverseitigem RBAC.
+Self-hosted Inventar-Webapp fuer kleine Werkstaetten und Materiallager mit Next.js, Prisma und SQLite.
+
+Der aktuelle Schwerpunkt liegt auf:
+- einfacher Bestandsfuehrung
+- sauberer Lagerstruktur
+- schneller mobiler Nutzung
+- Bilder, Labels und Auditierbarkeit
+- einfacher Selbsthostbarkeit per Docker Compose
 
 ## Stack
 
-- Frontend/Backend: Next.js 14 (App Router + Route Handlers, TypeScript)
-- DB: SQLite (`/data/sqlite/app.db`)
-- ORM: Prisma
-- Auth: NextAuth Credentials (bcrypt)
-- RBAC: `ADMIN`, `READ_WRITE`, `READ` (serverseitig in API + Storage-Scopes)
-- UI: Tailwind CSS
-- Uploads: `/data/uploads`, Attachments: `/data/attachments`, Backups: `/data/backups`
+- Next.js 14, React 18, TypeScript
+- Prisma + SQLite
+- NextAuth Credentials Login
+- Tailwind CSS
+- Uploads auf lokales Volume
+- Docker Compose fuer Betrieb und Persistenz
 
-## Features (MVP)
+## Aktueller Funktionsumfang
 
-- Item CRUD mit Label-Code System (`AREA-TYPE-NUMBER`) und transaktionaler Vergabe
-- Volltextsuche, Filter, Sortierung
-- Bestand nur ueber Stock Movements
-- Reservierungen + verfuegbarer Bestand
-- Bilder + Attachments Upload (MIME/Size Validierung) + Thumbnail-Generierung
-- Inventurmodus mit Diff-Preview + Apply als INVENTORY Buchungen
-- Bulk-Reassign Label Codes (Dry-run + Apply)
-- Duplikatwarnung bei Create (Name/MPN/EAN)
-- CSV/JSON Export, P-touch CSV Export
-- CSV Import (Dry-run/Apply)
-- Stuecklisten/BOM pro Item inkl. Rueckverweise auf Baugruppen
-- Audit History pro Item und im Admin-Bereich
-- Backup ZIP erstellen (JSON + Upload/Attachment Verzeichnisse, Manifest, SHA-256, Retention)
-- Restore ZIP (Preview, Merge/Overwrite, Checksum-Pruefung)
-- Papierkorb (Soft Delete / Restore / Hard Delete)
-- Admin Bereich: Users, Categories, Tags, Locations, Custom Fields, Label Config, Backup
-- Lagerort-Dashboard "Wo liegt was?"
-- Einkaufsliste (Items unter Mindestbestand)
-- Read-only API Tokens (Admin kann Tokens erstellen/deaktivieren)
-- Scanner-Mode (Code eingeben/scannen -> Item oeffnen -> -1 Quick-Buchung)
+### Inventar
 
-## Quickstart (Docker Compose)
+- Items anlegen, bearbeiten, archivieren und in den Papierkorb verschieben
+- automatische Label-Vergabe im Format `KATEGORIE-TYPE-NNN`
+- fortlaufende Nummern pro Kategorie/Type-Kombination, ohne Wiederverwendung geloeschter Nummern
+- Bilder direkt beim Anlegen und Bearbeiten, inklusive Mehrfach-Upload
+- Tags direkt beim Anlegen und Bearbeiten
+- Custom Fields mit Scope auf Kategorie, Type oder deren Kombination
+- Duplikatwarnung bei Name/MPN
 
-1. Env kopieren:
+### Lagerstruktur
+
+- Kategorien mit 2-stelligen Codes
+- Types mit 2-stelligen Codes
+- Lagerorte
+- Regale pro Lagerort
+- Fach/Bin pro Item
+
+### Bestand und Historie
+
+- Bestandsbuchungen
+- Reservierungen
+- verfuegbarer Bestand als `Bestand - Reservierungen`
+- verfuegbarer Bestand wird nie negativ angezeigt
+- Mindestbestand pro Item
+- Einkaufsliste fuer Items unter Mindestbestand
+- Audit-Historie fuer Item-Aenderungen und Reservierungen
+
+### Organisation
+
+- Startseite mit Suche, Filtern und Bulk-Aktionen
+- Bulk-Bearbeitung fuer Kategorie, Lagerort, Regal, Fach und Tags
+- Bulk-Archivieren und Bulk-Loeschen
+- Archiv als Parkbereich fuer inaktive Items
+- Papierkorb mit 14 Tagen Wiederherstellungsfrist
+
+### Admin
+
+- Benutzerverwaltung mit Rollen
+- Kategorien, Types, Tags, Lagerorte und Regale verwalten
+- Custom Fields verwalten
+- App-Sprache zwischen Deutsch und Englisch umschalten
+- Read-only API Tokens
+- CSV Import und Export
+- Backup / Restore
+
+### Mobile Nutzung
+
+- responsive Hauptnavigation
+- responsive Startseite, Item-Detailseiten und Admin-Bereiche
+- Scanner-Seite fuer schnelles Oeffnen von Items ueber Code
+- fuer LAN-Nutzung auf Handy geeignet, wenn `APP_BASE_URL` und `NEXTAUTH_URL` korrekt gesetzt sind
+
+## Wichtige Produktregeln
+
+### Label-System
+
+- Labels werden automatisch erzeugt.
+- Das Format bleibt `KATEGORIE-TYPE-NUMMER`, z. B. `EL-WI-024`.
+- Beim Aendern von Kategorie oder Type wird bei Bedarf automatisch ein neues Label vergeben.
+- Nummern werden nicht recycelt.
+
+### Archiv vs. Papierkorb
+
+- `Archiviert` bedeutet: Item bleibt erhalten, ist aber aus aktiven Listen ausgeblendet.
+- `Geloescht` bedeutet: Item liegt im Papierkorb.
+- Papierkorb-Eintraege koennen 14 Tage lang wiederhergestellt werden und werden danach automatisch entfernt.
+
+### Verfuegbarer Bestand
+
+- Auf Uebersichtsseiten wird der verfuegbare Bestand gezeigt.
+- Reservierungen reduzieren die verfuegbare Menge.
+- Ueberreservierung und Bestandsaenderungen ins Negative werden serverseitig abgefangen.
+
+## Docker Quickstart
+
+1. ENV-Datei anlegen:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Starten:
+2. Container bauen und starten:
 
 ```bash
 docker compose up -d --build
 ```
 
-3. App aufrufen:
+3. Bei einer leeren Datenbank das System initialisieren:
+
+```bash
+docker exec teilekiste npm run bootstrap:system
+```
+
+4. App oeffnen:
 
 - [http://localhost:3000](http://localhost:3000)
-- Default Seed Login: `admin@local` / `admin123`
-- Zusätzlicher Demo-Reader: `reader@local` / `admin123`
 
-Hinweis: Beim Container-Start laeuft `prisma migrate deploy` automatisch. Demo-Seed-Daten werden nur geladen, wenn `RUN_SEED_ON_STARTUP=1` gesetzt ist.
+5. Standard-Login nach Bootstrap:
 
-## Volumes / Persistenz
+- `admin@local`
+- `admin123`
 
-- DB: `/data/sqlite/app.db`
+## Demo-Daten statt leerem System
+
+Wenn du mit Beispieldaten starten willst:
+
+1. In `.env` setzen:
+
+```bash
+RUN_SEED_ON_STARTUP=1
+```
+
+2. Container neu starten:
+
+```bash
+docker compose up -d --build
+```
+
+Hinweis:
+- `RUN_SEED_ON_STARTUP=1` laedt Demo-Daten.
+- `bootstrap:system` erzeugt nur das Grundsystem mit Admin und Standardlager.
+
+## Handy- und LAN-Zugriff
+
+Fuer Login-Redirects auf Handy oder im lokalen Netz muessen diese Werte zur echten Host-Adresse passen:
+
+- `APP_BASE_URL`
+- `NEXTAUTH_URL`
+
+Beispiel:
+
+```env
+APP_BASE_URL=http://192.168.1.119:3000
+NEXTAUTH_URL=http://192.168.1.119:3000
+```
+
+## Persistenz
+
+Die Compose-Konfiguration nutzt das Volume `teilekiste_data`.
+
+Darauf liegen:
+
+- Datenbank: `/data/sqlite/app.db`
 - Bilder: `/data/uploads`
 - Anhaenge: `/data/attachments`
 - Backups: `/data/backups`
 
-Im Compose File ist das als Volume `teilekiste_data` gemountet.
-
-## Reverse Proxy
-
-Die App bindet intern auf Port `3000` und ist host-unabhaengig.
-
-Wichtige ENV:
+## Wichtige Umgebungsvariablen
 
 - `APP_BASE_URL`
 - `NEXTAUTH_URL`
@@ -80,63 +178,56 @@ Wichtige ENV:
 - `ATTACHMENT_DIR=/data/attachments`
 - `BACKUP_DIR=/data/backups`
 - `BACKUP_RETENTION_COUNT=10`
+- `MAX_UPLOAD_SIZE_MB=20`
+- `RUN_SEED_ON_STARTUP=0`
 
-## P-touch Workflow (Brother P-touch Editor)
+## Wichtige Workflows
 
-1. In der App `P-touch CSV` exportieren (Header vorhanden, UTF-8).
-2. In P-touch Editor "Database" / "CSV Import" waehlen.
-3. Datei `ptouch-labels.csv` laden.
-4. Felder mappen (mindestens):
-- `labelCode`
-- `name`
-- `storageLocation`
-- `bin`
-5. Serien-/Datenbankdruck starten.
+### Neues Item
 
-Delimiter kann per Query gesetzt werden, z.B.:
+- Name, Hersteller, Beschreibung, MPN
+- Kategorie und Type bestimmen das Label
+- Lagerort, Regal und Fach ordnen den Lagerplatz zu
+- Tags und Bilder koennen direkt mit angelegt werden
 
-- `/api/export/ptouch?delimiter=;`
-- `/api/export/ptouch?delimiter=,`
+### Bulk-Bearbeitung
 
-## CSV Import
+Auf der Startseite koennen mehrere Items gemeinsam geaendert werden:
 
-Admin-Seite -> CSV Import Bereich.
+- Kategorie
+- Lagerort
+- Regal
+- Fach
+- Tags
+- Archivieren
+- Loeschen
 
-Erwartete Spalten (Beispiel):
+### Backup / Restore
 
-- `name`
-- `description`
-- `category`
-- `storageLocation`
-- `storageArea`
-- `bin`
-- `stock`
-- `minStock`
-- `unit`
-- `manufacturer`
-- `mpn`
-- `barcodeEan`
+- Backup im Admin erstellen und herunterladen
+- Restore mit Preview sowie `merge` oder `overwrite`
+- ZIP enthaelt Exportdaten plus Upload- und Attachment-Dateien
 
-`areaId` und `typeId` werden beim Import als Formularfelder mitgegeben, damit Label-Codes automatisch vergeben werden.
+### API Tokens
 
-## Backup / Restore
+- read-only Zugriff fuer externe Systeme
+- Nutzung per `x-api-token` oder `Authorization: Bearer ...`
 
-- Backup: Admin -> "Backup jetzt" -> ZIP in `/data/backups`
-- Restore: Admin -> ZIP hochladen + Preview oder Apply
-- `merge`: vorhandene Daten bleiben, neue werden zusammengefuehrt
-- `overwrite`: zentrale Tabellen werden vorab geleert
-- Das ZIP enthaelt `manifest.json` mit SHA-256 fuer `export.json`
-- Alte ZIPs werden anhand `BACKUP_RETENTION_COUNT` automatisch aufgeraeumt
-- Fuer geplante Backups kann `npm run backup:create` via cron/systemd ausgefuehrt werden
+## CSV / Export
 
-## RBAC / Scope
+Vorhanden sind:
 
-- `READ`: nur Lesen
-- `READ_WRITE`: Item-/Bestands-/Reservierungsaenderungen
-- `ADMIN`: plus Konfiguration, User/Admin APIs, Backup/Restore
-- Lagerort-Scope (`UserLocation`) wird serverseitig in API-Queries und Mutationen erzwungen.
+- CSV Export
+- JSON Export
+- P-touch CSV Export
+- CSV Import mit Dry-run / Apply
 
-## Lokal ohne Docker (optional)
+Der CSV-Import nutzt:
+
+- Kategorie aus jeder CSV-Zeile
+- Type als Auswahl im Import-Formular fuer die Label-Vergabe
+
+## Lokal ohne Docker
 
 Voraussetzung: Node.js 20+
 
@@ -144,8 +235,14 @@ Voraussetzung: Node.js 20+
 npm install
 npx prisma generate
 npx prisma migrate deploy
-npm run prisma:seed
+npm run bootstrap:system
 npm run dev
+```
+
+Optional mit Demo-Daten:
+
+```bash
+npm run prisma:seed
 ```
 
 ## Tests
@@ -156,34 +253,24 @@ npm test
 npm run test:e2e
 ```
 
-Aktuell enthalten: API-Integrationstests (Vitest + Supertest) fuer ausgewaehlte Route Handler sowie Playwright-Smokes fuer Login, Item-Anlage, BOM/Audit und Admin-Schutz.
+Aktuell abgedeckt:
 
-## API Tokens (read-only)
-
-- Admin -> Bereich "Read-only API Tokens"
-- Token wird nur einmal bei Erstellung angezeigt
-- Nutzung fuer read-only API Calls:
-  - Header `x-api-token: tk_...`
-  - oder `Authorization: Bearer tk_...`
-
-Beispiele:
-
-```bash
-curl -H "x-api-token: tk_xxx" "http://localhost:3000/api/items?limit=20&offset=0"
-curl -H "Authorization: Bearer tk_xxx" "http://localhost:3000/api/search?q=EL-KB-023"
-curl -H "x-api-token: tk_xxx" "http://localhost:3000/api/shopping-list"
-```
+- TypeScript Checks
+- Vitest API- und Logiktests
+- Playwright E2E-Smokes fuer Login, Item-Anlage und Admin-Schutz
 
 ## Projektstruktur
 
-- `app/` UI + Route Handlers
+- `app/` UI und Route Handlers
+- `components/` wiederverwendbare UI-Komponenten
+- `lib/` Fachlogik, Auth, Labelsystem, Backup, Validierung
 - `prisma/schema.prisma` Datenmodell
 - `prisma/migrations/` Migrationen
-- `prisma/seed.ts` Seed Daten
-- `Dockerfile`, `docker-compose.yml`
+- `scripts/` Hilfsskripte wie Backup, Bootstrap und Label-Sync
+- `tests/` Vitest-Tests
+- `e2e/` Playwright-Tests
 
-## Hinweise
+## Weitere Doku
 
-- Keine Cloud-Abhaengigkeit.
-- OAuth kann spaeter in NextAuth Providers ergaenzt werden.
-- Scanner/Keyboard-Mode und API-Tokens koennen als naechste Erweiterung umgesetzt werden.
+- [Feature-Analyse](docs/feature-analysis.md)
+

@@ -697,7 +697,20 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         </div>
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="theme-muted text-lg">Mindestbestand: <b>{item.minStock ?? "-"}</b> Stück</p>
+          {editMode ? (
+            <label className="block w-full sm:max-w-xs">
+              <p className="theme-muted mb-1 text-lg">Mindestbestand</p>
+              <input
+                className="input"
+                type="number"
+                value={form.minStock}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, minStock: e.target.value }))}
+                placeholder="leer = kein Mindestbestand"
+              />
+            </label>
+          ) : (
+            <p className="theme-muted text-lg">Mindestbestand: <b>{item.minStock ?? "-"}</b> Stück</p>
+          )}
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             <input className="input w-full sm:w-24" type="number" value={reservedQty} onChange={(e) => setReservedQty(Number(e.target.value))} />
             <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Projekt/Person" value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />

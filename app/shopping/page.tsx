@@ -29,13 +29,12 @@ export default function ShoppingPage() {
               <div className="rounded-lg bg-workshop-50 p-3">Verfuegbar: <b>{item.available}</b></div>
               <div className="rounded-lg bg-workshop-50 p-3">Min: <b>{item.minStock}</b></div>
               <div className="rounded-lg bg-workshop-50 p-3 text-red-700">Bedarf: <b>{item.needed}</b></div>
-              <div className="rounded-lg bg-workshop-50 p-3">Ziel: <b>{item.targetQty}</b></div>
             </div>
           </div>
         ))}
       </div>
       <div className="card hidden overflow-x-auto md:block">
-        <table className="min-w-[760px] w-full text-sm">
+        <table className="min-w-[680px] w-full text-sm">
           <thead>
             <tr className="border-b border-workshop-200 text-left">
               <th className="px-2 py-2">Code</th>
@@ -44,7 +43,6 @@ export default function ShoppingPage() {
               <th className="px-2 py-2">Verfuegbar</th>
               <th className="px-2 py-2">Min</th>
               <th className="px-2 py-2">Bedarf</th>
-              <th className="px-2 py-2">Ziel</th>
             </tr>
           </thead>
           <tbody>
@@ -56,7 +54,6 @@ export default function ShoppingPage() {
                 <td className="px-2 py-2">{item.available}</td>
                 <td className="px-2 py-2">{item.minStock}</td>
                 <td className="px-2 py-2 text-red-700">{item.needed}</td>
-                <td className="px-2 py-2">{item.targetQty}</td>
               </tr>
             ))}
           </tbody>

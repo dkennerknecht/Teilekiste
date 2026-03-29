@@ -30,7 +30,6 @@ export async function GET(req: NextRequest) {
       const available = getAvailableQty(item.stock, reserved);
       const min = item.minStock || 0;
       const needed = Math.max(0, min - available);
-      const targetQty = Math.max(min * 2, min + needed);
       return {
         id: item.id,
         labelCode: item.labelCode,
@@ -40,7 +39,6 @@ export async function GET(req: NextRequest) {
         reserved,
         minStock: min,
         needed,
-        targetQty,
         unit: item.unit,
         storageLocation: item.storageLocation.name,
         manufacturer: item.manufacturer,
