@@ -163,7 +163,7 @@ Empfehlung:
 
 ### 9. Lagertransfers
 
-Nutzen: mittel  
+Nutzen: mittel
 Aufwand: mittel
 
 Aktuell kann der Lagerplatz geaendert werden, aber es gibt keinen expliziten Transfer-Workflow.
