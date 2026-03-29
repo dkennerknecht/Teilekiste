@@ -28,6 +28,9 @@ export async function GET(req: NextRequest) {
         category: true,
         labelType: {
           select: { id: true, name: true, code: true }
+        },
+        technicalFieldScopeAssignment: {
+          select: { id: true, presetKey: true }
         }
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }, { key: "asc" }]
@@ -65,6 +68,9 @@ export async function POST(req: NextRequest) {
       category: true,
       labelType: {
         select: { id: true, name: true, code: true }
+      },
+      technicalFieldScopeAssignment: {
+        select: { id: true, presetKey: true }
       }
     }
   });
@@ -80,6 +86,9 @@ export async function PATCH(req: NextRequest) {
   const existing = await prisma.customField.findUnique({ where: { id: body.id } });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (existing.managedPresetFieldKey) {
+    return NextResponse.json({ error: "Technische Felder werden ueber den verwalteten Feldsatz gepflegt." }, { status: 409 });
   }
   const categoryId = body.categoryId === undefined ? existing.categoryId : body.categoryId || null;
   const typeId = body.typeId === undefined ? existing.typeId : body.typeId || null;
@@ -115,6 +124,9 @@ export async function PATCH(req: NextRequest) {
       category: true,
       labelType: {
         select: { id: true, name: true, code: true }
+      },
+      technicalFieldScopeAssignment: {
+        select: { id: true, presetKey: true }
       }
     }
   });
@@ -127,6 +139,13 @@ export async function DELETE(req: NextRequest) {
   const parsed = await parseJson<unknown>(req, idPayloadSchema);
   if ("error" in parsed) return parsed.error;
   const { id } = parsed.data as ReturnType<typeof idPayloadSchema.parse>;
+  const existing = await prisma.customField.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (existing.managedPresetFieldKey) {
+    return NextResponse.json({ error: "Technische Felder werden ueber den verwalteten Feldsatz geloescht." }, { status: 409 });
+  }
   await prisma.customField.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

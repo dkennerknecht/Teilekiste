@@ -48,6 +48,7 @@ model Category {
   items         Item[]
   customFields  CustomField[]
   labelCounters CategoryTypeCounter[]
+  technicalFieldAssignments TechnicalFieldScopeAssignment[]
 }
 
 model Tag {
@@ -106,6 +107,7 @@ model LabelType {
   counters         SequenceCounter[]
   customFields     CustomField[]
   categoryCounters CategoryTypeCounter[]
+  technicalFieldAssignments TechnicalFieldScopeAssignment[]
 
   @@unique([areaId, code])
 }
@@ -271,25 +273,46 @@ model AuditLog {
 }
 
 model CustomField {
-  id           String           @id @default(uuid())
-  name         String
-  key          String           @unique
-  type         String
-  unit         String?
-  options      String?
-  valueCatalog String?
-  sortOrder    Int              @default(0)
-  required     Boolean          @default(false)
-  categoryId   String?
-  typeId       String?
-  isActive     Boolean          @default(true)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  labelType    LabelType?       @relation(fields: [typeId], references: [id], onDelete: SetNull)
-  values       ItemCustomFieldValue[]
+  id                             String                          @id @default(uuid())
+  name                           String
+  key                            String                          @unique
+  type                           String
+  unit                           String?
+  options                        String?
+  valueCatalog                   String?
+  sortOrder                      Int                             @default(0)
+  required                       Boolean                         @default(false)
+  categoryId                     String?
+  typeId                         String?
+  technicalFieldScopeAssignmentId String?
+  managedPresetKey               String?
+  managedPresetFieldKey          String?
+  isActive                       Boolean                         @default(true)
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime                        @updatedAt
+  category                       Category?                       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  labelType                      LabelType?                      @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  technicalFieldScopeAssignment  TechnicalFieldScopeAssignment?  @relation(fields: [technicalFieldScopeAssignmentId], references: [id], onDelete: SetNull)
+  values                         ItemCustomFieldValue[]
 
   @@unique([name, categoryId, typeId])
+  @@index([typeId])
+  @@index([technicalFieldScopeAssignmentId])
+  @@index([managedPresetKey, managedPresetFieldKey])
+}
+
+model TechnicalFieldScopeAssignment {
+  id        String      @id @default(uuid())
+  categoryId String
+  typeId    String
+  presetKey String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  category  Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  labelType LabelType   @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  managedFields CustomField[]
+
+  @@unique([categoryId, typeId])
   @@index([typeId])
 }
 

@@ -26,7 +26,7 @@ export async function buildBackupPayload(input?: {
   });
 
   const itemIds = items.map((item) => item.id);
-  const [categories, tags, locations, shelves, customFields, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
+  const [categories, tags, locations, shelves, customFields, technicalFieldScopeAssignments, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
     await Promise.all([
       prisma.category.findMany(),
       prisma.tag.findMany(),
@@ -37,6 +37,7 @@ export async function buildBackupPayload(input?: {
         where: locationFilter ? { storageLocationId: locationFilter } : undefined
       }),
       prisma.customField.findMany(),
+      prisma.technicalFieldScopeAssignment.findMany(),
       prisma.area.findMany(),
       prisma.labelType.findMany(),
       prisma.labelConfig.findUnique({ where: { id: "default" } }),
@@ -87,6 +88,7 @@ export async function buildBackupPayload(input?: {
     locations,
     shelves,
     customFields,
+    technicalFieldScopeAssignments,
     areas,
     types,
     labelConfig,

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { getCustomFieldPreset } from "@/lib/custom-field-presets";
-import { createUniqueCustomFieldKey, findConflictingCustomField, serializeCustomFieldValueCatalog } from "@/lib/custom-fields";
 import { parseJson } from "@/lib/http";
 import { customFieldPresetApplySchema } from "@/lib/validation";
+import { syncTechnicalFieldScopeAssignment, TechnicalFieldAssignmentError } from "@/lib/technical-field-assignments";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAdmin(req);
@@ -19,57 +19,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Preset not found" }, { status: 404 });
   }
 
-  const categoryId = body.categoryId;
-  const typeId = body.typeId || null;
-  const created: string[] = [];
-  const skipped: string[] = [];
+  try {
+    const result = await prisma.$transaction((tx) =>
+      syncTechnicalFieldScopeAssignment(tx, {
+        categoryId: body.categoryId,
+        typeId: body.typeId,
+        presetKey: body.presetKey
+      })
+    );
 
-  const fields = await prisma.$transaction(async (tx) => {
-    const createdFields = [];
-
-    for (const presetField of preset.fields) {
-      const conflict = await findConflictingCustomField(tx, {
-        name: presetField.name,
-        categoryId,
-        typeId
-      });
-
-      if (conflict) {
-        skipped.push(presetField.name);
-        continue;
-      }
-
-      const key = await createUniqueCustomFieldKey(tx, presetField.name);
-      const field = await tx.customField.create({
-        data: {
-          name: presetField.name,
-          key,
-          type: presetField.type,
-          unit: presetField.unit || null,
-          valueCatalog: serializeCustomFieldValueCatalog(presetField.valueCatalog || null),
-          sortOrder: presetField.sortOrder,
-          required: !!presetField.required,
-          categoryId,
-          typeId
-        },
-        include: {
-          category: true,
-          labelType: {
-            select: { id: true, name: true, code: true }
-          }
-        }
-      });
-      created.push(presetField.name);
-      createdFields.push(field);
+    return NextResponse.json({
+      preset: { key: preset.key, name: preset.name },
+      assignment: result.assignment,
+      created: result.fields.filter((field) => result.createdFieldIds.includes(field.id)).map((field) => field.name),
+      reactivated: result.fields.filter((field) => result.reactivatedFieldIds.includes(field.id)).map((field) => field.name),
+      deactivatedFieldIds: result.deactivatedFieldIds,
+      fields: result.fields
+    });
+  } catch (error) {
+    if (error instanceof TechnicalFieldAssignmentError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
-
-    return createdFields;
-  });
-
-  return NextResponse.json({
-    preset: { key: preset.key, name: preset.name },
-    created,
-    skipped,
-    fields
-  });
+    throw error;
+  }
 }

@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       prisma.auditLog.deleteMany(),
       prisma.item.deleteMany(),
       prisma.customField.deleteMany(),
+      prisma.technicalFieldScopeAssignment.deleteMany(),
       prisma.tag.deleteMany(),
       prisma.sequenceCounter.deleteMany(),
       prisma.labelType.deleteMany(),

@@ -134,7 +134,21 @@ export const customFieldUpdateSchema = customFieldCreateSchema.partial().extend(
 export const customFieldPresetApplySchema = z.object({
   presetKey: z.string().trim().min(1).max(80),
   categoryId: uuidSchema,
-  typeId: uuidSchema.optional().nullable()
+  typeId: uuidSchema
+});
+
+export const technicalFieldScopeAssignmentCreateSchema = z.object({
+  categoryId: uuidSchema,
+  typeId: uuidSchema,
+  presetKey: z.string().trim().min(1).max(80)
+});
+
+export const technicalFieldScopeAssignmentUpdateSchema = technicalFieldScopeAssignmentCreateSchema.extend({
+  id: uuidSchema
+});
+
+export const technicalFieldScopeAssignmentDeleteSchema = z.object({
+  id: uuidSchema
 });
 
 export const areaCreateSchema = z.object({

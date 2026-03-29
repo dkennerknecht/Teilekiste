@@ -1,5 +1,9 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
+type CustomFieldLookupDb =
+  | Pick<PrismaClient, "customField">
+  | Pick<Prisma.TransactionClient, "customField">;
+
 type CustomFieldDb =
   | Pick<PrismaClient, "customField" | "itemCustomFieldValue">
   | Pick<Prisma.TransactionClient, "customField" | "itemCustomFieldValue">;
@@ -17,6 +21,9 @@ export type CustomFieldRow = {
   isActive?: boolean;
   categoryId?: string | null;
   typeId?: string | null;
+  technicalFieldScopeAssignmentId?: string | null;
+  managedPresetKey?: string | null;
+  managedPresetFieldKey?: string | null;
   category?: { id: string; name: string; code?: string | null } | null;
   labelType?: { id: string; name: string; code: string } | null;
 };
@@ -27,6 +34,10 @@ export type CustomFieldCatalogEntry = {
   aliases: string[];
   sortOrder: number;
 };
+
+export function isManagedCustomField(field: Pick<CustomFieldRow, "managedPresetFieldKey">) {
+  return Boolean(field.managedPresetFieldKey);
+}
 
 export class CustomFieldValidationError extends Error {
   fieldId?: string;
@@ -281,7 +292,7 @@ export function formatCustomFieldValue(field: Pick<CustomFieldRow, "type" | "uni
   return `${formatted} ${field.unit}`;
 }
 
-export async function createUniqueCustomFieldKey(db: CustomFieldDb, name: string, excludeId?: string) {
+export async function createUniqueCustomFieldKey(db: CustomFieldLookupDb, name: string, excludeId?: string) {
   const base = buildCustomFieldKeyBase(name);
   const existing = await db.customField.findMany({
     where: {
@@ -302,7 +313,7 @@ export async function createUniqueCustomFieldKey(db: CustomFieldDb, name: string
 }
 
 export async function findConflictingCustomField(
-  db: CustomFieldDb,
+  db: CustomFieldLookupDb,
   input: {
     name: string;
     categoryId?: string | null;

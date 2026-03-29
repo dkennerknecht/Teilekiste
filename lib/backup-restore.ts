@@ -51,6 +51,16 @@ type BackupCustomField = {
   isActive?: boolean;
   categoryId?: string | null;
   typeId?: string | null;
+  technicalFieldScopeAssignmentId?: string | null;
+  managedPresetKey?: string | null;
+  managedPresetFieldKey?: string | null;
+};
+
+type BackupTechnicalFieldScopeAssignment = {
+  id: string;
+  categoryId: string;
+  typeId: string;
+  presetKey: string;
 };
 
 type BackupArea = {
@@ -186,6 +196,7 @@ export type BackupPayload = {
   shelves?: BackupShelf[];
   tags?: BackupTag[];
   customFields?: BackupCustomField[];
+  technicalFieldScopeAssignments?: BackupTechnicalFieldScopeAssignment[];
   areas?: BackupArea[];
   types?: BackupLabelType[];
   sequenceCounters?: BackupSequenceCounter[];
@@ -323,6 +334,7 @@ export async function restoreBackupData(input: {
   const locationIdMap = new Map<string, string>();
   const tagIdMap = new Map<string, string>();
   const customFieldIdMap = new Map<string, string>();
+  const technicalFieldScopeAssignmentIdMap = new Map<string, string>();
   const areaIdMap = new Map<string, string>();
   const typeIdMap = new Map<string, string>();
 
@@ -516,6 +528,29 @@ export async function restoreBackupData(input: {
     });
   }
 
+  for (const assignment of payload.technicalFieldScopeAssignments || []) {
+    const resolvedCategoryId = categoryIdMap.get(assignment.categoryId) || assignment.categoryId;
+    const resolvedTypeId = typeIdMap.get(assignment.typeId) || assignment.typeId;
+    const restoredAssignment = await prisma.technicalFieldScopeAssignment.upsert({
+      where: {
+        categoryId_typeId: {
+          categoryId: resolvedCategoryId,
+          typeId: resolvedTypeId
+        }
+      },
+      update: {
+        presetKey: assignment.presetKey
+      },
+      create: {
+        id: assignment.id,
+        categoryId: resolvedCategoryId,
+        typeId: resolvedTypeId,
+        presetKey: assignment.presetKey
+      }
+    });
+    technicalFieldScopeAssignmentIdMap.set(assignment.id, restoredAssignment.id);
+  }
+
   for (const counter of payload.sequenceCounters || []) {
     const resolvedAreaId = areaIdMap.get(counter.areaId) || counter.areaId;
     const resolvedTypeId = typeIdMap.get(counter.typeId) || counter.typeId;
@@ -551,7 +586,12 @@ export async function restoreBackupData(input: {
         required: !!field.required,
         isActive: field.isActive !== false,
         categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null,
-        typeId: field.typeId ? typeIdMap.get(field.typeId) || field.typeId : null
+        typeId: field.typeId ? typeIdMap.get(field.typeId) || field.typeId : null,
+        technicalFieldScopeAssignmentId: field.technicalFieldScopeAssignmentId
+          ? technicalFieldScopeAssignmentIdMap.get(field.technicalFieldScopeAssignmentId) || field.technicalFieldScopeAssignmentId
+          : null,
+        managedPresetKey: field.managedPresetKey ?? null,
+        managedPresetFieldKey: field.managedPresetFieldKey ?? null
       },
       create: {
         id: field.id,
@@ -565,7 +605,12 @@ export async function restoreBackupData(input: {
         required: !!field.required,
         isActive: field.isActive !== false,
         categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null,
-        typeId: field.typeId ? typeIdMap.get(field.typeId) || field.typeId : null
+        typeId: field.typeId ? typeIdMap.get(field.typeId) || field.typeId : null,
+        technicalFieldScopeAssignmentId: field.technicalFieldScopeAssignmentId
+          ? technicalFieldScopeAssignmentIdMap.get(field.technicalFieldScopeAssignmentId) || field.technicalFieldScopeAssignmentId
+          : null,
+        managedPresetKey: field.managedPresetKey ?? null,
+        managedPresetFieldKey: field.managedPresetFieldKey ?? null
       }
     });
     customFieldIdMap.set(field.id, restoredField.id);

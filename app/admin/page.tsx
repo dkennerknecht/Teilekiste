@@ -5,7 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 import { PencilLine, Trash2 } from "lucide-react";
 import { CustomFieldCatalogEditor } from "@/components/custom-field-catalog-editor";
 import { customFieldPresets } from "@/lib/custom-field-presets";
-import { parseCustomFieldValueCatalog, type CustomFieldCatalogEntry, type CustomFieldRow } from "@/lib/custom-fields";
+import {
+  isManagedCustomField,
+  parseCustomFieldValueCatalog,
+  type CustomFieldCatalogEntry,
+  type CustomFieldRow
+} from "@/lib/custom-fields";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { appLanguageOptions, type AppLanguage } from "@/lib/app-language";
 
@@ -28,6 +33,18 @@ type CustomFieldFormState = {
   required: boolean;
 };
 
+type TechnicalFieldAssignmentRow = {
+  id: string;
+  categoryId: string;
+  typeId: string;
+  presetKey: string;
+  category: { id: string; name: string; code?: string | null };
+  labelType: { id: string; name: string; code: string };
+  preset: { key: string; name: string };
+  managedFieldCount: number;
+  activeManagedFieldCount: number;
+};
+
 function createEmptyCustomFieldFormState(): CustomFieldFormState {
   return {
     name: "",
@@ -48,6 +65,7 @@ function supportsCatalog(type: string) {
 function sortCustomFields<T extends CustomFieldRow>(rows: T[]) {
   return [...rows].sort(
     (a, b) =>
+      Number(b.isActive !== false) - Number(a.isActive !== false) ||
       (a.sortOrder || 0) - (b.sortOrder || 0) ||
       String(a.name || "").localeCompare(String(b.name || ""), "de") ||
       String(a.key || "").localeCompare(String(b.key || ""), "de")
@@ -103,6 +121,7 @@ export default function AdminPage() {
   const [locations, setLocations] = useState<any[]>([]);
   const [shelves, setShelves] = useState<ShelfRow[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
+  const [technicalFieldAssignments, setTechnicalFieldAssignments] = useState<TechnicalFieldAssignmentRow[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
   const [feedback, setFeedback] = useState<string>("");
   const [restoreResult, setRestoreResult] = useState<any>(null);
@@ -141,12 +160,15 @@ export default function AdminPage() {
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUser, setEditUser] = useState({ name: "", email: "", role: "READ", isActive: true, password: "" });
   const [newShelfLocationId, setNewShelfLocationId] = useState("");
-  const [selectedPresetKey, setSelectedPresetKey] = useState(customFieldPresets[0]?.key || "");
-  const [presetCategoryId, setPresetCategoryId] = useState("");
-  const [presetTypeId, setPresetTypeId] = useState("");
+  const [newTechnicalAssignment, setNewTechnicalAssignment] = useState({
+    categoryId: "",
+    typeId: "",
+    presetKey: customFieldPresets[0]?.key || ""
+  });
+  const [technicalAssignmentPresetDrafts, setTechnicalAssignmentPresetDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [d, c, t, ty, l, sh, f, u, tokens] = await Promise.all([
+    const [d, c, t, ty, l, sh, f, assignments, u, tokens] = await Promise.all([
       fetch("/api/admin/dash", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/categories", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/tags", { cache: "no-store" }).then((r) => r.json()),
@@ -154,6 +176,7 @@ export default function AdminPage() {
       fetch("/api/admin/locations", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/shelves", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/custom-fields", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/admin/technical-field-assignments", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/api-tokens", { cache: "no-store" }).then((r) => r.json())
     ]);
@@ -164,6 +187,10 @@ export default function AdminPage() {
     setLocations(l);
     setShelves(sh);
     setCustomFields(sortCustomFields(f));
+    setTechnicalFieldAssignments(assignments);
+    setTechnicalAssignmentPresetDrafts(
+      Object.fromEntries((assignments as TechnicalFieldAssignmentRow[]).map((assignment) => [assignment.id, assignment.presetKey]))
+    );
     setUsers(u);
     setApiTokens(tokens);
   }, []);
@@ -177,10 +204,16 @@ export default function AdminPage() {
   }, [language]);
 
   useEffect(() => {
-    if (categories.length && !presetCategoryId) {
-      setPresetCategoryId(categories[0].id);
+    if (categories.length && !newTechnicalAssignment.categoryId) {
+      setNewTechnicalAssignment((current) => ({ ...current, categoryId: categories[0].id }));
     }
-  }, [categories, presetCategoryId]);
+  }, [categories, newTechnicalAssignment.categoryId]);
+
+  useEffect(() => {
+    if (types.length && !newTechnicalAssignment.typeId) {
+      setNewTechnicalAssignment((current) => ({ ...current, typeId: types[0].id }));
+    }
+  }, [types, newTechnicalAssignment.typeId]);
 
   async function apiJson(url: string, init: RequestInit) {
     try {
@@ -221,6 +254,27 @@ export default function AdminPage() {
     if (field.category) return field.category.name;
     if (field.labelType) return `${field.labelType.code} - ${field.labelType.name}`;
     return tr("Alle Items", "All items");
+  }
+
+  function describeTechnicalFieldAssignmentScope(assignment: TechnicalFieldAssignmentRow) {
+    return `${assignment.category.name} / ${assignment.labelType.code} - ${assignment.labelType.name}`;
+  }
+
+  function getPresetName(presetKey: string | null | undefined) {
+    if (!presetKey) return tr("Unbekannt", "Unknown");
+    return customFieldPresets.find((preset) => preset.key === presetKey)?.name || presetKey;
+  }
+
+  function getTechnicalFieldSyncCounts(data: {
+    createdFieldIds?: string[];
+    reactivatedFieldIds?: string[];
+    deactivatedFieldIds?: string[];
+  }) {
+    return {
+      created: data.createdFieldIds?.length || 0,
+      reactivated: data.reactivatedFieldIds?.length || 0,
+      deactivated: data.deactivatedFieldIds?.length || 0
+    };
   }
 
   function replaceById<T extends IdObj>(rows: T[], nextRow: T) {
@@ -265,6 +319,15 @@ export default function AdminPage() {
       setEditShelfLocationId((row as any).storageLocationId || "");
     }
     if (kind === "custom") {
+      if (isManagedCustomField(row as unknown as CustomFieldRow)) {
+        setFeedback(
+          tr(
+            "Technische Felder werden ueber den verwalteten Feldsatz bearbeitet.",
+            "Technical fields are managed through the technical field set."
+          )
+        );
+        return;
+      }
       setEditCustomId(row.id);
       setEditCustom({
         name: (row as any).name || "",
@@ -1023,69 +1086,187 @@ export default function AdminPage() {
           </form>
         </section>
 
-        <section className="card space-y-2 xl:col-span-2">
-          <h2 className="font-semibold">{tr("Custom Fields", "Custom fields")}</h2>
-          <div className="space-y-2 rounded border border-dashed border-workshop-200 p-3 text-sm">
-            <p className="font-medium">{tr("Preset anwenden", "Apply preset")}</p>
-            <p className="theme-muted">{tr("Erstellt fehlende technische Felder fuer den gewaehlten Scope, ohne bestehende Felder zu ueberschreiben.", "Creates missing technical fields for the selected scope without overwriting existing fields.")}</p>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-              <select className="input" value={selectedPresetKey} onChange={(e) => setSelectedPresetKey(e.target.value)}>
-                {customFieldPresets.map((preset) => (
-                  <option key={preset.key} value={preset.key}>
-                    {preset.name}
+        <section className="card space-y-3 xl:col-span-2">
+          <h2 className="font-semibold">{tr("Technische Feldsaetze", "Technical field sets")}</h2>
+          <p className="theme-muted text-sm">
+            {tr(
+              "Weist einer festen Kategorie-Type-Kombination genau einen verwalteten technischen Feldsatz zu. Beim Wechsel werden neue Felder synchronisiert und alte technische Felder nur deaktiviert.",
+              "Assign exactly one managed technical field set to a category-type combination. Switching synchronizes new fields and only deactivates old technical fields."
+            )}
+          </p>
+          <form
+            className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const { res, data } = await apiJson("/api/admin/technical-field-assignments", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(newTechnicalAssignment)
+              });
+              const syncCounts = getTechnicalFieldSyncCounts(data);
+              setFeedback(
+                res.ok
+                  ? tr(
+                      `Technischer Feldsatz synchronisiert: ${syncCounts.created} neu, ${syncCounts.reactivated} reaktiviert, ${syncCounts.deactivated} deaktiviert`,
+                      `Technical field set synchronized: ${syncCounts.created} created, ${syncCounts.reactivated} reactivated, ${syncCounts.deactivated} deactivated`
+                    )
+                  : tr(
+                      `Technischer Feldsatz fehlgeschlagen: ${data.error || unknownError}`,
+                      `Technical field set failed: ${data.error || unknownError}`
+                    )
+              );
+              if (res.ok) await load();
+            }}
+          >
+            <select
+              className="input"
+              value={newTechnicalAssignment.categoryId}
+              onChange={(e) => setNewTechnicalAssignment((current) => ({ ...current, categoryId: e.target.value }))}
+              disabled={!categories.length}
+              required
+            >
+              {categories.length === 0 ? (
+                <option value="">{tr("Erst Kategorie anlegen", "Create category first")}</option>
+              ) : (
+                categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name} ({category.code || "--"})
                   </option>
-                ))}
-              </select>
-              <select className="input" value={presetCategoryId} onChange={(e) => setPresetCategoryId(e.target.value)} disabled={!categories.length}>
-                {categories.length === 0 ? (
-                  <option value="">{tr("Erst Kategorie anlegen", "Create category first")}</option>
-                ) : (
-                  categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name} ({category.code || "--"})
-                    </option>
-                  ))
-                )}
-              </select>
-              <select className="input" value={presetTypeId} onChange={(e) => setPresetTypeId(e.target.value)}>
-                <option value="">{tr("Nur Kategorie-Scope", "Category scope only")}</option>
-                {types.map((type) => (
+                ))
+              )}
+            </select>
+            <select
+              className="input"
+              value={newTechnicalAssignment.typeId}
+              onChange={(e) => setNewTechnicalAssignment((current) => ({ ...current, typeId: e.target.value }))}
+              disabled={!types.length}
+              required
+            >
+              {types.length === 0 ? (
+                <option value="">{tr("Erst Type anlegen", "Create type first")}</option>
+              ) : (
+                types.map((type) => (
                   <option key={type.id} value={type.id}>
                     {type.code} - {type.name}
                   </option>
-                ))}
-              </select>
-              <button
-                className="btn-secondary"
-                type="button"
-                disabled={!presetCategoryId || !selectedPresetKey}
-                onClick={async () => {
-                  const { res, data } = await apiJson("/api/admin/custom-fields/presets/apply", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({
-                      presetKey: selectedPresetKey,
-                      categoryId: presetCategoryId,
-                      typeId: presetTypeId || null
-                    })
-                  });
-                  setFeedback(
-                    res.ok
-                      ? tr(
-                          `Preset angewendet: ${data.created?.length || 0} angelegt, ${data.skipped?.length || 0} uebersprungen`,
-                          `Preset applied: ${data.created?.length || 0} created, ${data.skipped?.length || 0} skipped`
-                        )
-                      : tr(`Preset fehlgeschlagen: ${data.error || unknownError}`, `Preset failed: ${data.error || unknownError}`)
-                  );
-                  if (res.ok) {
-                    setCustomFields((prev) => sortCustomFields([...(prev as CustomFieldRow[]), ...((data.fields || []) as CustomFieldRow[])]));
-                  }
-                }}
-              >
-                {tr("Preset anwenden", "Apply preset")}
-              </button>
-            </div>
-          </div>
+                ))
+              )}
+            </select>
+            <select
+              className="input"
+              value={newTechnicalAssignment.presetKey}
+              onChange={(e) => setNewTechnicalAssignment((current) => ({ ...current, presetKey: e.target.value }))}
+              required
+            >
+              {customFieldPresets.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn-secondary"
+              type="submit"
+              disabled={!newTechnicalAssignment.categoryId || !newTechnicalAssignment.typeId || !newTechnicalAssignment.presetKey}
+            >
+              {tr("Feldsatz zuweisen", "Assign field set")}
+            </button>
+          </form>
+          <ul className="space-y-2 text-sm">
+            {technicalFieldAssignments.map((assignment) => (
+              <li key={assignment.id} className="rounded border border-workshop-200 p-3">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{describeTechnicalFieldAssignmentScope(assignment)}</p>
+                    <p className="theme-muted text-xs">
+                      {tr("Aktueller Feldsatz", "Current field set")}: {assignment.preset.name}
+                      {` • ${assignment.activeManagedFieldCount}/${assignment.managedFieldCount} ${tr("aktive technische Felder", "active technical fields")}`}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <select
+                      className="input min-w-0 sm:min-w-[15rem]"
+                      value={technicalAssignmentPresetDrafts[assignment.id] || assignment.presetKey}
+                      onChange={(e) =>
+                        setTechnicalAssignmentPresetDrafts((current) => ({
+                          ...current,
+                          [assignment.id]: e.target.value
+                        }))
+                      }
+                    >
+                      {customFieldPresets.map((preset) => (
+                        <option key={preset.key} value={preset.key}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={async () => {
+                        const { res, data } = await apiJson("/api/admin/technical-field-assignments", {
+                          method: "PATCH",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({
+                            id: assignment.id,
+                            categoryId: assignment.categoryId,
+                            typeId: assignment.typeId,
+                            presetKey: technicalAssignmentPresetDrafts[assignment.id] || assignment.presetKey
+                          })
+                        });
+                        const syncCounts = getTechnicalFieldSyncCounts(data);
+                        setFeedback(
+                          res.ok
+                            ? tr(
+                                `Technischer Feldsatz aktualisiert: ${syncCounts.created} neu, ${syncCounts.reactivated} reaktiviert, ${syncCounts.deactivated} deaktiviert`,
+                                `Technical field set updated: ${syncCounts.created} created, ${syncCounts.reactivated} reactivated, ${syncCounts.deactivated} deactivated`
+                              )
+                            : tr(
+                                `Technischer Feldsatz Update fehlgeschlagen: ${data.error || unknownError}`,
+                                `Technical field set update failed: ${data.error || unknownError}`
+                              )
+                        );
+                        if (res.ok) await load();
+                      }}
+                    >
+                      {tr("Speichern", "Save")}
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={async () => {
+                        const { res, data } = await apiJson("/api/admin/technical-field-assignments", {
+                          method: "DELETE",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({ id: assignment.id })
+                        });
+                        setFeedback(
+                          res.ok
+                            ? tr("Technischer Feldsatz entfernt", "Technical field set removed")
+                            : tr(
+                                `Technischer Feldsatz Entfernen fehlgeschlagen: ${data.error || unknownError}`,
+                                `Technical field set delete failed: ${data.error || unknownError}`
+                              )
+                        );
+                        if (res.ok) await load();
+                      }}
+                    >
+                      {tr("Entfernen", "Remove")}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+            {technicalFieldAssignments.length === 0 ? (
+              <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">
+                {tr("Noch keine technischen Feldsaetze zugewiesen.", "No technical field sets assigned yet.")}
+              </li>
+            ) : null}
+          </ul>
+        </section>
+
+        <section className="card space-y-2 xl:col-span-2">
+          <h2 className="font-semibold">{tr("Custom Fields", "Custom fields")}</h2>
           <ul className="space-y-2 text-sm">
             {customFields.map((f) => (
               <li key={f.id} className="rounded border border-workshop-200 p-3">
@@ -1185,14 +1366,27 @@ export default function AdminPage() {
                 ) : (
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium">
-                        {f.name}
-                        {f.unit ? ` (${f.unit})` : ""}
+                      <p className="flex flex-wrap items-center gap-2 font-medium">
+                        <span className="truncate">
+                          {f.name}
+                          {f.unit ? ` (${f.unit})` : ""}
+                        </span>
+                        {isManagedCustomField(f) ? (
+                          <span className="rounded bg-workshop-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-workshop-700">
+                            {tr("Verwaltet", "Managed")}
+                          </span>
+                        ) : null}
+                        {f.isActive === false ? (
+                          <span className="rounded bg-workshop-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-workshop-700">
+                            {tr("Inaktiv", "Inactive")}
+                          </span>
+                        ) : null}
                       </p>
                       <p className="theme-muted text-xs">
                         {f.type} • {describeCustomFieldScope(f)}
                         {` • ${tr("Pos", "Pos")} ${f.sortOrder || 0}`}
                         {f.required ? ` • ${tr("Pflicht", "Required")}` : ""}
+                        {isManagedCustomField(f) ? ` • ${tr("Feldsatz", "Field set")} ${getPresetName(f.managedPresetKey)}` : ""}
                       </p>
                       {summarizeCatalog(f) ? (
                         <p className="theme-muted truncate text-xs">
@@ -1200,25 +1394,34 @@ export default function AdminPage() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex shrink-0 gap-2">
-                      <IconActionButton label={tr("Custom Field bearbeiten", "Edit custom field")} onClick={() => startEdit(f, "custom")}>
-                        <PencilLine size={20} />
-                      </IconActionButton>
-                      <IconActionButton
-                        label={tr("Custom Field loeschen", "Delete custom field")}
-                        onClick={async () => {
-                          const { res, data } = await apiJson("/api/admin/custom-fields", {
-                            method: "DELETE",
-                            headers: { "content-type": "application/json" },
-                            body: JSON.stringify({ id: f.id })
-                          });
-                          setFeedback(res.ok ? tr("Custom Field geloescht", "Custom field deleted") : tr(`Custom Field Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Custom field delete failed: ${data.error || unknownError}`));
-                          if (res.ok) setCustomFields((prev) => removeById(prev, f.id));
-                        }}
-                      >
-                        <Trash2 size={20} />
-                      </IconActionButton>
-                    </div>
+                    {isManagedCustomField(f) ? (
+                      <p className="theme-muted max-w-48 text-right text-xs">
+                        {tr(
+                          "Bearbeitung und Entfernen laufen ueber den technischen Feldsatz.",
+                          "Editing and removal are managed through the technical field set."
+                        )}
+                      </p>
+                    ) : (
+                      <div className="flex shrink-0 gap-2">
+                        <IconActionButton label={tr("Custom Field bearbeiten", "Edit custom field")} onClick={() => startEdit(f, "custom")}>
+                          <PencilLine size={20} />
+                        </IconActionButton>
+                        <IconActionButton
+                          label={tr("Custom Field loeschen", "Delete custom field")}
+                          onClick={async () => {
+                            const { res, data } = await apiJson("/api/admin/custom-fields", {
+                              method: "DELETE",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({ id: f.id })
+                            });
+                            setFeedback(res.ok ? tr("Custom Field geloescht", "Custom field deleted") : tr(`Custom Field Loeschen fehlgeschlagen: ${data.error || unknownError}`, `Custom field delete failed: ${data.error || unknownError}`));
+                            if (res.ok) setCustomFields((prev) => removeById(prev, f.id));
+                          }}
+                        >
+                          <Trash2 size={20} />
+                        </IconActionButton>
+                      </div>
+                    )}
                   </div>
                 )}
               </li>

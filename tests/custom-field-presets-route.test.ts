@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const requireAdminMock = vi.fn();
 const transactionMock = vi.fn();
+const syncTechnicalFieldScopeAssignmentMock = vi.fn();
+
+class MockTechnicalFieldAssignmentError extends Error {}
 
 vi.mock("@/lib/api", () => ({
   requireAdmin: requireAdminMock
@@ -14,32 +17,37 @@ vi.mock("@/lib/prisma", () => ({
   }
 }));
 
+vi.mock("@/lib/technical-field-assignments", () => ({
+  syncTechnicalFieldScopeAssignment: syncTechnicalFieldScopeAssignmentMock,
+  TechnicalFieldAssignmentError: MockTechnicalFieldAssignmentError
+}));
+
 afterEach(() => {
   vi.resetAllMocks();
   vi.resetModules();
 });
 
 describe("custom field preset apply route", () => {
-  it("creates missing preset fields and skips conflicting ones", async () => {
-    const tx = {
-      customField: {
-        findFirst: vi.fn().mockImplementation(async ({ where }: any) => {
-          return where.name === "Toleranz" ? { id: "existing-field" } : null;
-        }),
-        findMany: vi.fn().mockResolvedValue([]),
-        create: vi.fn().mockImplementation(async ({ data }: any) => ({
-          id: `field-${data.key}`,
-          ...data,
-          category: null,
-          labelType: null
-        }))
-      }
-    };
-
+  it("returns synchronized managed field details", async () => {
     requireAdminMock.mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN", email: "admin@example.com" }
     });
-    transactionMock.mockImplementation(async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx));
+    transactionMock.mockImplementation(async (callback: (db: object) => Promise<unknown>) => callback({}));
+    syncTechnicalFieldScopeAssignmentMock.mockResolvedValue({
+      assignment: {
+        id: "assignment-1",
+        categoryId: "11111111-1111-4111-8111-111111111111",
+        typeId: "22222222-2222-4222-8222-222222222222",
+        presetKey: "resistor"
+      },
+      fields: [
+        { id: "field-1", name: "Wert" },
+        { id: "field-2", name: "Toleranz" }
+      ],
+      createdFieldIds: ["field-1"],
+      reactivatedFieldIds: ["field-2"],
+      deactivatedFieldIds: ["field-legacy"]
+    });
 
     const { POST } = await import("@/app/api/admin/custom-fields/presets/apply/route");
     const request = new NextRequest(
@@ -49,7 +57,7 @@ describe("custom field preset apply route", () => {
         body: JSON.stringify({
           presetKey: "resistor",
           categoryId: "11111111-1111-4111-8111-111111111111",
-          typeId: null
+          typeId: "22222222-2222-4222-8222-222222222222"
         })
       })
     );
@@ -59,8 +67,16 @@ describe("custom field preset apply route", () => {
     expect(response.status).toBe(200);
 
     const payload = await response.json();
-    expect(payload.created).toContain("Wert");
-    expect(payload.skipped).toContain("Toleranz");
-    expect(tx.customField.create).toHaveBeenCalled();
+    expect(payload.created).toEqual(["Wert"]);
+    expect(payload.reactivated).toEqual(["Toleranz"]);
+    expect(payload.deactivatedFieldIds).toEqual(["field-legacy"]);
+    expect(syncTechnicalFieldScopeAssignmentMock).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        presetKey: "resistor",
+        categoryId: "11111111-1111-4111-8111-111111111111",
+        typeId: "22222222-2222-4222-8222-222222222222"
+      })
+    );
   });
 });
