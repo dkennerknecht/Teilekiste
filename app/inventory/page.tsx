@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatDisplayQuantity, getQuantityStep } from "@/lib/quantity";
 
-type Row = { id: string; labelCode: string; name: string; stock: number; storageArea: string | null; bin: string | null };
+type Row = { id: string; labelCode: string; name: string; stock: number; unit: string; storageArea: string | null; bin: string | null };
 
 export default function InventoryPage() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -52,7 +53,7 @@ export default function InventoryPage() {
             </div>
             <div className="flex items-center justify-between gap-2 rounded-lg bg-workshop-50 px-3 py-2 text-sm">
               <p className="whitespace-nowrap text-workshop-700">
-                Soll: <span className="font-semibold text-workshop-900">{r.stock}</span>
+                Soll: <span className="font-semibold text-workshop-900">{formatDisplayQuantity(r.unit, r.stock)}</span>
               </p>
               <div className="ml-auto flex items-center gap-2">
                 <label className="flex items-center gap-1 whitespace-nowrap text-workshop-700">
@@ -60,6 +61,7 @@ export default function InventoryPage() {
                   <input
                     className="input h-10 w-20 min-h-0 px-2 py-1 text-center"
                     type="number"
+                    step={getQuantityStep(r.unit)}
                     value={getCountedValue(r.id, r.stock)}
                     onChange={(e) => setCountedValue(r.id, Number(e.target.value))}
                   />
@@ -107,11 +109,12 @@ export default function InventoryPage() {
                 <td className="px-2 py-2 font-mono">{r.labelCode}</td>
                 <td className="px-2 py-2">{r.name}</td>
                 <td className="px-2 py-2">{r.storageArea || "-"} / {r.bin || "-"}</td>
-                <td className="px-2 py-2">{r.stock}</td>
+                <td className="px-2 py-2">{formatDisplayQuantity(r.unit, r.stock)}</td>
                 <td className="px-2 py-2">
                   <input
                     className="input"
                     type="number"
+                    step={getQuantityStep(r.unit)}
                     value={getCountedValue(r.id, r.stock)}
                     onChange={(e) => setCountedValue(r.id, Number(e.target.value))}
                   />
@@ -128,7 +131,7 @@ export default function InventoryPage() {
         <ul className="max-h-48 space-y-1 overflow-auto text-sm">
           {preview.map((p) => (
             <li key={p.id} className="rounded border border-workshop-200 p-2 font-mono">
-              {p.labelCode}: Soll {p.stock}, Ist {p.counted}, Delta {p.delta > 0 ? `+${p.delta}` : p.delta}
+              {p.labelCode}: Soll {formatDisplayQuantity(p.unit, p.stock)}, Ist {formatDisplayQuantity(p.unit, p.counted)}, Delta {p.delta > 0 ? "+" : ""}{formatDisplayQuantity(p.unit, p.delta)}
             </li>
           ))}
         </ul>

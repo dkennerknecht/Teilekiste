@@ -5,6 +5,7 @@ import { stockMovementSchema } from "@/lib/validation";
 import { auditLog } from "@/lib/audit";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { canSetStock } from "@/lib/stock";
+import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -27,7 +28,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     _sum: { reservedQty: true }
   });
   const reservedQty = reservedQtyResult._sum.reservedQty || 0;
-  const nextStock = item.stock + body.delta;
+  let storedDelta: number;
+  try {
+    storedDelta = toStoredQuantity(item.unit, body.delta, {
+      field: "Buchungsmenge",
+      allowNegative: true,
+      allowZero: false
+    })!;
+  } catch (error) {
+    if (error instanceof QuantityValidationError) {
+      return NextResponse.json({ error: error.message, field: error.field || null }, { status: 400 });
+    }
+    throw error;
+  }
+  const nextStock = item.stock + storedDelta;
 
   if (!canSetStock(nextStock, reservedQty)) {
     return NextResponse.json({ error: "Bestand darf nicht unter die reservierte Menge fallen" }, { status: 400 });
@@ -37,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const movement = await tx.stockMovement.create({
       data: {
         itemId: item.id,
-        delta: body.delta,
+        delta: storedDelta,
         reason: body.reason,
         note: body.note,
         userId: auth.user!.id
@@ -46,7 +60,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const newItem = await tx.item.update({
       where: { id: item.id },
-      data: { stock: { increment: body.delta } }
+      data: { stock: { increment: storedDelta } }
     });
 
     return { movement, item: newItem };
@@ -57,9 +71,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     action: "STOCK_MOVEMENT",
     entity: "Item",
     entityId: item.id,
-    before: { stock: item.stock },
-    after: { stock: updated.item.stock, delta: body.delta }
+    before: { stock: item.stock, unit: item.unit },
+    after: { stock: updated.item.stock, delta: storedDelta, unit: item.unit }
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    movement: {
+      ...updated.movement,
+      delta: serializeStoredQuantity(item.unit, updated.movement.delta)
+    },
+    item: {
+      ...updated.item,
+      stock: serializeStoredQuantity(item.unit, updated.item.stock),
+      minStock: serializeStoredQuantity(item.unit, updated.item.minStock)
+    }
+  });
 }

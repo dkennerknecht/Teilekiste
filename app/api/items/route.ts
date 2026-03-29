@@ -8,7 +8,22 @@ import { auditLog } from "@/lib/audit";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
 import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
+import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson, parsePagination, serverError } from "@/lib/http";
+
+function serializeListItemQuantities<T extends { unit: string; stock: number; minStock: number | null }>(
+  item: T,
+  reservedQty: number,
+  availableStock: number
+) {
+  return {
+    ...item,
+    stock: serializeStoredQuantity(item.unit, item.stock),
+    minStock: serializeStoredQuantity(item.unit, item.minStock),
+    reservedQty: serializeStoredQuantity(item.unit, reservedQty),
+    availableStock: serializeStoredQuantity(item.unit, availableStock)
+  };
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -54,13 +69,11 @@ export async function GET(req: NextRequest) {
       const reservedQty = getReservedQty(item.reservations);
       const availableStock = getAvailableQty(item.stock, reservedQty);
       return {
-        ...item,
-        primaryImage: item.images[0] ?? null,
-        reservedQty,
-        availableStock
+        ...serializeListItemQuantities(item, reservedQty, availableStock),
+        primaryImage: item.images[0] ?? null
       };
     })
-    .filter((item) => (lowStock ? item.minStock !== null && item.availableStock <= item.minStock : true));
+    .filter((item) => (lowStock ? item.minStock !== null && (item.availableStock ?? 0) <= item.minStock : true));
 
   return NextResponse.json({ items: shaped, total, limit, offset });
 }
@@ -76,6 +89,25 @@ export async function POST(req: NextRequest) {
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   if (allowedLocationIds && !allowedLocationIds.includes(parsed.data.storageLocationId)) {
     return NextResponse.json({ error: "Storage location not allowed" }, { status: 403 });
+  }
+
+  let storedStock: number;
+  let storedMinStock: number | null;
+  try {
+    storedStock = toStoredQuantity(parsed.data.unit, parsed.data.stock, {
+      field: "Bestand",
+      allowNegative: false
+    })!;
+    storedMinStock = toStoredQuantity(parsed.data.unit, parsed.data.minStock, {
+      field: "Mindestbestand",
+      allowNegative: false,
+      nullable: true
+    });
+  } catch (error) {
+    if (error instanceof QuantityValidationError) {
+      return NextResponse.json({ error: error.message, field: error.field || null }, { status: 400 });
+    }
+    throw error;
   }
 
   let attempts = 0;
@@ -99,9 +131,9 @@ export async function POST(req: NextRequest) {
             storageLocationId: parsed.data.storageLocationId,
             storageArea: parsed.data.storageArea || null,
             bin: parsed.data.bin || null,
-            stock: parsed.data.stock,
+            stock: storedStock,
             unit: parsed.data.unit,
-            minStock: parsed.data.minStock || null,
+            minStock: storedMinStock,
             manufacturer: parsed.data.manufacturer || null,
             mpn: parsed.data.mpn || null,
             datasheetUrl: parsed.data.datasheetUrl || null,
@@ -122,15 +154,17 @@ export async function POST(req: NextRequest) {
           )
         );
 
-        await tx.stockMovement.create({
-          data: {
-            itemId: createdItem.id,
-            delta: parsed.data.stock,
-            reason: "PURCHASE",
-            note: "Initial stock",
-            userId: auth.user!.id
-          }
-        });
+        if (storedStock !== 0) {
+          await tx.stockMovement.create({
+            data: {
+              itemId: createdItem.id,
+              delta: storedStock,
+              reason: "PURCHASE",
+              note: "Initial stock",
+              userId: auth.user!.id
+            }
+          });
+        }
 
         await auditLog(
           {
@@ -146,10 +180,24 @@ export async function POST(req: NextRequest) {
         return createdItem;
       });
 
-      return NextResponse.json(item, { status: 201 });
+      return NextResponse.json(
+        {
+          ...item,
+          stock: serializeStoredQuantity(item.unit, item.stock),
+          minStock: serializeStoredQuantity(item.unit, item.minStock)
+        },
+        { status: 201 }
+      );
     } catch (error) {
-      if (error instanceof CustomFieldValidationError) {
-        return NextResponse.json({ error: error.message, fieldId: error.fieldId || null }, { status: 400 });
+      if (error instanceof CustomFieldValidationError || error instanceof QuantityValidationError) {
+        return NextResponse.json(
+          {
+            error: error.message,
+            fieldId: error instanceof CustomFieldValidationError ? error.fieldId || null : null,
+            field: error instanceof QuantityValidationError ? error.field || null : null
+          },
+          { status: 400 }
+        );
       }
       if (attempts >= 3) {
         return serverError(`Create failed: ${(error as Error).message}`);

@@ -12,7 +12,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     where: { id: params.id },
     include: {
       item: {
-        select: { id: true, storageLocationId: true }
+        select: { id: true, storageLocationId: true, unit: true }
       }
     }
   });
@@ -35,7 +35,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
           reservationId: reservation.id,
           reservedQty: reservation.reservedQty,
           reservedFor: reservation.reservedFor,
-          note: reservation.note
+          note: reservation.note,
+          unit: reservation.item.unit || null
         }
       },
       tx

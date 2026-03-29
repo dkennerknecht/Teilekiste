@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
+import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
 
 type Option = { id: string; name: string; code?: string; codeLabel?: string };
 type ShelfOption = { id: string; name: string; storageLocationId: string };
@@ -298,10 +299,11 @@ export default function NewItemPage() {
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
             <label className="text-sm">
-              Bestand
+              Bestand ({getUnitDisplayLabel(form.unit)})
               <input
                 className="input mt-1"
                 type="number"
+                step={getQuantityStep(form.unit)}
                 value={form.stock}
                 onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
                 disabled={!hasRequiredMeta}
@@ -319,10 +321,11 @@ export default function NewItemPage() {
             </label>
 
             <label className="text-sm">
-              Mindestbestand
+              Mindestbestand ({getUnitDisplayLabel(form.unit)})
               <input
                 className="input mt-1"
                 type="number"
+                step={getQuantityStep(form.unit)}
                 value={form.minStock}
                 onChange={(e) => setForm({ ...form, minStock: e.target.value })}
                 placeholder="leer = kein Mindestbestand"

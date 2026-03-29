@@ -18,9 +18,9 @@ export const itemSchema = z.object({
   storageLocationId: z.string().uuid(),
   storageArea: z.string().optional().nullable(),
   bin: z.string().optional().nullable(),
-  stock: z.number().int().default(0),
+  stock: z.number().finite().default(0),
   unit: z.enum(["STK", "M", "SET", "PACK"]).default("STK"),
-  minStock: z.number().int().optional().nullable(),
+  minStock: z.number().finite().optional().nullable(),
   manufacturer: z.string().max(180).optional().nullable(),
   mpn: z.string().max(180).optional().nullable(),
   datasheetUrl: z.string().url().optional().nullable(),
@@ -33,13 +33,13 @@ export const itemSchema = z.object({
 export const itemUpdateSchema = itemSchema.partial();
 
 export const stockMovementSchema = z.object({
-  delta: z.number().int().refine((value) => value !== 0),
+  delta: z.number().finite().refine((value) => value !== 0),
   reason: z.enum(["PURCHASE", "CONSUMPTION", "CORRECTION", "INVENTORY", "RESERVATION"]),
   note: z.string().optional().nullable()
 });
 
 export const reservationSchema = z.object({
-  reservedQty: z.number().int().positive(),
+  reservedQty: z.number().finite().positive(),
   reservedFor: z.string().min(1).max(200),
   note: z.string().optional().nullable()
 });
@@ -87,7 +87,7 @@ export const inventoryUpdateSchema = z.object({
   updates: z.array(
     z.object({
       itemId: uuidSchema,
-      countedStock: z.number().int(),
+      countedStock: z.number().finite(),
       note: z.string().max(500).optional()
     })
   ).default([])
@@ -191,7 +191,7 @@ export const bulkItemSchema = z.object({
   storageLocationId: uuidSchema.optional(),
   storageArea: z.string().max(120).optional().nullable(),
   bin: z.string().max(120).optional().nullable(),
-  minStock: z.number().int().optional().nullable(),
+  minStock: z.number().finite().optional().nullable(),
   unit: z.enum(["STK", "M", "SET", "PACK"]).optional(),
   setTagIds: z.array(uuidSchema).optional(),
   addTagIds: z.array(uuidSchema).optional(),

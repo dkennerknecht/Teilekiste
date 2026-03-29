@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, CheckCheck, ChevronDown, ChevronUp, PencilLine, Trash2, X } from "lucide-react";
 import { fileHref } from "@/lib/file-href";
+import { formatDisplayQuantity } from "@/lib/quantity";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
 
 type Item = {
@@ -16,6 +17,7 @@ type Item = {
   stock: number;
   availableStock: number;
   minStock: number | null;
+  unit: string;
   storageArea: string | null;
   bin: string | null;
   category: { name: string };
@@ -576,7 +578,7 @@ export default function HomePage() {
                     {item.category.name} · {item.storageLocation.name}
                   </p>
                   <p className={`text-xs ${item.minStock !== null && item.availableStock <= item.minStock ? "text-red-700" : "text-workshop-700"}`}>
-                    Verfuegbar {item.availableStock}
+                    Verfuegbar {formatDisplayQuantity(item.unit, item.availableStock)}
                   </p>
                 </div>
                 <div
@@ -668,7 +670,7 @@ export default function HomePage() {
                     <td className="px-2 py-2">{item.category.name}</td>
                     <td className="px-2 py-2">{item.storageLocation.name}</td>
                     <td className={`px-2 py-2 ${item.minStock !== null && item.availableStock <= item.minStock ? "text-red-700" : ""}`}>
-                      {item.availableStock}
+                      {formatDisplayQuantity(item.unit, item.availableStock)}
                     </td>
                     <td className="px-2 py-2" onClick={stopRowNavigation}>
                       <div className="flex w-fit gap-1 rounded-xl px-1 py-1">

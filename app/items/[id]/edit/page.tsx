@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { fileHref } from "@/lib/file-href";
+import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
 
 type ItemImage = {
   id: string;
@@ -35,6 +36,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
       storageLocationId: data.storageLocationId || "",
       storageArea: data.storageArea || "",
       bin: data.bin || "",
+      unit: data.unit || "STK",
       minStock: data.minStock ?? "",
       manufacturer: data.manufacturer || "",
       mpn: data.mpn || "",
@@ -130,10 +132,11 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         </label>
 
         <label className="text-sm">
-          Mindestbestand
+          Mindestbestand ({getUnitDisplayLabel(form.unit || "STK")})
           <input
             className="input mt-1"
             type="number"
+            step={getQuantityStep(form.unit || "STK")}
             value={form.minStock}
             onChange={(e) => setForm({ ...form, minStock: e.target.value })}
             placeholder="leer = kein Mindestbestand"

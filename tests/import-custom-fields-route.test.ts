@@ -71,7 +71,14 @@ describe("import route custom fields", () => {
         ])
       },
       item: {
-        create: vi.fn().mockResolvedValue({ id: "item-1", labelCode: "EL-KB-001", name: "Kabel" })
+        create: vi.fn().mockResolvedValue({
+          id: "item-1",
+          labelCode: "EL-KB-001",
+          name: "Kabel",
+          stock: 12500,
+          unit: "M",
+          minStock: null
+        })
       },
       itemCustomFieldValue: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -110,7 +117,7 @@ describe("import route custom fields", () => {
     itemFindManyMock.mockResolvedValue([]);
     transactionMock.mockImplementation(async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx));
 
-    const csv = ["category,storageLocation,name,stock,unit,farbe", "Kabel,Werkstatt,Kabelrolle,4,M,red"].join("\n");
+    const csv = ["category,storageLocation,name,stock,unit,farbe", "Kabel,Werkstatt,Kabelrolle,12.5,M,red"].join("\n");
     const form = new FormData();
     form.set("file", new File([csv], "import.csv", { type: "text/csv" }));
     form.set("dryRun", "0");
@@ -131,7 +138,16 @@ describe("import route custom fields", () => {
         data: expect.objectContaining({
           name: "Kabelrolle",
           categoryId: "cat-1",
-          storageLocationId: "loc-1"
+          storageLocationId: "loc-1",
+          stock: 12500,
+          unit: "M"
+        })
+      })
+    );
+    expect(tx.stockMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          delta: 12500
         })
       })
     );

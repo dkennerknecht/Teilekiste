@@ -9,6 +9,7 @@ import { loadItemBom } from "@/lib/item-bom";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { canSetStock, getAvailableQty, getReservedQty } from "@/lib/stock";
 import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
+import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson } from "@/lib/http";
 
 function safeParseAuditPayload(value?: string | null) {
@@ -18,6 +19,24 @@ function safeParseAuditPayload(value?: string | null) {
   } catch {
     return null;
   }
+}
+
+function serializeItemDetailQuantities(item: any, reservedQty: number) {
+  return {
+    ...item,
+    stock: serializeStoredQuantity(item.unit, item.stock),
+    minStock: serializeStoredQuantity(item.unit, item.minStock),
+    movements: (item.movements || []).map((movement: any) => ({
+      ...movement,
+      delta: serializeStoredQuantity(item.unit, movement.delta)
+    })),
+    reservations: (item.reservations || []).map((reservation: any) => ({
+      ...reservation,
+      reservedQty: serializeStoredQuantity(item.unit, reservation.reservedQty)
+    })),
+    reservedQty: serializeStoredQuantity(item.unit, reservedQty),
+    availableStock: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reservedQty))
+  };
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -83,7 +102,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const reservedQty = getReservedQty(item.reservations);
   return NextResponse.json({
-    ...item,
+    ...serializeItemDetailQuantities(item, reservedQty),
     bomChildren,
     bomParents,
     auditEntries: auditEntries.map((entry) => ({
@@ -106,8 +125,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       };
     }),
     primaryImage: item.images[0] ?? null,
-    reservedQty,
-    availableStock: getAvailableQty(item.stock, reservedQty)
   });
 }
 
@@ -135,7 +152,50 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (allowedLocationIds && !allowedLocationIds.includes(targetLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (body.stock !== undefined && !canSetStock(body.stock, reservedQty)) {
+  const nextUnit = body.unit || existing.unit;
+  const unitChanged = nextUnit !== existing.unit;
+
+  if (unitChanged) {
+    const [movementCount, reservationCount] = await Promise.all([
+      prisma.stockMovement.count({ where: { itemId: existing.id } }),
+      prisma.reservation.count({ where: { itemId: existing.id } })
+    ]);
+    if (movementCount > 0 || reservationCount > 0) {
+      return NextResponse.json(
+        { error: "Einheitenwechsel ist nur moeglich, solange noch keine Bewegungen oder Reservierungen existieren" },
+        { status: 400 }
+      );
+    }
+  }
+
+  let nextStock: number | undefined;
+  let nextMinStock: number | null | undefined;
+  try {
+    if (body.stock !== undefined || unitChanged) {
+      nextStock = toStoredQuantity(nextUnit, body.stock !== undefined ? body.stock : serializeStoredQuantity(existing.unit, existing.stock), {
+        field: "Bestand",
+        allowNegative: false
+      })!;
+    }
+    if (body.minStock !== undefined || unitChanged) {
+      nextMinStock = toStoredQuantity(
+        nextUnit,
+        body.minStock !== undefined ? body.minStock : serializeStoredQuantity(existing.unit, existing.minStock),
+        {
+          field: "Mindestbestand",
+          allowNegative: false,
+          nullable: true
+        }
+      );
+    }
+  } catch (error) {
+    if (error instanceof QuantityValidationError) {
+      return NextResponse.json({ error: error.message, field: error.field || null }, { status: 400 });
+    }
+    throw error;
+  }
+
+  if (nextStock !== undefined && !canSetStock(nextStock, reservedQty)) {
     return NextResponse.json({ error: "Bestand darf nicht unter die reservierte Menge fallen" }, { status: 400 });
   }
 
@@ -145,6 +205,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     typeId: _typeId,
     categoryId,
     storageLocationId,
+    stock: _stock,
+    unit: _unit,
+    minStock: _minStock,
     ...itemData
   } = body;
   const nextCategoryId = body.categoryId || existing.categoryId;
@@ -176,9 +239,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       labelCode,
       ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
       ...(storageLocationId ? { storageLocation: { connect: { id: storageLocationId } } } : {}),
+      ...(nextStock !== undefined ? { stock: nextStock } : {}),
+      ...(body.unit !== undefined ? { unit: nextUnit } : {}),
       storageArea: itemData.storageArea || undefined,
       bin: itemData.bin || undefined,
-      minStock: itemData.minStock === undefined ? undefined : itemData.minStock,
+      minStock: nextMinStock === undefined ? undefined : nextMinStock,
       manufacturer: itemData.manufacturer || null,
       mpn: itemData.mpn || null,
       ...(tagIds
@@ -221,7 +286,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     after: item
   });
 
-  return NextResponse.json(item);
+  return NextResponse.json({
+    ...item,
+    stock: serializeStoredQuantity(item.unit, item.stock),
+    minStock: serializeStoredQuantity(item.unit, item.minStock)
+  });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

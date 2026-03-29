@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useRef, useState } from "react";
+import { formatDisplayQuantity, getUnitDisplayLabel } from "@/lib/quantity";
 
 export default function ScannerPage() {
   const [code, setCode] = useState("");
@@ -47,7 +48,7 @@ export default function ScannerPage() {
         <div className="card space-y-2">
           <p className="font-mono text-workshop-700">{item.labelCode}</p>
           <h2 className="text-xl font-semibold">{item.name}</h2>
-          <p>Bestand: {item.stock} | Verfuegbar: {item.availableStock}</p>
+          <p>Bestand: {formatDisplayQuantity(item.unit, item.stock)} | Verfuegbar: {formatDisplayQuantity(item.unit, item.availableStock)}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               className="btn w-full sm:w-auto"
@@ -60,7 +61,7 @@ export default function ScannerPage() {
                 await scan();
               }}
             >
-              -1 buchen
+              -1 {getUnitDisplayLabel(item.unit)} buchen
             </button>
             <Link className="btn-secondary w-full sm:w-auto" href={`/items/${item.id}`}>
               Detailseite

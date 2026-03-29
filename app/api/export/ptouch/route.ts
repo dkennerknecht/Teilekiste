@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { toCsv } from "@/lib/csv";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { serializeStoredQuantity } from "@/lib/quantity";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -31,7 +32,8 @@ export async function GET(req: NextRequest) {
     storageLocation: item.storageLocation.name,
     bin: item.bin || "",
     category: item.category.name,
-    reserved: item.reservations.reduce((sum, r) => sum + r.reservedQty, 0)
+    reserved: serializeStoredQuantity(item.unit, item.reservations.reduce((sum, r) => sum + r.reservedQty, 0)),
+    unit: item.unit
   }));
 
   const csv = toCsv(rows, delimiter);

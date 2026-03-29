@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
+import { serializeStoredQuantity } from "@/lib/quantity";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -34,18 +35,18 @@ export async function GET(req: NextRequest) {
         id: item.id,
         labelCode: item.labelCode,
         name: item.name,
-        stock: item.stock,
-        available,
-        reserved,
-        minStock: min,
-        needed,
+        stock: serializeStoredQuantity(item.unit, item.stock),
+        available: serializeStoredQuantity(item.unit, available),
+        reserved: serializeStoredQuantity(item.unit, reserved),
+        minStock: serializeStoredQuantity(item.unit, min),
+        needed: serializeStoredQuantity(item.unit, needed),
         unit: item.unit,
         storageLocation: item.storageLocation.name,
         manufacturer: item.manufacturer,
         mpn: item.mpn
       };
     })
-    .filter((row) => row.needed > 0);
+    .filter((row) => Number(row.needed ?? 0) > 0);
 
   return NextResponse.json({ items, total: items.length });
 }

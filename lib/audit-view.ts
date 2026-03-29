@@ -1,3 +1,5 @@
+import { formatDisplayQuantity, serializeStoredQuantity } from "@/lib/quantity";
+
 type AuditLike = {
   action: string;
   entity: string;
@@ -53,6 +55,13 @@ function summarizeDiff(before: Record<string, unknown> | null, after: Record<str
 export function summarizeAuditEntry(entry: AuditLike) {
   const before = safeParseJson(entry.before);
   const after = safeParseJson(entry.after);
+  const quantityUnit = String(after?.unit || before?.unit || "").trim() || null;
+
+  function formatStoredAuditQuantity(value: unknown) {
+    if (typeof value !== "number") return null;
+    if (!quantityUnit) return String(value);
+    return formatDisplayQuantity(quantityUnit, serializeStoredQuantity(quantityUnit, value));
+  }
 
   switch (entry.action) {
     case "ITEM_CREATE":
@@ -70,7 +79,10 @@ export function summarizeAuditEntry(entry: AuditLike) {
       const next = typeof after?.stock === "number" ? after.stock : null;
       const delta = typeof after?.delta === "number" ? after.delta : null;
       if (previous !== null && next !== null) {
-        return `Bestand ${previous} -> ${next}${delta !== null ? ` (${delta > 0 ? `+${delta}` : delta})` : ""}`;
+        const previousText = formatStoredAuditQuantity(previous);
+        const nextText = formatStoredAuditQuantity(next);
+        const deltaText = formatStoredAuditQuantity(delta);
+        return `Bestand ${previousText} -> ${nextText}${deltaText ? ` (${delta > 0 ? "+" : ""}${deltaText})` : ""}`;
       }
       return "Bestandsbuchung erfasst";
     }
@@ -89,14 +101,16 @@ export function summarizeAuditEntry(entry: AuditLike) {
       const qty = typeof after?.reservedQty === "number" ? after.reservedQty : null;
       const reservedFor = String(after?.reservedFor || "").trim();
       const note = String(after?.note || "").trim();
-      const base = qty !== null && reservedFor ? `Reservierung angelegt: ${qty} x ${reservedFor}` : "Reservierung angelegt";
+      const qtyText = formatStoredAuditQuantity(qty);
+      const base = qtyText && reservedFor ? `Reservierung angelegt: ${qtyText} fuer ${reservedFor}` : "Reservierung angelegt";
       return note ? `${base} (${note})` : base;
     }
     case "RESERVATION_DELETE": {
       const qty = typeof before?.reservedQty === "number" ? before.reservedQty : null;
       const reservedFor = String(before?.reservedFor || "").trim();
       const note = String(before?.note || "").trim();
-      const base = qty !== null && reservedFor ? `Reservierung aufgehoben: ${qty} x ${reservedFor}` : "Reservierung aufgehoben";
+      const qtyText = formatStoredAuditQuantity(qty);
+      const base = qtyText && reservedFor ? `Reservierung aufgehoben: ${qtyText} fuer ${reservedFor}` : "Reservierung aufgehoben";
       return note ? `${base} (${note})` : base;
     }
     default:

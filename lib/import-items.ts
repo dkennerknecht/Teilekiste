@@ -1,14 +1,15 @@
 import { z } from "zod";
 import type { CustomFieldRow } from "@/lib/custom-fields";
 import { filterApplicableCustomFields } from "@/lib/custom-fields";
+import { QuantityValidationError, toStoredQuantity } from "@/lib/quantity";
 
 const csvRowSchema = z.object({
   name: z.string().trim().min(1).max(180),
   description: z.string().max(8000).default(""),
   storageArea: z.string().max(120).optional().nullable(),
   bin: z.string().max(120).optional().nullable(),
-  stock: z.number().int(),
-  minStock: z.number().int().nullable(),
+  stock: z.number().finite(),
+  minStock: z.number().finite().nullable(),
   unit: z.enum(["STK", "M", "SET", "PACK"]),
   manufacturer: z.string().max(180).optional().nullable(),
   mpn: z.string().max(180).optional().nullable()
@@ -32,12 +33,12 @@ export type ImportAnalyzedRow = {
   warnings: string[];
 };
 
-function parseInteger(value: string | undefined, fallback = 0) {
+function parseNumber(value: string | undefined, fallback = 0) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return fallback;
-  const num = Number(trimmed);
+  const num = Number(trimmed.replace(",", "."));
   if (!Number.isFinite(num)) return Number.NaN;
-  return Math.trunc(num);
+  return num;
 }
 
 function normalizeImportLookup(value: string) {
@@ -78,9 +79,9 @@ export function analyzeImportRows(input: {
       errors.push("Lagerort nicht erlaubt");
     }
 
-    const stock = parseInteger(row.stock, 0);
+    const stock = parseNumber(row.stock, 0);
     const minStockRaw = String(row.minStock || "").trim();
-    const minStock = minStockRaw ? parseInteger(minStockRaw, 0) : null;
+    const minStock = minStockRaw ? parseNumber(minStockRaw, 0) : null;
     const candidate = {
       name: String(row.name || "").trim(),
       description: String(row.description || "").trim(),
@@ -97,42 +98,59 @@ export function analyzeImportRows(input: {
     if (!parsed.success) {
       errors.push(...parsed.error.issues.map((issue) => issue.path.join(".") || issue.message));
     }
-    const normalizedInput =
-      parsed.success && categoryId && storageLocationId
-        ? {
-            ...parsed.data,
-            categoryId,
-            storageLocationId,
-            customValues: Object.fromEntries(
-              (() => {
-                const applicableFields = filterApplicableCustomFields(input.customFields, categoryId, input.typeId || null);
-                const byKey = new Map(applicableFields.map((field) => [normalizeImportLookup(field.key), field]));
-                const nameCounts = new Map<string, number>();
-                for (const field of applicableFields) {
-                  const normalizedName = normalizeImportLookup(field.name);
-                  nameCounts.set(normalizedName, (nameCounts.get(normalizedName) || 0) + 1);
-                }
-                const byName = new Map(
-                  applicableFields
-                    .filter((field) => nameCounts.get(normalizeImportLookup(field.name)) === 1)
-                    .map((field) => [normalizeImportLookup(field.name), field])
-                );
+    let normalizedInput: ImportAnalyzedRow["input"] = null;
+    if (parsed.success && categoryId && storageLocationId) {
+      try {
+        normalizedInput = {
+          ...parsed.data,
+          stock: toStoredQuantity(parsed.data.unit, parsed.data.stock, {
+            field: "Bestand",
+            allowNegative: false
+          })!,
+          minStock: toStoredQuantity(parsed.data.unit, parsed.data.minStock, {
+            field: "Mindestbestand",
+            allowNegative: false,
+            nullable: true
+          }),
+          categoryId,
+          storageLocationId,
+          customValues: Object.fromEntries(
+            (() => {
+              const applicableFields = filterApplicableCustomFields(input.customFields, categoryId, input.typeId || null);
+              const byKey = new Map(applicableFields.map((field) => [normalizeImportLookup(field.key), field]));
+              const nameCounts = new Map<string, number>();
+              for (const field of applicableFields) {
+                const normalizedName = normalizeImportLookup(field.name);
+                nameCounts.set(normalizedName, (nameCounts.get(normalizedName) || 0) + 1);
+              }
+              const byName = new Map(
+                applicableFields
+                  .filter((field) => nameCounts.get(normalizeImportLookup(field.name)) === 1)
+                  .map((field) => [normalizeImportLookup(field.name), field])
+              );
 
-                return Object.entries(row)
-                  .map(([header, rawValue]) => {
-                    const normalizedHeader = normalizeImportLookup(header);
-                    const field = byKey.get(normalizedHeader) || byName.get(normalizedHeader);
-                    const value = String(rawValue || "").trim();
-                    if (!field || !value) return null;
-                    return [field.id, value] as const;
-                  })
-                  .filter((entry): entry is readonly [string, string] => !!entry);
-              })()
-            ),
-            categoryName,
-            locationName
-          }
-        : null;
+              return Object.entries(row)
+                .map(([header, rawValue]) => {
+                  const normalizedHeader = normalizeImportLookup(header);
+                  const field = byKey.get(normalizedHeader) || byName.get(normalizedHeader);
+                  const value = String(rawValue || "").trim();
+                  if (!field || !value) return null;
+                  return [field.id, value] as const;
+                })
+                .filter((entry): entry is readonly [string, string] => !!entry);
+            })()
+          ),
+          categoryName,
+          locationName
+        };
+      } catch (error) {
+        if (error instanceof QuantityValidationError) {
+          errors.push(error.message);
+        } else {
+          throw error;
+        }
+      }
+    }
 
     const normalizedName = candidate.name.toLowerCase();
     const normalizedMpn = (candidate.mpn || "").toLowerCase();

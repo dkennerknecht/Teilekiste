@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatDisplayQuantity } from "@/lib/quantity";
 
 export default function LocationsPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -12,14 +13,14 @@ export default function LocationsPage() {
   }, []);
 
   const grouped = useMemo(() => {
-    const map = new Map<string, { count: number; low: number; bins: Array<{ code: string; name: string; stock: number }> }>();
+    const map = new Map<string, { count: number; low: number; bins: Array<{ code: string; name: string; stock: number; unit: string }> }>();
     for (const item of items) {
       const key = item.storageLocation.name;
       if (!map.has(key)) map.set(key, { count: 0, low: 0, bins: [] });
       const row = map.get(key)!;
       row.count += 1;
       if (item.minStock && item.stock <= item.minStock) row.low += 1;
-      row.bins.push({ code: item.labelCode, name: item.name, stock: item.stock });
+      row.bins.push({ code: item.labelCode, name: item.name, stock: item.stock, unit: item.unit });
     }
     return Array.from(map.entries());
   }, [items]);
@@ -38,7 +39,7 @@ export default function LocationsPage() {
                 <li key={b.code} className="rounded border border-workshop-200 p-2">
                   <p className="font-mono">{b.code}</p>
                   <p className="break-words">{b.name}</p>
-                  <p className="text-workshop-700">Bestand {b.stock}</p>
+                  <p className="text-workshop-700">Bestand {formatDisplayQuantity(b.unit, b.stock)}</p>
                 </li>
               ))}
             </ul>

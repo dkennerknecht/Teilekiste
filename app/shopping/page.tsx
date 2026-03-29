@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatDisplayQuantity } from "@/lib/quantity";
 
 export default function ShoppingPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -26,9 +27,9 @@ export default function ShoppingPage() {
               <p className="text-sm text-workshop-700">{item.storageLocation}</p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg bg-workshop-50 p-3">Verfuegbar: <b>{item.available}</b></div>
-              <div className="rounded-lg bg-workshop-50 p-3">Min: <b>{item.minStock}</b></div>
-              <div className="rounded-lg bg-workshop-50 p-3 text-red-700">Bedarf: <b>{item.needed}</b></div>
+              <div className="rounded-lg bg-workshop-50 p-3">Verfuegbar: <b>{formatDisplayQuantity(item.unit, item.available)}</b></div>
+              <div className="rounded-lg bg-workshop-50 p-3">Min: <b>{formatDisplayQuantity(item.unit, item.minStock)}</b></div>
+              <div className="rounded-lg bg-workshop-50 p-3 text-red-700">Bedarf: <b>{formatDisplayQuantity(item.unit, item.needed)}</b></div>
             </div>
           </div>
         ))}
@@ -51,9 +52,9 @@ export default function ShoppingPage() {
                 <td className="px-2 py-2 font-mono">{item.labelCode}</td>
                 <td className="px-2 py-2">{item.name}</td>
                 <td className="px-2 py-2">{item.storageLocation}</td>
-                <td className="px-2 py-2">{item.available}</td>
-                <td className="px-2 py-2">{item.minStock}</td>
-                <td className="px-2 py-2 text-red-700">{item.needed}</td>
+                <td className="px-2 py-2">{formatDisplayQuantity(item.unit, item.available)}</td>
+                <td className="px-2 py-2">{formatDisplayQuantity(item.unit, item.minStock)}</td>
+                <td className="px-2 py-2 text-red-700">{formatDisplayQuantity(item.unit, item.needed)}</td>
               </tr>
             ))}
           </tbody>

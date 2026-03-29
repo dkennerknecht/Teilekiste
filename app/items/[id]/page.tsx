@@ -24,6 +24,7 @@ import { ItemImageGallery } from "@/components/item-image-gallery";
 import { ItemAuditSection } from "@/components/item-audit-section";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import { buildCustomValueMap, formatCustomFieldValue, parseStoredCustomFieldValue, type CustomFieldRow } from "@/lib/custom-fields";
+import { formatDisplayQuantity, getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
 
 type TagOption = { id: string; name: string };
 type CategoryOption = { id: string; name: string; code?: string | null };
@@ -129,7 +130,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     const movements = (item.movements || []).map((m: any) => ({
       id: `m-${m.id}`,
       createdAt: m.createdAt,
-      text: `${m.delta > 0 ? `+${m.delta}` : m.delta} (${getMovementReasonLabel(m.reason)}) ${m.note || ""}`.trim()
+      text: `${m.delta > 0 ? `+${formatDisplayQuantity(item.unit, m.delta)}` : formatDisplayQuantity(item.unit, m.delta)} (${getMovementReasonLabel(m.reason)}) ${m.note || ""}`.trim()
     }));
     const reservationCreateIds = new Set(
       (item.reservationHistoryEntries || [])
@@ -146,7 +147,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       .map((reservation: any) => ({
         id: `r-${reservation.id}`,
         createdAt: reservation.createdAt,
-        text: `Reservierung: ${reservation.reservedQty} x ${reservation.reservedFor}`
+        text: `Reservierung: ${formatDisplayQuantity(item.unit, reservation.reservedQty)} fuer ${reservation.reservedFor}`
       }));
     return [...movements, ...reservationHistoryEntries, ...legacyReservations].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -678,7 +679,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               <button type="button" className="rounded-lg border border-workshop-300 bg-[var(--app-surface)] p-2" onClick={() => quickStockAdjust(-1)}>
                 <Minus size={14} />
               </button>
-              <span className="text-4xl font-semibold">{item.stock}</span>
+              <span className="text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.stock)}</span>
               <button type="button" className="rounded-lg border border-workshop-300 bg-[var(--app-surface)] p-2" onClick={() => quickStockAdjust(1)}>
                 <Plus size={14} />
               </button>
@@ -687,12 +688,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
           <div className="theme-status-warning rounded-xl p-4 text-center">
             <p className="text-sm">Reserviert</p>
-            <p className="mt-2 text-4xl font-semibold">{item.reservedQty}</p>
+            <p className="mt-2 text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.reservedQty)}</p>
           </div>
 
           <div className="theme-status-success rounded-xl p-4 text-center">
             <p className="text-sm">Verfügbar</p>
-            <p className="mt-2 text-4xl font-semibold">{item.availableStock}</p>
+            <p className="mt-2 text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.availableStock)}</p>
           </div>
         </div>
 
@@ -703,16 +704,23 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               <input
                 className="input"
                 type="number"
+                step={getQuantityStep(item.unit)}
                 value={form.minStock}
                 onChange={(e) => setForm((prev: any) => ({ ...prev, minStock: e.target.value }))}
                 placeholder="leer = kein Mindestbestand"
               />
             </label>
           ) : (
-            <p className="theme-muted text-lg">Mindestbestand: <b>{item.minStock ?? "-"}</b> Stück</p>
+            <p className="theme-muted text-lg">Mindestbestand: <b>{formatDisplayQuantity(item.unit, item.minStock)}</b></p>
           )}
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-            <input className="input w-full sm:w-24" type="number" value={reservedQty} onChange={(e) => setReservedQty(Number(e.target.value))} />
+            <input
+              className="input w-full sm:w-24"
+              type="number"
+              step={getQuantityStep(item.unit)}
+              value={reservedQty}
+              onChange={(e) => setReservedQty(Number(e.target.value))}
+            />
             <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Projekt/Person" value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />
             <button
               className="btn-secondary w-full sm:w-auto"
@@ -738,7 +746,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               <li key={r.id} className="flex flex-col gap-3 rounded-xl border border-workshop-200 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="font-medium">{r.reservedFor}</p>
-                  <p className="theme-muted text-sm">{r.reservedQty}x • {new Date(r.createdAt).toLocaleDateString("de-DE")}</p>
+                  <p className="theme-muted text-sm">{formatDisplayQuantity(item.unit, r.reservedQty)} • {new Date(r.createdAt).toLocaleDateString("de-DE")}</p>
                 </div>
                 <button
                   type="button"
@@ -759,7 +767,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         <div className="mt-4 border-t border-workshop-200 pt-3">
           <p className="mb-2 text-sm font-semibold">Bestandsbuchung</p>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <input className="input w-full sm:w-28" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} />
+            <input
+              className="input w-full sm:w-28"
+              type="number"
+              step={getQuantityStep(item.unit)}
+              value={delta}
+              onChange={(e) => setDelta(Number(e.target.value))}
+            />
             <select className="input w-full sm:w-auto" value={reason} onChange={(e) => setReason(e.target.value)}>
               {movementReasonOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -780,7 +794,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 await load();
               }}
             >
-              Buchung erfassen
+              Buchung erfassen ({getUnitDisplayLabel(item.unit)})
             </button>
           </div>
         </div>

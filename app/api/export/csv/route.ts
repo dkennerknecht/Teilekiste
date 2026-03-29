@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { toCsv } from "@/lib/csv";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
+import { serializeStoredQuantity } from "@/lib/quantity";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -33,10 +34,10 @@ export async function GET(req: NextRequest) {
         storageLocation: item.storageLocation.name,
         storageArea: item.storageArea,
         bin: item.bin,
-        stock: item.stock,
-        available: getAvailableQty(item.stock, reserved),
+        stock: serializeStoredQuantity(item.unit, item.stock),
+        available: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reserved)),
         unit: item.unit,
-        minStock: item.minStock,
+        minStock: serializeStoredQuantity(item.unit, item.minStock),
         manufacturer: item.manufacturer,
         mpn: item.mpn,
         tags: item.tags.map((t) => t.tag.name).join("|")

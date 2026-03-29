@@ -5,6 +5,7 @@ import { auditLog } from "@/lib/audit";
 import { reservationSchema } from "@/lib/validation";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { canReserveQty } from "@/lib/stock";
+import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson } from "@/lib/http";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -27,8 +28,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     _sum: { reservedQty: true }
   });
   const reservedQty = reservedQtyResult._sum.reservedQty || 0;
+  let storedReservedQty: number;
+  try {
+    storedReservedQty = toStoredQuantity(item.unit, body.reservedQty, {
+      field: "Reservierungsmenge",
+      allowNegative: false,
+      allowZero: false
+    })!;
+  } catch (error) {
+    if (error instanceof QuantityValidationError) {
+      return NextResponse.json({ error: error.message, field: error.field || null }, { status: 400 });
+    }
+    throw error;
+  }
 
-  if (!canReserveQty(item.stock, reservedQty, body.reservedQty)) {
+  if (!canReserveQty(item.stock, reservedQty, storedReservedQty)) {
     return NextResponse.json({ error: "Nicht genug verfuegbarer Bestand fuer diese Reservierung" }, { status: 400 });
   }
 
@@ -36,7 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const createdReservation = await tx.reservation.create({
       data: {
         itemId: params.id,
-        reservedQty: body.reservedQty,
+        reservedQty: storedReservedQty,
         reservedFor: body.reservedFor,
         note: body.note || null,
         userId: auth.user!.id
@@ -53,7 +67,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           reservationId: createdReservation.id,
           reservedQty: createdReservation.reservedQty,
           reservedFor: createdReservation.reservedFor,
-          note: createdReservation.note
+          note: createdReservation.note,
+          unit: item.unit
         }
       },
       tx
@@ -62,5 +77,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return createdReservation;
   });
 
-  return NextResponse.json(reservation, { status: 201 });
+  return NextResponse.json(
+    {
+      ...reservation,
+      reservedQty: serializeStoredQuantity(item.unit, reservation.reservedQty)
+    },
+    { status: 201 }
+  );
 }

@@ -120,4 +120,87 @@ describe("Item create transaction", () => {
       tx
     );
   });
+
+  it("stores meter quantities in mm but returns meters in the response", async () => {
+    const tx = {
+      customField: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      item: {
+        create: vi.fn().mockResolvedValue({
+          id: "item-meter-1",
+          labelCode: "EL-KB-002",
+          name: "Silikonkabel",
+          stock: 12500,
+          unit: "M",
+          minStock: 250
+        })
+      },
+      itemCustomFieldValue: {
+        findMany: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn().mockResolvedValue({})
+      },
+      stockMovement: {
+        create: vi.fn().mockResolvedValue({})
+      }
+    };
+
+    requireWriteAccessMock.mockResolvedValue({
+      user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
+    });
+    resolveAllowedLocationIdsMock.mockResolvedValue(["11111111-1111-4111-8111-111111111111"]);
+    assignNextLabelCodeMock.mockResolvedValue("EL-KB-002");
+    transactionMock.mockImplementation(async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx));
+
+    const { POST } = await import("@/app/api/items/route");
+    const request = new NextRequest(
+      new Request("http://localhost/api/items", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Silikonkabel",
+          description: "",
+          categoryId: "22222222-2222-4222-8222-222222222222",
+          storageLocationId: "11111111-1111-4111-8111-111111111111",
+          stock: 12.5,
+          unit: "M",
+          minStock: 0.25,
+          manufacturer: "",
+          mpn: "",
+          typeId: "44444444-4444-4444-8444-444444444444",
+          tagIds: [],
+          customValues: {}
+        })
+      })
+    );
+
+    const response = await POST(request);
+    expect(response).toBeDefined();
+    if (!response) throw new Error("Expected response");
+
+    expect(response.status).toBe(201);
+    expect(tx.item.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stock: 12500,
+          unit: "M",
+          minStock: 250
+        })
+      })
+    );
+    expect(tx.stockMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          delta: 12500
+        })
+      })
+    );
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({
+        stock: 12.5,
+        unit: "M",
+        minStock: 0.25
+      })
+    );
+  });
 });
