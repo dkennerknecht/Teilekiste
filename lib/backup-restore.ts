@@ -45,6 +45,8 @@ type BackupCustomField = {
   type: string;
   unit?: string | null;
   options?: unknown;
+  valueCatalog?: unknown;
+  sortOrder?: number;
   required?: boolean;
   isActive?: boolean;
   categoryId?: string | null;
@@ -221,6 +223,11 @@ export type RestoreResult = {
 function serializeOptions(options: unknown) {
   if (options === null || options === undefined) return null;
   return typeof options === "string" ? options : JSON.stringify(options);
+}
+
+function serializeJsonValue(value: unknown) {
+  if (value === null || value === undefined) return null;
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function parseDate(value?: string | null) {
@@ -539,6 +546,8 @@ export async function restoreBackupData(input: {
         type: field.type,
         unit: field.unit ?? null,
         options: serializeOptions(field.options),
+        valueCatalog: serializeJsonValue(field.valueCatalog),
+        sortOrder: field.sortOrder ?? 0,
         required: !!field.required,
         isActive: field.isActive !== false,
         categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null,
@@ -551,6 +560,8 @@ export async function restoreBackupData(input: {
         type: field.type,
         unit: field.unit ?? null,
         options: serializeOptions(field.options),
+        valueCatalog: serializeJsonValue(field.valueCatalog),
+        sortOrder: field.sortOrder ?? 0,
         required: !!field.required,
         isActive: field.isActive !== false,
         categoryId: field.categoryId ? categoryIdMap.get(field.categoryId) || field.categoryId : null,

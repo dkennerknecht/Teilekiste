@@ -2,8 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/api";
 import { customFieldCreateSchema, customFieldUpdateSchema, idPayloadSchema } from "@/lib/validation";
-import { createUniqueCustomFieldKey, findConflictingCustomField } from "@/lib/custom-fields";
+import {
+  createUniqueCustomFieldKey,
+  findConflictingCustomField,
+  serializeCustomFieldValueCatalog,
+  type CustomFieldCatalogEntry
+} from "@/lib/custom-fields";
 import { parseJson } from "@/lib/http";
+
+function normalizeCatalogInput(entries: Array<{ value: string; aliases: string[]; sortOrder?: number }> | null | undefined): CustomFieldCatalogEntry[] | null {
+  if (!entries?.length) return null;
+  return entries.map((entry, index) => ({
+    value: entry.value,
+    aliases: entry.aliases,
+    sortOrder: entry.sortOrder ?? index
+  }));
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req);
@@ -16,7 +30,7 @@ export async function GET(req: NextRequest) {
           select: { id: true, name: true, code: true }
         }
       },
-      orderBy: [{ name: "asc" }, { key: "asc" }]
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }, { key: "asc" }]
     })
   );
 }
@@ -40,6 +54,8 @@ export async function POST(req: NextRequest) {
       key,
       type: body.type,
       unit: body.unit?.trim() || null,
+      valueCatalog: serializeCustomFieldValueCatalog(normalizeCatalogInput(body.valueCatalog || null)),
+      sortOrder: body.sortOrder ?? 0,
       required: !!body.required,
       options: body.options ? JSON.stringify(body.options) : null,
       categoryId,
@@ -84,6 +100,11 @@ export async function PATCH(req: NextRequest) {
       key: body.key?.trim() || undefined,
       type: body.type,
       unit: body.unit === undefined ? undefined : body.unit?.trim() || null,
+      valueCatalog:
+        body.valueCatalog === undefined
+          ? undefined
+          : serializeCustomFieldValueCatalog(normalizeCatalogInput(body.valueCatalog || null)),
+      sortOrder: body.sortOrder === undefined ? undefined : body.sortOrder,
       required: body.required !== undefined ? !!body.required : undefined,
       options: body.options !== undefined ? (body.options ? JSON.stringify(body.options) : null) : undefined,
       categoryId: body.categoryId === undefined ? undefined : categoryId,

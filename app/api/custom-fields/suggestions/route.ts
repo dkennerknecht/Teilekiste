@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
     where: { id: fieldId },
     select: {
       id: true,
-      options: true
+      options: true,
+      valueCatalog: true
     }
   });
 

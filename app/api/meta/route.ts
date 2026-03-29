@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
           select: { id: true, name: true, code: true }
         }
       },
-      orderBy: [{ name: "asc" }, { key: "asc" }]
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }, { key: "asc" }]
     })
   ]);
 

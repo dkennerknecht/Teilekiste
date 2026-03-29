@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { CustomFieldRow } from "@/lib/custom-fields";
+import { filterApplicableCustomFields } from "@/lib/custom-fields";
 
 const csvRowSchema = z.object({
   name: z.string().trim().min(1).max(180),
@@ -17,6 +19,7 @@ export type ImportReadyRow = {
   input: z.infer<typeof csvRowSchema> & {
     categoryId: string;
     storageLocationId: string;
+    customValues: Record<string, unknown>;
   };
   warnings: string[];
 };
@@ -37,12 +40,24 @@ function parseInteger(value: string | undefined, fallback = 0) {
   return Math.trunc(num);
 }
 
+function normalizeImportLookup(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function analyzeImportRows(input: {
   rows: Record<string, string>[];
   categoryMap: Map<string, string>;
   locationMap: Map<string, string>;
   allowedLocationIds: string[] | null;
   duplicateCandidatesByKey: Map<string, Array<{ id: string; labelCode: string; name: string }>>;
+  customFields: CustomFieldRow[];
+  typeId?: string | null;
 }) {
   const seenNames = new Map<string, number>();
   const seenMpns = new Map<string, number>();
@@ -88,6 +103,32 @@ export function analyzeImportRows(input: {
             ...parsed.data,
             categoryId,
             storageLocationId,
+            customValues: Object.fromEntries(
+              (() => {
+                const applicableFields = filterApplicableCustomFields(input.customFields, categoryId, input.typeId || null);
+                const byKey = new Map(applicableFields.map((field) => [normalizeImportLookup(field.key), field]));
+                const nameCounts = new Map<string, number>();
+                for (const field of applicableFields) {
+                  const normalizedName = normalizeImportLookup(field.name);
+                  nameCounts.set(normalizedName, (nameCounts.get(normalizedName) || 0) + 1);
+                }
+                const byName = new Map(
+                  applicableFields
+                    .filter((field) => nameCounts.get(normalizeImportLookup(field.name)) === 1)
+                    .map((field) => [normalizeImportLookup(field.name), field])
+                );
+
+                return Object.entries(row)
+                  .map(([header, rawValue]) => {
+                    const normalizedHeader = normalizeImportLookup(header);
+                    const field = byKey.get(normalizedHeader) || byName.get(normalizedHeader);
+                    const value = String(rawValue || "").trim();
+                    if (!field || !value) return null;
+                    return [field.id, value] as const;
+                  })
+                  .filter((entry): entry is readonly [string, string] => !!entry);
+              })()
+            ),
             categoryName,
             locationName
           }

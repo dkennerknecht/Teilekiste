@@ -7,7 +7,7 @@ import { assignNextLabelCode } from "@/lib/label-code";
 import { auditLog } from "@/lib/audit";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
-import { prepareCustomFieldValueWrites } from "@/lib/custom-fields";
+import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { parseJson, parsePagination, serverError } from "@/lib/http";
 
 export async function GET(req: NextRequest) {
@@ -148,6 +148,9 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json(item, { status: 201 });
     } catch (error) {
+      if (error instanceof CustomFieldValidationError) {
+        return NextResponse.json({ error: error.message, fieldId: error.fieldId || null }, { status: 400 });
+      }
       if (attempts >= 3) {
         return serverError(`Create failed: ${(error as Error).message}`);
       }

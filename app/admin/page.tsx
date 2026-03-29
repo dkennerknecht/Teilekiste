@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PencilLine, Trash2 } from "lucide-react";
-import type { CustomFieldRow } from "@/lib/custom-fields";
+import { CustomFieldCatalogEditor } from "@/components/custom-field-catalog-editor";
+import { customFieldPresets } from "@/lib/custom-field-presets";
+import { parseCustomFieldValueCatalog, type CustomFieldCatalogEntry, type CustomFieldRow } from "@/lib/custom-fields";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { appLanguageOptions, type AppLanguage } from "@/lib/app-language";
 
@@ -19,11 +21,38 @@ type CustomFieldFormState = {
   name: string;
   type: string;
   unit: string;
-  optionsRaw: string;
+  valueCatalog: CustomFieldCatalogEntry[];
+  sortOrder: number;
   categoryId: string;
   typeId: string;
   required: boolean;
 };
+
+function createEmptyCustomFieldFormState(): CustomFieldFormState {
+  return {
+    name: "",
+    type: "TEXT",
+    unit: "",
+    valueCatalog: [],
+    sortOrder: 0,
+    categoryId: "",
+    typeId: "",
+    required: false
+  };
+}
+
+function supportsCatalog(type: string) {
+  return type === "TEXT" || type === "SELECT" || type === "MULTI_SELECT";
+}
+
+function sortCustomFields<T extends CustomFieldRow>(rows: T[]) {
+  return [...rows].sort(
+    (a, b) =>
+      (a.sortOrder || 0) - (b.sortOrder || 0) ||
+      String(a.name || "").localeCompare(String(b.name || ""), "de") ||
+      String(a.key || "").localeCompare(String(b.key || ""), "de")
+  );
+}
 
 function IconActionButton({
   label,
@@ -82,6 +111,15 @@ export default function AdminPage() {
   const [appLanguageDraft, setAppLanguageDraft] = useState<AppLanguage>(language);
   const tr = (de: string, en: string) => (language === "en" ? en : de);
   const unknownError = tr("Unbekannt", "Unknown");
+  const catalogEditorLabels = {
+    value: tr("Wert", "Value"),
+    aliases: tr("Aliase", "Aliases"),
+    order: tr("Reihenfolge", "Order"),
+    add: tr("Wert hinzufuegen", "Add value"),
+    remove: tr("Entfernen", "Remove"),
+    empty: tr("Noch keine Katalogwerte definiert.", "No catalog values defined yet."),
+    aliasesPlaceholder: tr("Alias 1, Alias 2", "Alias 1, Alias 2")
+  };
 
   const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
   const [editCategoryName, setEditCategoryName] = useState("");
@@ -98,20 +136,16 @@ export default function AdminPage() {
   const [editShelfName, setEditShelfName] = useState("");
   const [editShelfLocationId, setEditShelfLocationId] = useState("");
   const [editCustomId, setEditCustomId] = useState<string | null>(null);
-  const [editCustom, setEditCustom] = useState<CustomFieldFormState>({
-    name: "",
-    type: "TEXT",
-    unit: "",
-    optionsRaw: "",
-    categoryId: "",
-    typeId: "",
-    required: false
-  });
+  const [editCustom, setEditCustom] = useState<CustomFieldFormState>(createEmptyCustomFieldFormState);
+  const [newCustom, setNewCustom] = useState<CustomFieldFormState>(createEmptyCustomFieldFormState);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUser, setEditUser] = useState({ name: "", email: "", role: "READ", isActive: true, password: "" });
   const [newShelfLocationId, setNewShelfLocationId] = useState("");
+  const [selectedPresetKey, setSelectedPresetKey] = useState(customFieldPresets[0]?.key || "");
+  const [presetCategoryId, setPresetCategoryId] = useState("");
+  const [presetTypeId, setPresetTypeId] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
     const [d, c, t, ty, l, sh, f, u, tokens] = await Promise.all([
       fetch("/api/admin/dash", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/categories", { cache: "no-store" }).then((r) => r.json()),
@@ -129,18 +163,24 @@ export default function AdminPage() {
     setTypes(ty);
     setLocations(l);
     setShelves(sh);
-    setCustomFields(f);
+    setCustomFields(sortCustomFields(f));
     setUsers(u);
     setApiTokens(tokens);
-  }
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     setAppLanguageDraft(language);
   }, [language]);
+
+  useEffect(() => {
+    if (categories.length && !presetCategoryId) {
+      setPresetCategoryId(categories[0].id);
+    }
+  }, [categories, presetCategoryId]);
 
   async function apiJson(url: string, init: RequestInit) {
     try {
@@ -191,6 +231,14 @@ export default function AdminPage() {
     return rows.filter((row) => row.id !== id);
   }
 
+  function summarizeCatalog(field: CustomFieldRow) {
+    const catalog = parseCustomFieldValueCatalog(field);
+    if (!catalog.length) return "";
+    return catalog
+      .map((entry) => (entry.aliases.length ? `${entry.value} (${entry.aliases.join(", ")})` : entry.value))
+      .join(", ");
+  }
+
   function startEdit<T extends IdObj>(row: T, kind: "category" | "type" | "tag" | "location" | "shelf" | "custom" | "user") {
     if (kind === "category") {
       setEditCategoryId(row.id);
@@ -217,19 +265,13 @@ export default function AdminPage() {
       setEditShelfLocationId((row as any).storageLocationId || "");
     }
     if (kind === "custom") {
-      let optionsRaw = "";
-      try {
-        const parsed = (row as any).options ? JSON.parse((row as any).options) : [];
-        optionsRaw = Array.isArray(parsed) ? parsed.join("|") : String(parsed || "");
-      } catch {
-        optionsRaw = (row as any).options || "";
-      }
       setEditCustomId(row.id);
       setEditCustom({
         name: (row as any).name || "",
         type: (row as any).type || "TEXT",
         unit: (row as any).unit || "",
-        optionsRaw,
+        valueCatalog: parseCustomFieldValueCatalog(row as unknown as CustomFieldRow),
+        sortOrder: (row as any).sortOrder || 0,
         categoryId: (row as any).categoryId || "",
         typeId: (row as any).typeId || "",
         required: !!(row as any).required
@@ -983,17 +1025,89 @@ export default function AdminPage() {
 
         <section className="card space-y-2 xl:col-span-2">
           <h2 className="font-semibold">{tr("Custom Fields", "Custom fields")}</h2>
+          <div className="space-y-2 rounded border border-dashed border-workshop-200 p-3 text-sm">
+            <p className="font-medium">{tr("Preset anwenden", "Apply preset")}</p>
+            <p className="theme-muted">{tr("Erstellt fehlende technische Felder fuer den gewaehlten Scope, ohne bestehende Felder zu ueberschreiben.", "Creates missing technical fields for the selected scope without overwriting existing fields.")}</p>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <select className="input" value={selectedPresetKey} onChange={(e) => setSelectedPresetKey(e.target.value)}>
+                {customFieldPresets.map((preset) => (
+                  <option key={preset.key} value={preset.key}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+              <select className="input" value={presetCategoryId} onChange={(e) => setPresetCategoryId(e.target.value)} disabled={!categories.length}>
+                {categories.length === 0 ? (
+                  <option value="">{tr("Erst Kategorie anlegen", "Create category first")}</option>
+                ) : (
+                  categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name} ({category.code || "--"})
+                    </option>
+                  ))
+                )}
+              </select>
+              <select className="input" value={presetTypeId} onChange={(e) => setPresetTypeId(e.target.value)}>
+                <option value="">{tr("Nur Kategorie-Scope", "Category scope only")}</option>
+                {types.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.code} - {type.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="btn-secondary"
+                type="button"
+                disabled={!presetCategoryId || !selectedPresetKey}
+                onClick={async () => {
+                  const { res, data } = await apiJson("/api/admin/custom-fields/presets/apply", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      presetKey: selectedPresetKey,
+                      categoryId: presetCategoryId,
+                      typeId: presetTypeId || null
+                    })
+                  });
+                  setFeedback(
+                    res.ok
+                      ? tr(
+                          `Preset angewendet: ${data.created?.length || 0} angelegt, ${data.skipped?.length || 0} uebersprungen`,
+                          `Preset applied: ${data.created?.length || 0} created, ${data.skipped?.length || 0} skipped`
+                        )
+                      : tr(`Preset fehlgeschlagen: ${data.error || unknownError}`, `Preset failed: ${data.error || unknownError}`)
+                  );
+                  if (res.ok) {
+                    setCustomFields((prev) => sortCustomFields([...(prev as CustomFieldRow[]), ...((data.fields || []) as CustomFieldRow[])]));
+                  }
+                }}
+              >
+                {tr("Preset anwenden", "Apply preset")}
+              </button>
+            </div>
+          </div>
           <ul className="space-y-2 text-sm">
             {customFields.map((f) => (
               <li key={f.id} className="rounded border border-workshop-200 p-3">
                 {editCustomId === f.id ? (
                   <div className="space-y-2">
-                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)]">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)_8rem]">
                       <input className="input min-w-0" value={editCustom.name} onChange={(e) => setEditCustom((v) => ({ ...v, name: e.target.value }))} placeholder={tr("Name", "Name")} />
                       <input className="input min-w-0" value={editCustom.unit} onChange={(e) => setEditCustom((v) => ({ ...v, unit: e.target.value }))} placeholder={tr("Einheit (optional)", "Unit (optional)")} />
+                      <input className="input" type="number" min={0} value={editCustom.sortOrder} onChange={(e) => setEditCustom((v) => ({ ...v, sortOrder: Number(e.target.value) }))} placeholder={tr("Reihenfolge", "Order")} />
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                      <select className="input" value={editCustom.type} onChange={(e) => setEditCustom((v) => ({ ...v, type: e.target.value }))}>
+                      <select
+                        className="input"
+                        value={editCustom.type}
+                        onChange={(e) =>
+                          setEditCustom((v) => ({
+                            ...v,
+                            type: e.target.value,
+                            valueCatalog: supportsCatalog(e.target.value) ? v.valueCatalog : []
+                          }))
+                        }
+                      >
                         <option>TEXT</option>
                         <option>NUMBER</option>
                         <option>BOOLEAN</option>
@@ -1026,22 +1140,17 @@ export default function AdminPage() {
                         {tr("Pflichtfeld", "Required field")}
                       </label>
                     </div>
-                    <input
-                      className="input"
-                      value={editCustom.optionsRaw}
-                      onChange={(e) => setEditCustom((v) => ({ ...v, optionsRaw: e.target.value }))}
-                      placeholder={tr("Optionen fuer SELECT/MULTI_SELECT: Rot|Gruen|Blau", "Options for SELECT/MULTI_SELECT: Red|Green|Blue")}
-                    />
+                    {supportsCatalog(editCustom.type) ? (
+                      <CustomFieldCatalogEditor
+                        entries={editCustom.valueCatalog}
+                        onChange={(valueCatalog) => setEditCustom((v) => ({ ...v, valueCatalog }))}
+                        labels={catalogEditorLabels}
+                      />
+                    ) : null}
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <button
                         className="btn-secondary"
                         onClick={async () => {
-                          const options = editCustom.optionsRaw
-                            ? editCustom.optionsRaw
-                                .split("|")
-                                .map((entry) => entry.trim())
-                                .filter(Boolean)
-                            : null;
                           const { res, data } = await apiJson("/api/admin/custom-fields", {
                             method: "PATCH",
                             headers: { "content-type": "application/json" },
@@ -1050,25 +1159,19 @@ export default function AdminPage() {
                               name: editCustom.name,
                               type: editCustom.type,
                               unit: editCustom.unit || null,
+                              sortOrder: editCustom.sortOrder,
                               categoryId: editCustom.categoryId || null,
                               typeId: editCustom.typeId || null,
                               required: editCustom.required,
-                              options
+                              valueCatalog: supportsCatalog(editCustom.type) ? editCustom.valueCatalog : null,
+                              options: null
                             })
                           });
                           setFeedback(res.ok ? tr("Custom Field aktualisiert", "Custom field updated") : tr(`Custom Field Update fehlgeschlagen: ${data.error || unknownError}`, `Custom field update failed: ${data.error || unknownError}`));
                           if (res.ok) {
-                            setCustomFields((prev) => sortByName(replaceById(prev, data)));
+                            setCustomFields((prev) => sortCustomFields(replaceById(prev, data)));
                             setEditCustomId(null);
-                            setEditCustom({
-                              name: "",
-                              type: "TEXT",
-                              unit: "",
-                              optionsRaw: "",
-                              categoryId: "",
-                              typeId: "",
-                              required: false
-                            });
+                            setEditCustom(createEmptyCustomFieldFormState());
                           }
                         }}
                       >
@@ -1088,18 +1191,12 @@ export default function AdminPage() {
                       </p>
                       <p className="theme-muted text-xs">
                         {f.type} • {describeCustomFieldScope(f)}
+                        {` • ${tr("Pos", "Pos")} ${f.sortOrder || 0}`}
                         {f.required ? ` • ${tr("Pflicht", "Required")}` : ""}
                       </p>
-                      {f.options ? (
+                      {summarizeCatalog(f) ? (
                         <p className="theme-muted truncate text-xs">
-                          {tr("Optionen", "Options")}: {(() => {
-                            try {
-                              const parsed = JSON.parse(f.options);
-                              return Array.isArray(parsed) ? parsed.join(", ") : String(parsed);
-                            } catch {
-                              return f.options;
-                            }
-                          })()}
+                          {tr("Katalog", "Catalog")}: {summarizeCatalog(f)}
                         </p>
                       ) : null}
                     </div>
@@ -1132,40 +1229,45 @@ export default function AdminPage() {
             className="space-y-2"
             onSubmit={async (e) => {
               e.preventDefault();
-              const formEl = e.currentTarget;
-              const fd = new FormData(formEl);
-              const optionsRaw = String(fd.get("options") || "");
               const { res, data } = await apiJson("/api/admin/custom-fields", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
-                  name: fd.get("name"),
-                  unit: fd.get("unit") || null,
-                  type: fd.get("type"),
-                  categoryId: fd.get("categoryId") || null,
-                  typeId: fd.get("typeId") || null,
-                  required: fd.get("required") === "on",
-                  options: optionsRaw
-                    ? optionsRaw
-                        .split("|")
-                        .map((entry) => entry.trim())
-                        .filter(Boolean)
-                    : null
+                  name: newCustom.name,
+                  unit: newCustom.unit || null,
+                  type: newCustom.type,
+                  sortOrder: newCustom.sortOrder,
+                  categoryId: newCustom.categoryId || null,
+                  typeId: newCustom.typeId || null,
+                  required: newCustom.required,
+                  valueCatalog: supportsCatalog(newCustom.type) ? newCustom.valueCatalog : null,
+                  options: null
                 })
               });
               setFeedback(res.ok ? tr("Custom Field angelegt", "Custom field created") : tr(`Custom Field anlegen fehlgeschlagen: ${data.error || unknownError}`, `Custom field creation failed: ${data.error || unknownError}`));
               if (res.ok) {
-                setCustomFields((prev) => sortByName([...(prev as CustomFieldRow[]), data as CustomFieldRow]));
-                formEl.reset();
+                setCustomFields((prev) => sortCustomFields([...(prev as CustomFieldRow[]), data as CustomFieldRow]));
+                setNewCustom(createEmptyCustomFieldFormState());
               }
             }}
           >
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)]">
-              <input className="input min-w-0" name="name" placeholder={tr("Name", "Name")} required />
-              <input className="input min-w-0" name="unit" placeholder={tr("Einheit (optional)", "Unit (optional)")} />
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)_8rem]">
+              <input className="input min-w-0" value={newCustom.name} onChange={(e) => setNewCustom((v) => ({ ...v, name: e.target.value }))} placeholder={tr("Name", "Name")} required />
+              <input className="input min-w-0" value={newCustom.unit} onChange={(e) => setNewCustom((v) => ({ ...v, unit: e.target.value }))} placeholder={tr("Einheit (optional)", "Unit (optional)")} />
+              <input className="input" type="number" min={0} value={newCustom.sortOrder} onChange={(e) => setNewCustom((v) => ({ ...v, sortOrder: Number(e.target.value) }))} placeholder={tr("Reihenfolge", "Order")} />
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <select className="input" name="type">
+              <select
+                className="input"
+                value={newCustom.type}
+                onChange={(e) =>
+                  setNewCustom((v) => ({
+                    ...v,
+                    type: e.target.value,
+                    valueCatalog: supportsCatalog(e.target.value) ? v.valueCatalog : []
+                  }))
+                }
+              >
                 <option>TEXT</option>
                 <option>NUMBER</option>
                 <option>BOOLEAN</option>
@@ -1173,7 +1275,7 @@ export default function AdminPage() {
                 <option>MULTI_SELECT</option>
                 <option>DATE</option>
               </select>
-              <select className="input" name="categoryId" defaultValue="">
+              <select className="input" value={newCustom.categoryId} onChange={(e) => setNewCustom((v) => ({ ...v, categoryId: e.target.value }))}>
                 <option value="">{tr("Alle Kategorien", "All categories")}</option>
                 {categories.map((category) => (
                   <option key={category.id} value={category.id}>
@@ -1181,7 +1283,7 @@ export default function AdminPage() {
                   </option>
                 ))}
               </select>
-              <select className="input" name="typeId" defaultValue="">
+              <select className="input" value={newCustom.typeId} onChange={(e) => setNewCustom((v) => ({ ...v, typeId: e.target.value }))}>
                 <option value="">{tr("Alle Types", "All types")}</option>
                 {types.map((type) => (
                   <option key={type.id} value={type.id}>
@@ -1190,11 +1292,17 @@ export default function AdminPage() {
                 ))}
               </select>
               <label className="inline-flex items-center gap-2 rounded border border-workshop-200 px-3 py-2 text-sm">
-                <input type="checkbox" name="required" />
+                <input type="checkbox" checked={newCustom.required} onChange={(e) => setNewCustom((v) => ({ ...v, required: e.target.checked }))} />
                 {tr("Pflichtfeld", "Required field")}
               </label>
             </div>
-            <input className="input" name="options" placeholder={tr("Optionen fuer SELECT/MULTI_SELECT: Rot|Gruen|Blau", "Options for SELECT/MULTI_SELECT: Red|Green|Blue")} />
+            {supportsCatalog(newCustom.type) ? (
+              <CustomFieldCatalogEditor
+                entries={newCustom.valueCatalog}
+                onChange={(valueCatalog) => setNewCustom((v) => ({ ...v, valueCatalog }))}
+                labels={catalogEditorLabels}
+              />
+            ) : null}
             <button className="btn-secondary" type="submit">
               {tr("Anlegen", "Create")}
             </button>

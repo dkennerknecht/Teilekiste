@@ -277,6 +277,8 @@ model CustomField {
   type         String
   unit         String?
   options      String?
+  valueCatalog String?
+  sortOrder    Int              @default(0)
   required     Boolean          @default(false)
   categoryId   String?
   typeId       String?

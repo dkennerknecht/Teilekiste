@@ -8,7 +8,7 @@ import { assignNextLabelCode } from "@/lib/label-code";
 import { loadItemBom } from "@/lib/item-bom";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { canSetStock, getAvailableQty, getReservedQty } from "@/lib/stock";
-import { prepareCustomFieldValueWrites } from "@/lib/custom-fields";
+import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { parseJson } from "@/lib/http";
 
 function safeParseAuditPayload(value?: string | null) {
@@ -152,6 +152,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const shouldRegenerateLabel =
     !!nextTypeId && ((!!body.categoryId && body.categoryId !== existing.categoryId) || !!body.typeId);
   const labelCode = shouldRegenerateLabel ? await assignNextLabelCode(nextCategoryId, nextTypeId) : existing.labelCode;
+  let customFieldWrites: Awaited<ReturnType<typeof prepareCustomFieldValueWrites>> | null = null;
+
+  if (body.customValues) {
+    try {
+      customFieldWrites = await prepareCustomFieldValueWrites(prisma, {
+        rawValues: body.customValues,
+        categoryId: nextCategoryId,
+        typeId: nextTypeId
+      });
+    } catch (error) {
+      if (error instanceof CustomFieldValidationError) {
+        return NextResponse.json({ error: error.message, fieldId: error.fieldId || null }, { status: 400 });
+      }
+      throw error;
+    }
+  }
 
   const item = await prisma.item.update({
     where: { id: params.id },
@@ -176,12 +192,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   });
 
-  if (body.customValues) {
-    const customFieldWrites = await prepareCustomFieldValueWrites(prisma, {
-      rawValues: body.customValues,
-      categoryId: nextCategoryId,
-      typeId: nextTypeId
-    });
+  if (customFieldWrites) {
     await Promise.all(
       customFieldWrites.upserts.map((entry) =>
         prisma.itemCustomFieldValue.upsert({

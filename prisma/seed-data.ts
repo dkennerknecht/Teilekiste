@@ -197,7 +197,7 @@ export async function seedDatabase(prisma: SeedPrisma) {
       name: "Spannung",
       key: "spannung",
       type: "NUMBER",
-      options: JSON.stringify({ unit: "V" }),
+      unit: "V",
       required: false
     }
   });
@@ -210,6 +210,12 @@ export async function seedDatabase(prisma: SeedPrisma) {
       key: "toleranz",
       type: "SELECT",
       options: JSON.stringify(["1%", "5%", "10%"]),
+      valueCatalog: JSON.stringify([
+        { value: "1%", aliases: [], sortOrder: 0 },
+        { value: "5%", aliases: [], sortOrder: 1 },
+        { value: "10%", aliases: [], sortOrder: 2 }
+      ]),
+      sortOrder: 10,
       required: false
     }
   });

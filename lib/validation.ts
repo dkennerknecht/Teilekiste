@@ -4,6 +4,11 @@ const uuidSchema = z.string().uuid();
 const nameSchema = z.string().trim().min(1).max(120);
 const codeSchema = z.string().trim().min(1).max(40);
 const shortCodeSchema = z.string().trim().regex(/^[A-Za-z0-9]{2}$/);
+const customFieldCatalogEntrySchema = z.object({
+  value: z.string().trim().min(1).max(120),
+  aliases: z.array(z.string().trim().min(1).max(120)).default([]),
+  sortOrder: z.number().int().min(0).optional()
+});
 
 export const itemSchema = z.object({
   labelCode: z.string().optional(),
@@ -114,6 +119,8 @@ export const customFieldCreateSchema = z.object({
   type: z.string().trim().min(1).max(40),
   unit: z.string().trim().max(40).optional().nullable(),
   options: z.unknown().optional(),
+  valueCatalog: z.array(customFieldCatalogEntrySchema).optional().nullable(),
+  sortOrder: z.number().int().min(0).optional(),
   required: z.boolean().optional(),
   categoryId: uuidSchema.optional().nullable(),
   typeId: uuidSchema.optional().nullable()
@@ -122,6 +129,12 @@ export const customFieldCreateSchema = z.object({
 export const customFieldUpdateSchema = customFieldCreateSchema.partial().extend({
   id: uuidSchema,
   isActive: z.boolean().optional()
+});
+
+export const customFieldPresetApplySchema = z.object({
+  presetKey: z.string().trim().min(1).max(80),
+  categoryId: uuidSchema,
+  typeId: uuidSchema.optional().nullable()
 });
 
 export const areaCreateSchema = z.object({

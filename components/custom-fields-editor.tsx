@@ -20,7 +20,10 @@ type Props = {
 export function CustomFieldsEditor({ fields, values, onChange, categoryId, typeId, disabled }: Props) {
   const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
   const applicableFields = useMemo(
-    () => filterApplicableCustomFields(fields, categoryId, typeId),
+    () =>
+      filterApplicableCustomFields(fields, categoryId, typeId).sort(
+        (left, right) => (left.sortOrder || 0) - (right.sortOrder || 0) || left.name.localeCompare(right.name, "de")
+      ),
     [fields, categoryId, typeId]
   );
 
@@ -48,7 +51,7 @@ export function CustomFieldsEditor({ fields, values, onChange, categoryId, typeI
       <legend className="mb-2 font-medium">Custom Fields</legend>
       <div className="grid gap-3 md:grid-cols-2">
         {applicableFields.map((field) => {
-          const options = parseCustomFieldOptions(field.options);
+          const options = parseCustomFieldOptions(field);
           const rawValue = values[field.id];
           const datalistId = `custom-field-${field.id}`;
           const label = field.unit ? `${field.name} (${field.unit})` : field.name;
