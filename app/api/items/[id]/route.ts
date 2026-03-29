@@ -162,7 +162,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(storageLocationId ? { storageLocation: { connect: { id: storageLocationId } } } : {}),
       storageArea: itemData.storageArea || undefined,
       bin: itemData.bin || undefined,
-      minStock: itemData.minStock || undefined,
+      minStock: itemData.minStock === undefined ? undefined : itemData.minStock,
       manufacturer: itemData.manufacturer || null,
       mpn: itemData.mpn || null,
       ...(tagIds
