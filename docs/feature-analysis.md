@@ -1,85 +1,196 @@
 # Feature-Analyse fuer Teilekiste
 
-## Ausgangslage
+Stand: Maerz 2026
 
-Teilekiste ist aktuell stark in den Bereichen:
+## Stand heute
+
+Teilekiste ist inzwischen mehr als eine einfache Inventar-App. Der Produktkern ist heute stark in den Bereichen:
 
 - einfache Selbsthostbarkeit
 - schneller Materialzugriff
 - mobile Bedienung
-- Lagerstruktur mit Lagerort und Regal
-- automatische Labels
+- Lagerstruktur mit Lagerort, Regal und Fach
+- automatische Labels auf Basis von Kategorie + Type
 - Auditierbarkeit und Datensicherheit
+- standardisierte technische Materialdaten
+- qualitaetsgesicherter CSV-Import
+- Dubletten-Erkennung und sicheres Merge
+- Mengenlogik fuer Meterware
+- explizite Lagertransfers
 
-Der aktuelle Produktkern funktioniert gut fuer Werkstatt- und Elektroniklager, besonders wenn Material nicht als ERP-Warenwirtschaft, sondern als schnell verfuegbares internes Inventar gefuehrt werden soll.
-
-## Produktprofil
-
-Teilekiste ist heute am staerksten als:
+Damit ist Teilekiste aktuell besonders stark als:
 
 - internes Werkstattlager
 - Elektronik- und Installationsmaterial-Verwaltung
 - Materialbestand fuer kleine Teams
-- mobile Such- und Entnahme-App
+- mobile Such-, Entnahme- und Umlagerungs-App
 
-Weniger stark ist es aktuell noch bei:
+## Bereits geliefert
 
-- Einkauf mit Lieferanten- und Preisdaten
-- projektbezogener Materialplanung
-- Standardisierung technischer Artikeldaten
-- Massenpflege grosser Bestandsmengen
+### 1. Materialdaten-Standardisierung
 
-## Empfohlene Feature-Roadmap
+Bereits umgesetzt:
 
-### 1. Werte-Normalisierung fuer Custom Fields
+- Werte-Normalisierung fuer `CustomField`
+- kanonische Werte mit Aliasen und Vorschlaegen
+- gesperrte Listen fuer `SELECT` und `MULTI_SELECT`
+- verwaltete technische Feldsaetze pro `Kategorie + Type`
+- Presets fuer typische technische Materialgruppen
+- Sortierung technischer und freier Felder ueber `sortOrder`
 
-Nutzen: hoch  
-Aufwand: mittel
+Nutzen:
 
-Problem:
-- Freitextwerte wie `Rot`, `ROT`, `red` oder `1k`, `1 kOhm`, `1000 Ohm` laufen schnell auseinander.
-
-Empfehlung:
-- pro Custom Field ein optionales Wertverzeichnis
-- Vorschlaege aus bestehenden Werten
-- Alias-/Normalisierungslogik
-- optional gesperrte Listenwerte pro Feld
-
-Besonders sinnvoll fuer:
-- Farbe
-- Gehaeuseform
-- Toleranz
-- Spannung
-- Querschnitt
-- Steckertyp
+- deutlich bessere Datenqualitaet
+- robusterer Import
+- bessere Suchbarkeit
+- sauberere Grundlage fuer Dubletten-Erkennung
 
 ### 2. Typ-spezifische technische Felder
 
-Nutzen: hoch  
-Aufwand: mittel
+Bereits umgesetzt:
 
-Problem:
-- Bei Elektronik und Elektro-Installation sind Kategorie und Type schon sauber, aber die technischen Kerndaten fehlen noch als standardisierte Struktur.
+- technische Presets als verwaltete Feldsaetze
+- Zuordnung pro `Kategorie + Type`
+- Synchronisation der daraus erzeugten `CustomField`-Eintraege
+- sichere Deaktivierung alter managed Felder statt Loeschung
+- sichtbare Trennung zwischen freien und verwalteten Feldern im Admin
 
-Empfehlung:
-- Vorlagen pro Type
-- Beispiel:
-  - Widerstand: Wert, Toleranz, Leistung, Bauform
-  - Kondensator: Kapazitaet, Spannung, Dielektrikum, Bauform
-  - Temperatursensor: Interface, Messbereich, Versorgung
-  - Relais / Schuetz: Spulenspannung, Kontaktart, Schaltstrom
-  - Kabel / Litze: Querschnitt, Aderzahl, Farbe, Ring-/Rollenlaenge
+Beispiele, die bereits als Presets vorgesehen sind:
 
-Das kann auf den bestehenden Custom Fields aufbauen, sollte aber als vorkonfigurierter Satz pro Type verwaltbar sein.
+- Widerstand
+- Kondensator
+- Temperatursensor
+- Relais / Schuetz
+- Kabel / Litze
 
-### 3. Einkauf wirklich produktiv machen
+### 3. Verbrauch fuer Kabel, Rollen und Meterware
 
-Nutzen: hoch  
+Bereits umgesetzt in V1:
+
+- `unit = M` mit interner Speicherung in `mm`
+- Dezimalmengen fuer Bestand, Mindestbestand, Bewegungen und Reservierungen
+- korrekte Anzeige in `m` in UI und API
+- CSV-Import und Export fuer Meterwerte
+
+Bewusste V1-Grenze:
+
+- noch kein Rollenmodell
+- noch keine Restlaenge pro Einzelrolle
+- noch keine Mehrgebinde-Logik
+
+### 4. Deduplizierung und Datenqualitaet
+
+Bereits umgesetzt:
+
+- persistiertes `typeId` auf `Item`
+- Dubletten-Scoring ueber Name, Hersteller, MPN und Type
+- Admin-Ansicht fuer Kandidaten
+- Merge-Preview mit Konfliktaufloesung
+- sicherer Vollmerge mit Relationen, Audit und Redirect alter Quellitems
+
+Nutzen:
+
+- bessere Datenqualitaet im Bestand
+- weniger Wildwuchs bei fast gleichen Artikeln
+- weniger Such- und Einkaufsfehler
+
+### 5. Bessere Import-Qualitaet
+
+Bereits umgesetzt:
+
+- dedizierter Admin-Import-Workflow
+- speicherbare Import-Profile
+- Header-Fingerprint und Profilvorschlaege
+- Feldzuordnung fuer Kernfelder, feste Werte und Custom Fields
+- Preview mit Fehlern und Warnungen pro Zeile
+- striktes Apply nur bei fehlerfreiem Import
+
+### 6. Lagertransfers
+
+Bereits umgesetzt:
+
+- expliziter Einzeltransfer
+- explizite Sammelumlagerung
+- Validierung fuer Ziel-Lagerort und Ziel-Regal
+- eigener Audit-Typ `ITEM_TRANSFER`
+- Standortwechsel im normalen Item-Update laufen intern ueber dieselbe Transfer-Logik
+
+Wichtig:
+
+- V1 transferiert immer das gesamte Item
+- es gibt keine Teilmengen-Umlagerung
+- Transfers erzeugen keine Bestandsbewegung
+
+## Teilweise geliefert oder noch bewusst einfach
+
+### Einkauf
+
+Vorhanden:
+
+- Einkaufsliste auf Basis von Mindestbestand
+- `purchaseUrl` pro Item
+
+Noch offen:
+
+- Lieferantenmodell
+- Bestellnummer pro Lieferant
+- letzter Preis
+- Mindestbestellmenge
+- Verpackungseinheit
+- Bestellstatus
+- echter Beschaffungsworkflow
+
+### Reservierungen
+
+Vorhanden:
+
+- Reservierungen mit Menge
+- Freitextfeld `reservedFor`
+
+Noch offen:
+
+- eigene Projekte / Auftraege / Kunden
+- Reservierungen nach Projekt filtern
+- Materiallisten pro Projekt
+- Rueckgabe oder Verbrauch aus Reservierung
+
+### Scanner
+
+Vorhanden:
+
+- Scan oder Eingabe eines Labelcodes
+- direktes Oeffnen des Items
+- schneller `-1` Verbrauch aus dem Scanner
+
+Noch offen:
+
+- mehrere Schnellaktionen nach dem Scan
+- Sammelmodus fuer viele Scans
+- Inventurmodus
+- Transfer direkt aus dem Scanner
+
+### Integrationen
+
+Vorhanden:
+
+- Read-only API Tokens
+
+Noch offen:
+
+- dokumentierte API fuer externe Systeme
+- Webhooks
+- Push in n8n / Home Assistant / ERP-Bridge
+- klar definierte Integrationspunkte fuer Fremdsysteme
+
+## Offene Prioritaeten
+
+### 1. Einkauf wirklich produktiv machen
+
+Nutzen: sehr hoch  
 Aufwand: mittel bis hoch
 
-Die aktuelle Einkaufsliste ist gut als Mangelanzeige, aber noch keine echte Beschaffungshilfe.
+Empfehlung:
 
-Empfohlene Erweiterungen:
 - Lieferanten pro Item
 - Bestellnummer pro Lieferant
 - letzter Preis
@@ -88,165 +199,175 @@ Empfohlene Erweiterungen:
 - Bestellnotiz
 - Status `offen / bestellt / geliefert`
 
-Damit wird aus der Einkaufsliste ein echter Beschaffungsworkflow.
+Warum jetzt:
 
-### 4. Verbrauch fuer Kabel, Rollen und Meterware
+- der Inventarkern ist stark genug
+- der operative Hebel im Alltag ist hoch
+- Mindestbestand und Einkaufsliste sind bereits vorhanden
 
-Nutzen: sehr hoch  
-Aufwand: mittel
-
-Fuer `NYM-J`, `Litze`, Schrumpfschlauch oder Meterware ist `Stk` nur bedingt passend.
-
-Empfehlung:
-- bessere Unterstuetzung fuer `m`
-- Teilentnahmen
-- Restlaenge pro Rolle
-- optional mehrere Gebinde pro Item
-- Sicht auf angebrochene Rollen
-
-Das passt besonders gut zu deinem Materialprofil.
-
-### 5. Projekt- oder Auftragsbezug fuer Reservierungen
+### 2. Projekt- oder Auftragsbezug fuer Reservierungen
 
 Nutzen: hoch  
 Aufwand: mittel
 
-Reservierungen existieren bereits, sind aber fachlich noch flach.
-
 Empfehlung:
-- Reservierungen an Projekt / Auftrag / Kunde koppeln
-- offene Reservierungen nach Projekt filtern
-- Material fuer Projekt komplett zusammenstellen
-- spaeter auch Rueckbuchung oder Verbrauch aus Reservierung
 
-Das wuerde Teilekiste deutlich naeher an den realen Werkstattalltag bringen.
+- eigene Entitaet fuer Projekt / Auftrag / Kunde
+- Reservierungen daran koppeln
+- Material pro Projekt gruppieren
+- offene Bedarfe und reservierte Mengen je Projekt sichtbar machen
 
-### 6. Deduplizierung und Datenqualitaet
+Warum jetzt:
 
-Nutzen: hoch  
-Aufwand: mittel
+- passt direkt zu realer Werkstattarbeit
+- baut auf bestehender Reservierungslogik auf
+- ist ein sinnvoller naechster Schritt nach Datenqualitaet und Transfers
 
-Mit wachsendem Bestand werden doppelte oder fast gleiche Items ein Thema.
-
-Empfehlung:
-- Dubletten-Ansicht mit Merge-Vorschlaegen
-- Aehnlichkeit ueber Name, MPN, Hersteller und Type
-- optionales Zusammenfuehren von Tags und Bildern
-- Warnung bei fast gleichen Artikeln
-
-### 7. Bessere Import-Qualitaet
+### 3. Scanner-Workflow ausbauen
 
 Nutzen: mittel bis hoch  
 Aufwand: mittel
 
-Import ist da, aber bei realen CSVs kommt meist Mapping-Aufwand dazu.
-
 Empfehlung:
-- speicherbare Import-Profile
-- Feldzuordnung pro Quelle
-- Vorschau fuer Kategorien/Types/Custom Fields
-- Fehlerbericht pro Zeile
-- Normalisierung beim Import
 
-### 8. Scanner-Workflow ausbauen
+- Scan -> Aktion auswaehlen
+- `+1`, `-1`, reservieren, transferieren, archivieren
+- schneller Wechsel zwischen mehreren gescannten Items
+- Sammelmodus fuer Inventur
 
-Nutzen: mittel  
-Aufwand: mittel
+### 4. Lieferfaehige API und Integrationen
 
-Scanner ist als schneller Zugriff gut, kann aber noch operativer werden.
-
-Empfehlung:
-- Scan -> sofortige Aktion waehlen
-- `+1`, `-1`, reservieren, archivieren
-- schneller Wechsel zwischen mehreren gescannten Artikeln
-- optional Sammelmodus fuer Inventur
-
-### 9. Lagertransfers
-
-Nutzen: mittel
-Aufwand: mittel
-
-Aktuell kann der Lagerplatz geaendert werden, aber es gibt keinen expliziten Transfer-Workflow.
-
-Empfehlung:
-- `von Lagerort/Regal/Fach` nach `zu Lagerort/Regal/Fach`
-- eigener Audit-Typ fuer Umlagerungen
-- spaeter Sammelumlagerung
-
-### 10. Lieferfaehige API / Integrationen
-
-Nutzen: mittel  
+Nutzen: mittel bis hoch  
 Aufwand: mittel bis hoch
 
-Read-only API Tokens existieren bereits. Der naechste Schritt waere eine bewusst dokumentierte Integrationsschicht.
-
 Empfehlung:
-- API-Dokumentation fuer externe Tools
-- Webhooks fuer Aenderungen
-- Export an andere Systeme
-- optional Home Assistant / n8n / ERP-Bridge
 
-## Empfohlene Priorisierung
+- API-Dokumentation
+- Webhooks fuer Item-, Bestands- und Reservierungsereignisse
+- Integrationsbeispiele fuer n8n
+- spaeter optionale ERP- oder Home-Assistant-Anbindung
 
-### Sofort sinnvoll
+## Neue sinnvolle Feature-Vorschlaege
 
-1. Werte-Normalisierung fuer Custom Fields
-2. Typ-spezifische technische Felder
-3. Einkauf mit Lieferanten- und Verpackungsdaten
-4. Kabel- und Meterwaren-Logik
+### 1. Inventur-Sessions
+
+Statt einzelner Inventur-Buchungen:
+
+- Inventur pro Lagerort
+- Zaehlstatus und Fortschritt
+- Differenzen gesammelt pruefen
+- Freigabe der Inventur als eigener Schritt
+
+Das wuerde Teilekiste operativ deutlich staerker machen.
+
+### 2. Standort-Scan-Workflow
+
+Statt Lagerort manuell zu tippen:
+
+- erst Lagerplatz scannen
+- dann Item scannen
+- danach Einlagern oder Umlagern bestaetigen
+
+Das passt sehr gut zur neuen Transfer-Logik.
+
+### 3. Chargen, Seriennummern und Verfallsdaten
+
+Sinnvoll fuer:
+
+- Sicherungen
+- Relais
+- Messgeraete
+- Chemie, Kleber, Verbrauchsmaterial
+- hochwertige oder rueckverfolgbare Komponenten
+
+### 4. BOM-Picking und Materialausgabe
+
+Aufbauend auf vorhandener BOM-Logik:
+
+- Pickliste fuer Baugruppen
+- Materialausgabe fuer Aufbau oder Auftrag
+- Teilverbrauch dokumentieren
+- Rueckgabe von Restmaterial
+
+### 5. Regeln und Benachrichtigungen
+
+Beispiele:
+
+- Mindestbestand unterschritten
+- alte Reservierungen ohne Bewegung
+- neue Dubletten-Kandidaten
+- offene Einkaufsbedarfe
+
+Ausgabe moeglich als:
+
+- In-App Hinweis
+- Mail
+- Webhook
+
+### 6. Lagerplatz-Optimierung
+
+Beispiele:
+
+- freie / volle Lagerplaetze sichtbar machen
+- bevorzugte Zielplaetze fuer bestimmte Kategorien
+- Vorschlaege fuer Einlagerung
+- Regal-Labels und Fachkennzeichnung konsistent verwalten
+
+## Empfohlene Priorisierung ab jetzt
+
+### Naechste Ausbaustufe
+
+1. Einkauf wirklich produktiv machen
+2. Projekt- oder Auftragsbezug fuer Reservierungen
 
 ### Danach
 
-5. Projektbezug fuer Reservierungen
-6. Dubletten-Management
-7. bessere CSV-Importprofile
-8. Lagertransfers
+3. Scanner-Workflow ausbauen
+4. Inventur-Sessions
+5. Integrationen / Webhooks / API-Doku
 
 ### Spaeter
 
-9. Integrationen / Webhooks / API-Doku
-10. weitergehende Workflow- und Freigabefunktionen
+6. Chargen- und Seriennummern
+7. BOM-Picking und Materialausgabe
+8. Lagerplatz-Optimierung
 
-## Konkrete naechste Ausbaustufe
+## Klare Empfehlung
 
-Wenn nur ein sinnvoller naechster grosser Schritt gebaut werden soll, waere meine Empfehlung:
-
-### Materialdaten-Standardisierung
-
-Konkret:
-- Custom Fields pro Kategorie/Type fest definieren
-- Werte normalisieren
-- technische Felder als Vorlagen bereitstellen
-
-Warum zuerst:
-- verbessert Datenqualitaet sofort
-- hilft Suche, Einkauf, Import und Dubletten gleichzeitig
-- passt direkt zu Elektronik, Elektro-Installation, Befestigung und Kabel
-
-## Zweite klare Empfehlung
+Wenn nur ein grosser naechster Schritt gebaut werden soll, ist die beste fachliche Wahl aktuell:
 
 ### Einkauf ausbauen
 
-Konkret:
-- Lieferant
-- Bestellnummer
-- Packungsinhalt
-- Preis
-- Mindestbestellmenge
-- Bestellstatus
+Warum:
+
+- die Datenbasis ist jetzt stark genug
+- Mindestbestand, Import, Dubletten und technische Felder sind bereits deutlich reifer
+- der groesste praktische Hebel liegt nun im Beschaffungsworkflow
+
+Die zweitbeste direkte Erweiterung waere:
+
+### Reservierungen mit Projektbezug
 
 Warum:
-- Mindestbestand und Einkaufsliste sind schon da
-- der Hebel in der Praxis ist hoch
-- geringe fachliche Reibung, weil der bestehende Workflow erweitert statt ersetzt wird
+
+- sehr nah am Werkstattalltag
+- fachlich klar
+- passt gut zu Bestand, Scanner, BOM und spaeterer Materialausgabe
 
 ## Fazit
 
-Teilekiste ist bereits eine brauchbare Inventar-App fuer den operativen Werkstattalltag.
+Teilekiste ist heute nicht mehr nur eine brauchbare Inventar-App, sondern bereits eine recht starke Werkstatt- und Materialverwaltungsbasis.
 
-Das groesste Potenzial liegt jetzt nicht mehr im generischen CRUD, sondern in zwei Richtungen:
+Die groessten bereits erreichten Fortschritte liegen in:
 
-- bessere Materialdaten
-- echterer Einkaufs- und Verbrauchsworkflow
+- standardisierten Materialdaten
+- qualitaetsgesichertem Import
+- Deduplizierung
+- Meterware
+- expliziten Lagertransfers
 
-Wenn du willst, kann ich aus dieser Analyse direkt einen konkreten Umsetzungsplan fuer die naechsten 3 Releases machen.
+Das naechste groesste Potenzial liegt jetzt weniger im allgemeinen CRUD und mehr in:
+
+- echtem Einkaufsworkflow
+- projektbezogener Materialplanung
+- operativen Lagerprozessen rund um Scanner, Inventur und Integrationen
