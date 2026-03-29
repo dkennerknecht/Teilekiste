@@ -13,7 +13,7 @@ test("admin can create an item and inspect audit history", async ({ page }) => {
   await page.getByRole("button", { name: "Speichern" }).click();
 
   await expect(page).toHaveURL(/\/items\/.+/);
-  await expect(page.getByText(itemName)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: itemName })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Audit History" })).toBeVisible();
   await expect(page.getByText("Item angelegt")).toBeVisible();
 
