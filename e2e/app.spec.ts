@@ -7,18 +7,18 @@ test("admin can create an item and inspect audit history", async ({ page }) => {
   const itemName = `E2E Item ${Date.now()}`;
   await page.goto("/items/new");
   await page.getByLabel("Name").fill(itemName);
-  await page.getByLabel("Hersteller").fill("OpenAI Labs");
+  await page.getByLabel(/^(Hersteller|Manufacturer)$/).fill("OpenAI Labs");
   await page.getByLabel("MPN").fill(`E2E-${Date.now()}`);
-  await page.getByRole("spinbutton", { name: /^Bestand$/ }).fill("4");
-  await page.getByRole("button", { name: "Speichern" }).click();
+  await page.getByRole("spinbutton", { name: /^(Bestand|Stock)\b/ }).fill("4");
+  await page.getByRole("button", { name: /^(Speichern|Save)$/ }).click();
 
   await expect(page).toHaveURL(/\/items\/.+/);
   await expect(page.getByRole("heading", { level: 1, name: itemName })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Audit History" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(Audit-Historie|Audit History)$/ })).toBeVisible();
   await expect(page.getByText("Item angelegt")).toBeVisible();
 
   await page.goto("/admin/audit");
-  await page.getByPlaceholder("Suche nach Aktion, User, Item oder ID").fill(itemName);
+  await page.getByPlaceholder(/^(Suche nach Aktion, User, Item oder ID|Search action, user, item, or ID)$/).fill(itemName);
   await expect(page.getByText("Item angelegt")).toBeVisible();
 });
 
