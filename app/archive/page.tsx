@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { fileHref } from "@/lib/file-href";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
 
@@ -21,6 +22,9 @@ type Item = {
 };
 
 export default function ArchivePage() {
+  const { language } = useAppLanguage();
+  const locale = language === "en" ? "en-US" : "de-DE";
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +52,7 @@ export default function ArchivePage() {
 
   async function applyArchiveAction(action: "restore" | "trash") {
     if (!selected.length) {
-      setFeedback("Bitte zuerst mindestens ein Item auswaehlen.");
+      setFeedback(tr("Bitte zuerst mindestens ein Item auswaehlen.", "Please select at least one item first."));
       return;
     }
 
@@ -66,7 +70,7 @@ export default function ArchivePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setFeedback(data?.error || "Die Aktion konnte nicht ausgefuehrt werden.");
+      setFeedback(data?.error || tr("Die Aktion konnte nicht ausgefuehrt werden.", "The action could not be completed."));
       setWorking("");
       return;
     }
@@ -91,31 +95,33 @@ export default function ArchivePage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Archiv</h1>
-        <p className="text-sm text-workshop-700">Geparkte Items bleiben erhalten, erscheinen aber nicht in den aktiven Listen. Beim Loeschen landen sie fuer {TRASH_RETENTION_DAYS} Tage im Papierkorb.</p>
+        <h1 className="text-2xl font-semibold">{tr("Archiv", "Archive")}</h1>
+        <p className="text-sm text-workshop-700">{tr(`Geparkte Items bleiben erhalten, erscheinen aber nicht in den aktiven Listen. Beim Loeschen landen sie fuer ${TRASH_RETENTION_DAYS} Tage im Papierkorb.`, `Archived items stay preserved but no longer appear in active lists. When deleted, they move to trash for ${TRASH_RETENTION_DAYS} days.`)}</p>
       </div>
 
       {selected.length > 0 && (
         <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] px-3 py-2 shadow-sm">
           <div className="flex items-center gap-2 overflow-x-auto">
-            <span className="whitespace-nowrap text-sm font-medium">{selected.length} ausgewaehlt</span>
+            <span className="whitespace-nowrap text-sm font-medium">
+              {selected.length} {tr("ausgewaehlt", "selected")}
+            </span>
             {!allVisibleSelected && items.length > 1 && (
               <button className="btn-secondary h-8 shrink-0 px-2.5 py-1 text-sm" onClick={() => toggleAllVisible(true)}>
-                Alle sichtbar
+                {tr("Alle sichtbar", "Select visible")}
               </button>
             )}
             <button className="btn h-8 shrink-0 px-2.5 py-1 text-sm" onClick={() => applyArchiveAction("restore")} disabled={working !== ""}>
-              {working === "restore" ? "Stellt wieder her..." : "Wiederherstellen"}
+              {working === "restore" ? tr("Stellt wieder her...", "Restoring...") : tr("Wiederherstellen", "Restore")}
             </button>
             <button
               className="theme-status-danger h-8 shrink-0 rounded-lg border border-transparent px-2.5 py-1 text-sm font-medium"
               onClick={() => applyArchiveAction("trash")}
               disabled={working !== ""}
             >
-              {working === "trash" ? "Verschiebt..." : "In Papierkorb"}
+              {working === "trash" ? tr("Verschiebt...", "Moving...") : tr("In Papierkorb", "Move to trash")}
             </button>
             <button className="btn-secondary h-8 shrink-0 px-2.5 py-1 text-sm" onClick={() => setSelected([])}>
-              Abwaehlen
+              {tr("Abwaehlen", "Clear selection")}
             </button>
           </div>
           {feedback && <p className="mt-2 text-sm text-red-700">{feedback}</p>}
@@ -125,11 +131,11 @@ export default function ArchivePage() {
       <div className="space-y-3 md:hidden">
         {loading ? (
           <div className="card">
-            <p>Lade...</p>
+            <p>{tr("Lade...", "Loading...")}</p>
           </div>
         ) : items.length === 0 ? (
           <div className="card">
-            <p className="text-sm text-workshop-700">Keine archivierten Items vorhanden.</p>
+            <p className="text-sm text-workshop-700">{tr("Keine archivierten Items vorhanden.", "No archived items found.")}</p>
           </div>
         ) : (
           items.map((item) => (
@@ -161,7 +167,7 @@ export default function ArchivePage() {
                   <p className="truncate text-xs text-workshop-700">
                     {item.category.name} · {item.storageLocation.name}
                   </p>
-                  <p className="text-xs text-workshop-700">Zuletzt geaendert {new Date(item.updatedAt).toLocaleDateString("de-DE")}</p>
+                  <p className="text-xs text-workshop-700">{tr("Zuletzt geaendert", "Last updated")} {new Date(item.updatedAt).toLocaleDateString(locale)}</p>
                 </div>
               </div>
             </article>
@@ -172,11 +178,11 @@ export default function ArchivePage() {
       <div className="hidden md:block">
         {loading ? (
           <div className="card">
-            <p>Lade...</p>
+            <p>{tr("Lade...", "Loading...")}</p>
           </div>
         ) : items.length === 0 ? (
           <div className="card">
-            <p className="text-sm text-workshop-700">Keine archivierten Items vorhanden.</p>
+            <p className="text-sm text-workshop-700">{tr("Keine archivierten Items vorhanden.", "No archived items found.")}</p>
           </div>
         ) : (
           <div className="card overflow-x-auto">
@@ -188,15 +194,15 @@ export default function ArchivePage() {
                       type="checkbox"
                       checked={allVisibleSelected}
                       onChange={(e) => toggleAllVisible(e.target.checked)}
-                      aria-label="Alle sichtbaren Archiv-Items auswaehlen"
+                      aria-label={tr("Alle sichtbaren Archiv-Items auswaehlen", "Select all visible archived items")}
                     />
                   </th>
-                  <th className="px-2 py-2">Bild</th>
-                  <th className="px-2 py-2">Code</th>
-                  <th className="px-2 py-2">Name</th>
-                  <th className="px-2 py-2">Kategorie</th>
-                  <th className="px-2 py-2">Ort</th>
-                  <th className="px-2 py-2">Stand</th>
+                  <th className="px-2 py-2">{tr("Bild", "Image")}</th>
+                  <th className="px-2 py-2">{tr("Code", "Code")}</th>
+                  <th className="px-2 py-2">{tr("Name", "Name")}</th>
+                  <th className="px-2 py-2">{tr("Kategorie", "Category")}</th>
+                  <th className="px-2 py-2">{tr("Ort", "Location")}</th>
+                  <th className="px-2 py-2">{tr("Stand", "Updated")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -231,7 +237,7 @@ export default function ArchivePage() {
                     <td className="px-2 py-2">{item.name}</td>
                     <td className="px-2 py-2">{item.category.name}</td>
                     <td className="px-2 py-2">{item.storageLocation.name}</td>
-                    <td className="px-2 py-2">{new Date(item.updatedAt).toLocaleDateString("de-DE")}</td>
+                    <td className="px-2 py-2">{new Date(item.updatedAt).toLocaleDateString(locale)}</td>
                   </tr>
                 ))}
               </tbody>

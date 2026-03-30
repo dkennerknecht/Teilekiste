@@ -20,6 +20,7 @@ import {
   Plus,
   RotateCcw
 } from "lucide-react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { ItemImageGallery } from "@/components/item-image-gallery";
 import { ItemAuditSection } from "@/components/item-audit-section";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
@@ -38,16 +39,13 @@ type TransferFormState = {
   note: string;
 };
 
-const movementReasonOptions = [
-  { value: "PURCHASE", label: "Einkauf" },
-  { value: "CONSUMPTION", label: "Verbrauch" },
-  { value: "CORRECTION", label: "Korrektur" },
-  { value: "INVENTORY", label: "Inventur" },
-  { value: "RESERVATION", label: "Reservierung" }
-] as const;
-
-function getMovementReasonLabel(reason: string) {
-  return movementReasonOptions.find((entry) => entry.value === reason)?.label || reason;
+function getMovementReasonLabel(reason: string, tr: (de: string, en: string) => string) {
+  if (reason === "PURCHASE") return tr("Einkauf", "Purchase");
+  if (reason === "CONSUMPTION") return tr("Verbrauch", "Consumption");
+  if (reason === "CORRECTION") return tr("Korrektur", "Correction");
+  if (reason === "INVENTORY") return tr("Inventur", "Inventory");
+  if (reason === "RESERVATION") return tr("Reservierung", "Reservation");
+  return reason;
 }
 
 function buildItemFormState(data: any) {
@@ -86,6 +84,9 @@ function formatStoragePlace(data: {
 
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { language } = useAppLanguage();
+  const locale = language === "en" ? "en-US" : "de-DE";
+  const tr = useCallback((de: string, en: string) => (language === "en" ? en : de), [language]);
   const [item, setItem] = useState<any>(null);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState<any>(null);
@@ -166,7 +167,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     const movements = (item.movements || []).map((m: any) => ({
       id: `m-${m.id}`,
       createdAt: m.createdAt,
-      text: `${m.delta > 0 ? `+${formatDisplayQuantity(item.unit, m.delta)}` : formatDisplayQuantity(item.unit, m.delta)} (${getMovementReasonLabel(m.reason)}) ${m.note || ""}`.trim()
+      text: `${m.delta > 0 ? `+${formatDisplayQuantity(item.unit, m.delta)}` : formatDisplayQuantity(item.unit, m.delta)} (${getMovementReasonLabel(m.reason, tr)}) ${m.note || ""}`.trim()
     }));
     const reservationCreateIds = new Set(
       (item.reservationHistoryEntries || [])
@@ -183,12 +184,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       .map((reservation: any) => ({
         id: `r-${reservation.id}`,
         createdAt: reservation.createdAt,
-        text: `Reservierung: ${formatDisplayQuantity(item.unit, reservation.reservedQty)} fuer ${reservation.reservedFor}`
+        text: tr(`Reservierung: ${formatDisplayQuantity(item.unit, reservation.reservedQty)} fuer ${reservation.reservedFor}`, `Reservation: ${formatDisplayQuantity(item.unit, reservation.reservedQty)} for ${reservation.reservedFor}`)
       }));
     return [...movements, ...reservationHistoryEntries, ...legacyReservations].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [item]);
+  }, [item, tr]);
 
   const availableShelves = useMemo(() => {
     const currentLocationId = form?.storageLocationId || "";
@@ -219,7 +220,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     [item]
   );
 
-  if (!item || !form) return <p>Lade...</p>;
+  if (!item || !form) return <p>{tr("Lade...", "Loading...")}</p>;
 
   const owner = item.movements?.[0]?.user?.name || item.movements?.[0]?.user?.email || "-";
   const displayName = String((editMode ? form.name : item.name) || item.name || "Item").trim() || "Item";
@@ -239,6 +240,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   ]
     .filter(Boolean)
     .join(" / ");
+  const movementReasonOptions = [
+    { value: "PURCHASE", label: tr("Einkauf", "Purchase") },
+    { value: "CONSUMPTION", label: tr("Verbrauch", "Consumption") },
+    { value: "CORRECTION", label: tr("Korrektur", "Correction") },
+    { value: "INVENTORY", label: tr("Inventur", "Inventory") },
+    { value: "RESERVATION", label: tr("Reservierung", "Reservation") }
+  ];
 
   async function quickStockAdjust(deltaValue: number) {
     await fetch(`/api/items/${item.id}/movements`, {
@@ -290,7 +298,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setArchiveError(data?.error || "Der Archiv-Status konnte nicht aktualisiert werden.");
+      setArchiveError(data?.error || tr("Der Archiv-Status konnte nicht aktualisiert werden.", "Archive status could not be updated."));
       setArchiveBusy(false);
       return;
     }
@@ -302,7 +310,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
   async function deleteItem() {
     if (deleteBusy) return;
-    const confirmed = window.confirm("Item in den Papierkorb verschieben?");
+    const confirmed = window.confirm(tr("Item in den Papierkorb verschieben?", "Move item to trash?"));
     if (!confirmed) return;
 
     setDeleteBusy(true);
@@ -317,7 +325,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setDeleteError(data?.error || "Loeschen fehlgeschlagen.");
+        setDeleteError(data?.error || tr("Loeschen fehlgeschlagen.", "Delete failed."));
         setDeleteBusy(false);
         return;
       }
@@ -325,14 +333,14 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       router.push("/");
       router.refresh();
     } catch {
-      setDeleteError("Loeschen fehlgeschlagen.");
+      setDeleteError(tr("Loeschen fehlgeschlagen.", "Delete failed."));
       setDeleteBusy(false);
     }
   }
 
   async function submitTransfer() {
     if (!transferForm.storageLocationId) {
-      setTransferError("Bitte einen Ziel-Lagerort auswaehlen.");
+      setTransferError(tr("Bitte einen Ziel-Lagerort auswaehlen.", "Please choose a target storage location."));
       return;
     }
 
@@ -353,18 +361,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setTransferError(data?.error || "Umlagerung fehlgeschlagen.");
+        setTransferError(data?.error || tr("Umlagerung fehlgeschlagen.", "Transfer failed."));
         return;
       }
 
       if (!data?.transferred) {
-        setTransferError("Item befindet sich bereits an diesem Platz.");
+        setTransferError(tr("Item befindet sich bereits an diesem Platz.", "Item is already at this location."));
         return;
       }
 
       await load();
     } catch {
-      setTransferError("Umlagerung fehlgeschlagen.");
+      setTransferError(tr("Umlagerung fehlgeschlagen.", "Transfer failed."));
     } finally {
       setTransferBusy(false);
     }
@@ -377,13 +385,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           <button
             className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-workshop-300 bg-[var(--app-surface)] text-workshop-800 shadow-sm transition-colors hover:bg-[var(--app-surface-alt)] sm:h-14 sm:w-14"
             onClick={() => window.history.back()}
-            aria-label="Zurueck"
+            aria-label={tr("Zurueck", "Back")}
           >
             <ArrowLeft size={30} />
           </button>
 
           <div className="min-w-0">
-            <p className="theme-muted text-sm">Inventar / {item.category?.name || "Item"}</p>
+            <p className="theme-muted text-sm">{tr("Inventar", "Inventory")} / {item.category?.name || tr("Item", "Item")}</p>
             <h1 className="mt-1 break-words text-2xl font-semibold leading-tight text-[var(--app-text)] sm:text-4xl">
               {displayName}
             </h1>
@@ -391,11 +399,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               <span className="rounded-full border border-workshop-300 bg-[var(--app-surface)] px-3 py-1 text-sm font-medium text-[var(--app-text)]">
                 {item.labelCode}
               </span>
-              <span className="theme-muted text-sm">{editMode ? "Item bearbeiten" : "Item Details"}</span>
+              <span className="theme-muted text-sm">{editMode ? tr("Item bearbeiten", "Edit item") : tr("Item-Details", "Item details")}</span>
             </div>
             {item.isArchived && (
               <span className="theme-status-warning mt-2 inline-flex rounded-full border border-transparent px-3 py-1 text-xs font-medium">
-                Archiviert
+                {tr("Archiviert", "Archived")}
               </span>
             )}
           </div>
@@ -411,7 +419,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     setForm(buildItemFormState(item));
                   }}
                 >
-                  <X size={16} /> Abbrechen
+                  <X size={16} /> {tr("Abbrechen", "Cancel")}
                 </button>
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--app-primary)] px-4 py-2 text-sm font-medium text-[var(--app-on-primary)]"
@@ -450,15 +458,15 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         return;
                       }
                       const data = await res.json().catch(() => null);
-                      setSaveError(data?.error || "Speichern fehlgeschlagen.");
+                      setSaveError(data?.error || tr("Speichern fehlgeschlagen.", "Save failed."));
                     } catch {
-                      setSaveError("Speichern fehlgeschlagen.");
+                      setSaveError(tr("Speichern fehlgeschlagen.", "Save failed."));
                     } finally {
                       setSaveBusy(false);
                     }
                   }}
                 >
-                  <Save size={16} /> {saveBusy ? "Speichert..." : "Speichern"}
+                  <Save size={16} /> {saveBusy ? tr("Speichert...", "Saving...") : tr("Speichern", "Save")}
                 </button>
               </>
             ) : (
@@ -467,8 +475,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-workshop-300 bg-[var(--app-surface)] text-[var(--app-text)] sm:h-12 sm:w-12"
                   onClick={() => setArchiveState(!item.isArchived)}
                   disabled={archiveBusy || deleteBusy}
-                  aria-label={item.isArchived ? "Wiederherstellen" : "Archivieren"}
-                  title={item.isArchived ? "Wiederherstellen" : "Archivieren"}
+                  aria-label={item.isArchived ? tr("Wiederherstellen", "Restore") : tr("Archivieren", "Archive")}
+                  title={item.isArchived ? tr("Wiederherstellen", "Restore") : tr("Archivieren", "Archive")}
                 >
                   {item.isArchived ? <RotateCcw size={18} /> : <Archive size={18} />}
                 </button>
@@ -476,8 +484,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--app-primary)] text-[var(--app-on-primary)] sm:h-12 sm:w-12"
                   onClick={() => setEditMode(true)}
                   disabled={deleteBusy}
-                  aria-label="Bearbeiten"
-                  title="Bearbeiten"
+                  aria-label={tr("Bearbeiten", "Edit")}
+                  title={tr("Bearbeiten", "Edit")}
                 >
                   <PencilLine size={18} />
                 </button>
@@ -485,8 +493,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   className="theme-status-danger inline-flex h-11 w-11 items-center justify-center rounded-xl border border-transparent sm:h-12 sm:w-12"
                   onClick={deleteItem}
                   disabled={deleteBusy}
-                  aria-label="Loeschen"
-                  title="Loeschen"
+                  aria-label={tr("Loeschen", "Delete")}
+                  title={tr("Loeschen", "Delete")}
                 >
                   <Trash2 size={18} />
                 </button>
@@ -514,14 +522,14 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
         <section className="space-y-3">
           <div className="theme-muted grid grid-cols-1 gap-2 rounded-xl border border-workshop-200 bg-workshop-50 p-3 text-sm sm:text-[16px] md:grid-cols-3">
-            <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> Erstellt: {new Date(item.createdAt).toLocaleDateString("de-DE")}</div>
-            <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> Zuletzt bearbeitet: {new Date(item.updatedAt).toLocaleDateString("de-DE")}</div>
-            <div className="inline-flex items-center gap-2"><User size={15} /> von {owner}</div>
+            <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> {tr("Erstellt", "Created")}: {new Date(item.createdAt).toLocaleDateString(locale)}</div>
+            <div className="inline-flex items-center gap-2"><CalendarDays size={15} /> {tr("Zuletzt bearbeitet", "Last edited")}: {new Date(item.updatedAt).toLocaleDateString(locale)}</div>
+            <div className="inline-flex items-center gap-2"><User size={15} /> {tr("von", "by")} {owner}</div>
           </div>
 
           <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
             <div className="mb-4 border-b border-workshop-200 pb-4">
-              <h2 className="inline-flex items-center gap-2 text-[26px] font-semibold text-[var(--app-text)] sm:text-[34px]"><FolderOpen size={18} /> Details</h2>
+              <h2 className="inline-flex items-center gap-2 text-[26px] font-semibold text-[var(--app-text)] sm:text-[34px]"><FolderOpen size={18} /> {tr("Details", "Details")}</h2>
               <p className="mt-2 break-words text-xl font-semibold text-[var(--app-text)] sm:text-2xl">{displayName}</p>
               <p className="theme-muted mt-1 text-sm font-mono">{item.labelCode}</p>
             </div>
@@ -529,7 +537,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
             <div className="space-y-4 text-[var(--app-text)]">
               {editMode && (
               <div>
-                <p className="theme-muted mb-1 text-[18px] font-medium">Name</p>
+                <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Name", "Name")}</p>
                 <input className="input text-lg" value={form.name} onChange={(e) => setForm((v: any) => ({ ...v, name: e.target.value }))} />
               </div>
               )}
@@ -539,7 +547,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 {editMode ? (
                   <div className="space-y-2">
                     <p className="text-xl font-mono">{item.labelCode}</p>
-                    <p className="theme-muted text-sm">Wird automatisch neu vergeben, wenn Kategorie oder Type geaendert werden.</p>
+                    <p className="theme-muted text-sm">{tr("Wird automatisch neu vergeben, wenn Kategorie oder Type geaendert werden.", "It will be reassigned automatically when category or type changes.")}</p>
                   </div>
                 ) : (
                   <p className="text-xl font-mono">{item.labelCode}</p>
@@ -549,7 +557,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               {editMode && (
                 <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
                   <div>
-                    <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Hersteller", "Manufacturer")}</p>
                     <input className="input" value={form.manufacturer} onChange={(e) => setForm((v: any) => ({ ...v, manufacturer: e.target.value }))} />
                   </div>
                   <div>
@@ -561,7 +569,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
               {(editMode || hasDescription) && (
                 <div>
-                  <p className="theme-muted mb-1 text-[18px] font-medium">Beschreibung</p>
+                  <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Beschreibung", "Description")}</p>
                   {editMode ? (
                     <textarea className="input min-h-28" value={form.description} onChange={(e) => setForm((v: any) => ({ ...v, description: e.target.value }))} />
                   ) : (
@@ -572,7 +580,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
               <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-2" : "md:grid-cols-2"}`}>
                 <div>
-                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><Layers size={15} /> Kategorie</p>
+                  <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><Layers size={15} /> {tr("Kategorie", "Category")}</p>
                   {editMode ? (
                     <select className="input" value={form.categoryId} onChange={(e) => setForm((v: any) => ({ ...v, categoryId: e.target.value }))}>
                       {categories.map((c) => (
@@ -586,9 +594,9 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
                 {editMode && (
                   <div>
-                    <p className="theme-muted mb-1 text-[18px] font-medium">Type</p>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Type", "Type")}</p>
                     <select className="input" value={form.typeId} onChange={(e) => setForm((v: any) => ({ ...v, typeId: e.target.value }))}>
-                      <option value="">Type (Label)</option>
+                      <option value="">{tr("Type (Label)", "Type (Label)")}</option>
                       {types.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.code} - {t.name}
@@ -603,7 +611,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 <div className="grid gap-4 border-t border-workshop-200 pt-4 md:grid-cols-2">
                   {hasManufacturer && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">Hersteller</p>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Hersteller", "Manufacturer")}</p>
                       <p className="text-lg font-medium text-[var(--app-text)]">{item.manufacturer}</p>
                     </div>
                   )}
@@ -620,7 +628,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               {(editMode || item.storageLocation || hasStorageArea || hasBin) && (
                 <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
                   <div>
-                    <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> Ort</p>
+                    <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> {tr("Ort", "Location")}</p>
                     {editMode ? (
                       <select
                         className="input"
@@ -640,10 +648,10 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
                   {(editMode || hasStorageArea) && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">Regal / Bereich</p>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Regal / Bereich", "Shelf / area")}</p>
                       {editMode ? (
                         <select className="input" value={form.storageArea} onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}>
-                          <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+                          <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
                           {availableShelves.map((shelf) => (
                             <option key={shelf.id} value={shelf.name}>
                               {shelf.name}
@@ -657,7 +665,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   )}
                   {(editMode || hasBin) && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">Fach / Bin</p>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Fach / Bin", "Bin")}</p>
                       {editMode ? (
                         <input className="input" value={form.bin} onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))} />
                       ) : (
@@ -669,13 +677,13 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               )}
               {editMode && (
                 <p className="theme-muted border-t border-workshop-200 pt-4 text-sm">
-                  Standortwechsel werden als Umlagerung protokolliert. Fuer schnelle Lagerwechsel ist der Transfer-Block unterhalb der Details der bevorzugte Weg.
+                  {tr("Standortwechsel werden als Umlagerung protokolliert. Fuer schnelle Lagerwechsel ist der Transfer-Block unterhalb der Details der bevorzugte Weg.", "Location changes are logged as transfers. For quick relocations, use the transfer block below the details.")}
                 </p>
               )}
 
               {(editMode || hasTags) && (
                 <div className="border-t border-workshop-200 pt-4">
-                  <p className="theme-muted mb-2 inline-flex items-center gap-2 text-[18px] font-medium"><Tag size={15} /> Tags</p>
+                  <p className="theme-muted mb-2 inline-flex items-center gap-2 text-[18px] font-medium"><Tag size={15} /> {tr("Tags", "Tags")}</p>
                   {editMode ? (
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-2">
@@ -704,12 +712,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                         <input
                           className="input w-full sm:max-w-xs"
-                          placeholder="Neuen Tag erstellen"
+                          placeholder={tr("Neuen Tag erstellen", "Create new tag")}
                           value={newTagName}
                           onChange={(e) => setNewTagName(e.target.value)}
                         />
                         <button type="button" className="btn-secondary w-full sm:w-auto" onClick={createTagInEdit} disabled={creatingTag || !newTagName.trim()}>
-                          {creatingTag ? "Anlegen..." : "Tag anlegen"}
+                          {creatingTag ? tr("Anlegen...", "Creating...") : tr("Tag anlegen", "Create tag")}
                         </button>
                       </div>
                     </div>
@@ -727,7 +735,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
               {(editMode || hasCustomFieldValues) && (
                 <div className="border-t border-workshop-200 pt-4">
-                  <p className="theme-muted mb-2 text-[18px] font-medium">Custom Fields</p>
+                  <p className="theme-muted mb-2 text-[18px] font-medium">{tr("Custom Fields", "Custom fields")}</p>
                   {editMode ? (
                     <CustomFieldsEditor
                       fields={customFields}
@@ -766,12 +774,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[var(--app-text)]">
-                <MapPin size={18} /> Umlagerung
+                <MapPin size={18} /> {tr("Umlagerung", "Transfer")}
               </h3>
-              <p className="theme-muted mt-1 text-sm">Volltransfer des gesamten Items ohne Bestandsbuchung.</p>
+              <p className="theme-muted mt-1 text-sm">{tr("Volltransfer des gesamten Items ohne Bestandsbuchung.", "Full transfer of the entire item without stock posting.")}</p>
             </div>
             <span className="rounded-full border border-workshop-200 bg-workshop-50 px-3 py-1 text-sm font-medium text-workshop-800">
-              Aktuell: {currentStoragePlace}
+              {tr("Aktuell", "Current")}: {currentStoragePlace}
             </span>
           </div>
 
@@ -779,7 +787,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">Ziel-Lagerort</span>
+              <span className="text-sm font-medium">{tr("Ziel-Lagerort", "Target storage location")}</span>
               <select
                 className="input"
                 value={transferForm.storageLocationId}
@@ -791,7 +799,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   }))
                 }
               >
-                <option value="">Lagerort waehlen</option>
+                <option value="">{tr("Lagerort waehlen", "Choose storage location")}</option>
                 {locations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.name} ({location.code || "--"})
@@ -801,7 +809,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
             </label>
 
             <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">Ziel-Regal / Bereich</span>
+              <span className="text-sm font-medium">{tr("Ziel-Regal / Bereich", "Target shelf / area")}</span>
               <select
                 className="input"
                 value={transferForm.storageArea}
@@ -810,10 +818,10 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               >
                 <option value="">
                   {!transferForm.storageLocationId
-                    ? "Erst Lagerort waehlen"
+                    ? tr("Erst Lagerort waehlen", "Choose storage location first")
                     : availableTransferShelves.length
-                      ? "Kein Regal"
-                      : "Keine Regale fuer Lagerort"}
+                      ? tr("Kein Regal", "No shelf")
+                      : tr("Keine Regale fuer Lagerort", "No shelves for location")}
                 </option>
                 {availableTransferShelves.map((shelf) => (
                   <option key={shelf.id} value={shelf.name}>
@@ -824,34 +832,34 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
             </label>
 
             <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">Ziel-Fach / Bin</span>
+              <span className="text-sm font-medium">{tr("Ziel-Fach / Bin", "Target bin")}</span>
               <input
                 className="input"
                 value={transferForm.bin}
                 onChange={(e) => setTransferForm((prev) => ({ ...prev, bin: e.target.value }))}
-                placeholder="Leer = Fach entfernen"
+                placeholder={tr("Leer = Fach entfernen", "Empty = clear bin")}
               />
             </label>
           </div>
 
           <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
             <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">Notiz</span>
+              <span className="text-sm font-medium">{tr("Notiz", "Note")}</span>
               <textarea
                 className="input min-h-24"
                 value={transferForm.note}
                 onChange={(e) => setTransferForm((prev) => ({ ...prev, note: e.target.value }))}
-                placeholder="Optional fuer Audit und Nachvollziehbarkeit"
+                placeholder={tr("Optional fuer Audit und Nachvollziehbarkeit", "Optional for audit trail and traceability")}
               />
             </label>
 
             <div className="flex flex-col justify-between gap-3 rounded-xl border border-workshop-200 p-3">
               <div className="text-sm text-workshop-700">
-                <p className="font-medium text-[var(--app-text)]">Ziel</p>
-                <p>{targetStoragePlace || "Noch kein Ziel gewaehlt"}</p>
+                <p className="font-medium text-[var(--app-text)]">{tr("Ziel", "Target")}</p>
+                <p>{targetStoragePlace || tr("Noch kein Ziel gewaehlt", "No target selected yet")}</p>
               </div>
               <button type="button" className="btn w-full" onClick={submitTransfer} disabled={transferBusy}>
-                {transferBusy ? "Speichert..." : "Umlagerung ausfuehren"}
+                {transferBusy ? tr("Speichert...", "Saving...") : tr("Umlagerung ausfuehren", "Run transfer")}
               </button>
             </div>
           </div>
@@ -860,15 +868,15 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
       <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[var(--app-text)]"><Package2 size={18} /> Bestandsverwaltung</h3>
+          <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[var(--app-text)]"><Package2 size={18} /> {tr("Bestandsverwaltung", "Stock management")}</h3>
           <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.isArchived ? "theme-status-warning" : "theme-status-success"}`}>
-            {item.isArchived ? "Archiviert" : "Auf Lager"}
+            {item.isArchived ? tr("Archiviert", "Archived") : tr("Auf Lager", "In stock")}
           </span>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="theme-surface-tonal rounded-xl p-4 text-center">
-            <p className="theme-muted text-sm">Gesamtbestand</p>
+            <p className="theme-muted text-sm">{tr("Gesamtbestand", "Total stock")}</p>
             <div className="mt-2 flex items-center justify-center gap-3">
               <button type="button" className="rounded-lg border border-workshop-300 bg-[var(--app-surface)] p-2" onClick={() => quickStockAdjust(-1)}>
                 <Minus size={14} />
@@ -881,12 +889,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           </div>
 
           <div className="theme-status-warning rounded-xl p-4 text-center">
-            <p className="text-sm">Reserviert</p>
+            <p className="text-sm">{tr("Reserviert", "Reserved")}</p>
             <p className="mt-2 text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.reservedQty)}</p>
           </div>
 
           <div className="theme-status-success rounded-xl p-4 text-center">
-            <p className="text-sm">Verfügbar</p>
+            <p className="text-sm">{tr("Verfuegbar", "Available")}</p>
             <p className="mt-2 text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.availableStock)}</p>
           </div>
         </div>
@@ -894,18 +902,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {editMode ? (
             <label className="block w-full sm:max-w-xs">
-              <p className="theme-muted mb-1 text-lg">Mindestbestand</p>
+              <p className="theme-muted mb-1 text-lg">{tr("Mindestbestand", "Minimum stock")}</p>
               <input
                 className="input"
                 type="number"
                 step={getQuantityStep(item.unit)}
                 value={form.minStock}
                 onChange={(e) => setForm((prev: any) => ({ ...prev, minStock: e.target.value }))}
-                placeholder="leer = kein Mindestbestand"
+                placeholder={tr("leer = kein Mindestbestand", "empty = no minimum stock")}
               />
             </label>
           ) : (
-            <p className="theme-muted text-lg">Mindestbestand: <b>{formatDisplayQuantity(item.unit, item.minStock)}</b></p>
+            <p className="theme-muted text-lg">{tr("Mindestbestand", "Minimum stock")}: <b>{formatDisplayQuantity(item.unit, item.minStock)}</b></p>
           )}
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
             <input
@@ -915,7 +923,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               value={reservedQty}
               onChange={(e) => setReservedQty(Number(e.target.value))}
             />
-            <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Projekt/Person" value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />
+            <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder={tr("Projekt/Person", "Project/person")} value={reservedFor} onChange={(e) => setReservedFor(e.target.value)} />
             <button
               className="btn-secondary w-full sm:w-auto"
               onClick={async () => {
@@ -928,19 +936,19 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 await load();
               }}
             >
-              Reservieren
+              {tr("Reservieren", "Reserve")}
             </button>
           </div>
         </div>
 
         <div className="mt-4 border-t border-workshop-200 pt-3">
-          <p className="theme-muted mb-2 text-lg font-medium">Aktive Reservierungen</p>
+          <p className="theme-muted mb-2 text-lg font-medium">{tr("Aktive Reservierungen", "Active reservations")}</p>
           <ul className="space-y-2">
             {(item.reservations || []).map((r: any) => (
               <li key={r.id} className="flex flex-col gap-3 rounded-xl border border-workshop-200 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="font-medium">{r.reservedFor}</p>
-                  <p className="theme-muted text-sm">{formatDisplayQuantity(item.unit, r.reservedQty)} • {new Date(r.createdAt).toLocaleDateString("de-DE")}</p>
+                  <p className="theme-muted text-sm">{formatDisplayQuantity(item.unit, r.reservedQty)} • {new Date(r.createdAt).toLocaleDateString(locale)}</p>
                 </div>
                 <button
                   type="button"
@@ -954,12 +962,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 </button>
               </li>
             ))}
-            {item.reservations?.length === 0 && <li className="theme-muted text-sm">Keine aktiven Reservierungen</li>}
+            {item.reservations?.length === 0 && <li className="theme-muted text-sm">{tr("Keine aktiven Reservierungen", "No active reservations")}</li>}
           </ul>
         </div>
 
         <div className="mt-4 border-t border-workshop-200 pt-3">
-          <p className="mb-2 text-sm font-semibold">Bestandsbuchung</p>
+          <p className="mb-2 text-sm font-semibold">{tr("Bestandsbuchung", "Stock booking")}</p>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <input
               className="input w-full sm:w-28"
@@ -975,7 +983,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 </option>
               ))}
             </select>
-            <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder="Notiz" value={note} onChange={(e) => setNote(e.target.value)} />
+            <input className="input w-full sm:min-w-[16rem] sm:flex-1" placeholder={tr("Notiz", "Note")} value={note} onChange={(e) => setNote(e.target.value)} />
             <button
               className="btn w-full sm:w-auto"
               onClick={async () => {
@@ -988,18 +996,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 await load();
               }}
             >
-              Buchung erfassen ({getUnitDisplayLabel(item.unit)})
+              {tr("Buchung erfassen", "Record booking")} ({getUnitDisplayLabel(item.unit)})
             </button>
           </div>
         </div>
       </section>
 
       <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
-        <h3 className="mb-3 text-lg font-semibold text-[var(--app-text)]">Historie</h3>
+        <h3 className="mb-3 text-lg font-semibold text-[var(--app-text)]">{tr("Historie", "History")}</h3>
         <ul className="space-y-1 text-sm">
           {history.map((entry) => (
             <li key={entry.id} className="rounded-lg border border-workshop-200 p-2">
-              {new Date(entry.createdAt).toLocaleString("de-DE")}: {entry.text}
+              {new Date(entry.createdAt).toLocaleString(locale)}: {entry.text}
             </li>
           ))}
         </ul>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 
 type AuditRow = {
   id: string;
@@ -15,6 +16,9 @@ type AuditRow = {
 };
 
 export default function AuditPage() {
+  const { language } = useAppLanguage();
+  const locale = language === "en" ? "en-US" : "de-DE";
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -49,26 +53,26 @@ export default function AuditPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Audit History</h1>
+        <h1 className="text-2xl font-semibold">{tr("Audit-Historie", "Audit History")}</h1>
         <Link className="btn-secondary" href="/admin">
-          Zurück zu Admin
+          {tr("Zurueck zu Admin", "Back to admin")}
         </Link>
       </div>
 
       <div className="card flex flex-wrap gap-2">
         <input
           className="input min-w-64"
-          placeholder="Suche nach Aktion, User, Item oder ID"
+          placeholder={tr("Suche nach Aktion, User, Item oder ID", "Search by action, user, item, or ID")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
         <select className="input" value={entity} onChange={(event) => setEntity(event.target.value)}>
-          <option value="">Alle Entities</option>
+          <option value="">{tr("Alle Entities", "All entities")}</option>
           <option value="Item">Item</option>
         </select>
         <input
           className="input"
-          placeholder="Action-Filter, z.B. ITEM_UPDATE"
+          placeholder={tr("Action-Filter, z.B. ITEM_UPDATE", "Action filter, e.g. ITEM_UPDATE")}
           value={action}
           onChange={(event) => setAction(event.target.value)}
         />
@@ -76,18 +80,18 @@ export default function AuditPage() {
 
       <div className="card space-y-2">
         {loading ? (
-          <p>Lade...</p>
+          <p>{tr("Lade...", "Loading...")}</p>
         ) : rows.length === 0 ? (
-          <p className="text-sm text-workshop-700">Keine Audit-Einträge gefunden.</p>
+          <p className="text-sm text-workshop-700">{tr("Keine Audit-Eintraege gefunden.", "No audit entries found.")}</p>
         ) : (
           rows.map((row) => (
             <div key={row.id} className="rounded border border-workshop-200 p-3 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-medium">{row.summary}</p>
-                <span className="text-workshop-700">{new Date(row.createdAt).toLocaleString("de-DE")}</span>
+                <span className="text-workshop-700">{new Date(row.createdAt).toLocaleString(locale)}</span>
               </div>
               <p className="mt-1 text-workshop-700">
-                {row.action} • {row.entity} • {row.user?.name || row.user?.email || "System"}
+                {row.action} • {row.entity} • {row.user?.name || row.user?.email || tr("System", "System")}
               </p>
               {row.item && (
                 <p className="mt-1">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
+import { useAppLanguage } from "@/components/app-language-provider";
 
 function applyTheme(theme: "light" | "dark") {
   const root = document.documentElement;
@@ -12,6 +13,8 @@ function applyTheme(theme: "light" | "dark") {
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
@@ -30,8 +33,8 @@ export function ThemeToggle() {
         setTheme(next);
         applyTheme(next);
       }}
-      aria-label="Light/Dark Mode umschalten"
-      title="Light/Dark Mode umschalten"
+      aria-label={tr("Light/Dark-Modus umschalten", "Toggle light/dark mode")}
+      title={tr("Light/Dark-Modus umschalten", "Toggle light/dark mode")}
     >
       {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
     </button>

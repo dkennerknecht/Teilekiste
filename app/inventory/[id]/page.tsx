@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { formatDisplayQuantity, getQuantityStep } from "@/lib/quantity";
 
 type SessionDetailRow = {
@@ -74,15 +75,15 @@ type SessionDetail = {
   rows: SessionDetailRow[];
 };
 
-function formatDateTime(value: string | null | undefined) {
+function formatDateTime(value: string | null | undefined, locale: string) {
   if (!value) return "-";
-  return new Date(value).toLocaleString("de-DE");
+  return new Date(value).toLocaleString(locale);
 }
 
-function statusLabel(status: string) {
-  if (status === "OPEN") return "Offen";
-  if (status === "FINALIZED") return "Finalisiert";
-  if (status === "CANCELLED") return "Abgebrochen";
+function statusLabel(status: string, tr: (de: string, en: string) => string) {
+  if (status === "OPEN") return tr("Offen", "Open");
+  if (status === "FINALIZED") return tr("Finalisiert", "Finalized");
+  if (status === "CANCELLED") return tr("Abgebrochen", "Cancelled");
   return status;
 }
 
@@ -91,6 +92,9 @@ function getStoragePlaceLabel(storageArea?: string | null, bin?: string | null) 
 }
 
 export default function InventorySessionDetailPage({ params }: { params: { id: string } }) {
+  const { language } = useAppLanguage();
+  const locale = language === "en" ? "en-US" : "de-DE";
+  const tr = useCallback((de: string, en: string) => (language === "en" ? en : de), [language]);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -113,7 +117,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const res = await fetch(`/api/inventory/sessions/${params.id}`, { cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "Inventur-Session konnte nicht geladen werden.");
+        throw new Error(data?.error || tr("Inventur-Session konnte nicht geladen werden.", "Inventory session could not be loaded."));
       }
       setDetail(data);
       setDraftCounts(
@@ -124,11 +128,11 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       );
       setDirtyItemIds([]);
     } catch (loadError) {
-      setError((loadError as Error).message || "Inventur-Session konnte nicht geladen werden.");
+      setError((loadError as Error).message || tr("Inventur-Session konnte nicht geladen werden.", "Inventory session could not be loaded."));
     } finally {
       setLoading(false);
     }
-  }, [params.id]);
+  }, [params.id, tr]);
 
   useEffect(() => {
     load();
@@ -186,11 +190,15 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || "Zaehlstaende konnten nicht gespeichert werden.");
+        setError(data?.error || tr("Zaehlstaende konnten nicht gespeichert werden.", "Counts could not be saved."));
         return false;
       }
 
-      setFeedback(`${payload.length} Position${payload.length === 1 ? "" : "en"} gespeichert.`);
+      setFeedback(
+        language === "en"
+          ? `${payload.length} row${payload.length === 1 ? "" : "s"} saved.`
+          : `${payload.length} Position${payload.length === 1 ? "" : "en"} gespeichert.`
+      );
       await load();
       return true;
     } finally {
@@ -205,7 +213,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       if (!saved) return;
     }
 
-    const confirmed = window.confirm("Inventur-Session jetzt finalisieren und gezaehlte Differenzen buchen?");
+    const confirmed = window.confirm(tr("Inventur-Session jetzt finalisieren und gezaehlte Differenzen buchen?", "Finalize the inventory session now and post counted differences?"));
     if (!confirmed) return;
 
     setFinalizing(true);
@@ -219,11 +227,11 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || "Inventur-Session konnte nicht finalisiert werden.");
+        setError(data?.error || tr("Inventur-Session konnte nicht finalisiert werden.", "Inventory session could not be finalized."));
         return;
       }
 
-      setFeedback("Inventur-Session finalisiert.");
+      setFeedback(tr("Inventur-Session finalisiert.", "Inventory session finalized."));
       await load();
     } finally {
       setFinalizing(false);
@@ -233,7 +241,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
   async function cancelSession() {
     if (!detail) return;
 
-    const confirmed = window.confirm("Inventur-Session ohne Bestandsaenderungen abbrechen?");
+    const confirmed = window.confirm(tr("Inventur-Session ohne Bestandsaenderungen abbrechen?", "Cancel the inventory session without stock changes?"));
     if (!confirmed) return;
 
     setCancelling(true);
@@ -247,11 +255,11 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || "Inventur-Session konnte nicht abgebrochen werden.");
+        setError(data?.error || tr("Inventur-Session konnte nicht abgebrochen werden.", "Inventory session could not be cancelled."));
         return;
       }
 
-      setFeedback("Inventur-Session abgebrochen.");
+      setFeedback(tr("Inventur-Session abgebrochen.", "Inventory session cancelled."));
       await load();
     } finally {
       setCancelling(false);
@@ -264,7 +272,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
 
     const row = detail.rows.find((entry) => entry.labelCode.trim().toLowerCase() === normalizedCode);
     if (!row) {
-      setError("Kein passender Label-Code in dieser Inventur-Session gefunden.");
+      setError(tr("Kein passender Label-Code in dieser Inventur-Session gefunden.", "No matching label code found in this inventory session."));
       return;
     }
 
@@ -277,17 +285,17 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
   }
 
   if (loading && !detail) {
-    return <p>Lade...</p>;
+    return <p>{tr("Lade...", "Loading...")}</p>;
   }
 
   if (!detail) {
     return (
       <div className="space-y-4">
         <Link className="btn-secondary inline-flex" href="/inventory">
-          Zurueck zur Inventur-Uebersicht
+          {tr("Zurueck zur Inventur-Uebersicht", "Back to inventory overview")}
         </Link>
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error || "Inventur-Session konnte nicht geladen werden."}
+          {error || tr("Inventur-Session konnte nicht geladen werden.", "Inventory session could not be loaded.")}
         </div>
       </div>
     );
@@ -298,20 +306,20 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <Link className="btn-secondary inline-flex" href="/inventory">
-            Zurueck zur Inventur-Uebersicht
+            {tr("Zurueck zur Inventur-Uebersicht", "Back to inventory overview")}
           </Link>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-workshop-600">{statusLabel(detail.status)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-workshop-600">{statusLabel(detail.status, tr)}</p>
             <h1 className="text-2xl font-semibold">{detail.title || detail.scopeLabel}</h1>
             <p className="text-sm text-workshop-700">{detail.scopeLabel}</p>
           </div>
         </div>
         <div className="grid gap-2 text-sm text-workshop-700 md:text-right">
-          <p>Owner: {detail.ownerUser.name}</p>
-          <p>Erstellt: {formatDateTime(detail.createdAt)}</p>
-          <p>Zuletzt aktualisiert: {formatDateTime(detail.updatedAt)}</p>
-          {detail.status === "FINALIZED" ? <p>Finalisiert: {formatDateTime(detail.finalizedAt)}</p> : null}
-          {detail.status === "CANCELLED" ? <p>Abgebrochen: {formatDateTime(detail.cancelledAt)}</p> : null}
+          <p>{tr("Verantwortlich", "Owner")}: {detail.ownerUser.name}</p>
+          <p>{tr("Erstellt", "Created")}: {formatDateTime(detail.createdAt, locale)}</p>
+          <p>{tr("Zuletzt aktualisiert", "Last updated")}: {formatDateTime(detail.updatedAt, locale)}</p>
+          {detail.status === "FINALIZED" ? <p>{tr("Finalisiert", "Finalized")}: {formatDateTime(detail.finalizedAt, locale)}</p> : null}
+          {detail.status === "CANCELLED" ? <p>{tr("Abgebrochen", "Cancelled")}: {formatDateTime(detail.cancelledAt, locale)}</p> : null}
         </div>
       </div>
 
@@ -321,67 +329,67 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       <div className="grid gap-4 lg:grid-cols-[1.1fr,0.9fr]">
         <div className="card space-y-4">
           <div>
-            <h2 className="text-lg font-semibold">Session-Status</h2>
+            <h2 className="text-lg font-semibold">{tr("Session-Status", "Session status")}</h2>
             <p className="text-sm text-workshop-700">
-              Nicht gezaehlte Positionen bleiben unveraendert. Finalize bucht nur gespeicherte Zaehleintraege.
+              {tr("Nicht gezaehlte Positionen bleiben unveraendert. Finalize bucht nur gespeicherte Zaehleintraege.", "Uncounted rows remain unchanged. Finalize only posts saved count entries.")}
             </p>
           </div>
           <div className="grid gap-3 text-sm md:grid-cols-3">
             <div className="rounded-xl border border-workshop-200 px-3 py-2">
-              <p className="text-workshop-700">Positionen</p>
+              <p className="text-workshop-700">{tr("Positionen", "Rows")}</p>
               <p className="text-xl font-semibold">{detail.summary.totalRows}</p>
             </div>
             <div className="rounded-xl border border-workshop-200 px-3 py-2">
-              <p className="text-workshop-700">Gezaehlt</p>
+              <p className="text-workshop-700">{tr("Gezaehlt", "Counted")}</p>
               <p className="text-xl font-semibold">{detail.summary.countedRows}</p>
             </div>
             <div className="rounded-xl border border-workshop-200 px-3 py-2">
-              <p className="text-workshop-700">Offen</p>
+              <p className="text-workshop-700">{tr("Offen", "Open")}</p>
               <p className="text-xl font-semibold">{detail.summary.remainingRows}</p>
             </div>
             <div className="rounded-xl border border-workshop-200 px-3 py-2">
-              <p className="text-workshop-700">Differenzen</p>
+              <p className="text-workshop-700">{tr("Differenzen", "Differences")}</p>
               <p className="text-xl font-semibold">{detail.summary.deltaRows}</p>
             </div>
             <div className="rounded-xl border border-workshop-200 px-3 py-2">
-              <p className="text-workshop-700">Warnungen</p>
+              <p className="text-workshop-700">{tr("Warnungen", "Warnings")}</p>
               <p className="text-xl font-semibold">{detail.summary.warningCount}</p>
             </div>
             <div className="rounded-xl border border-workshop-200 px-3 py-2">
-              <p className="text-workshop-700">Blocker</p>
+              <p className="text-workshop-700">{tr("Blocker", "Blockers")}</p>
               <p className="text-xl font-semibold">{detail.summary.blockingCount}</p>
             </div>
           </div>
           {detail.note ? <p className="text-sm text-workshop-700">{detail.note}</p> : null}
           <div className="flex flex-wrap gap-3">
             <button className="btn" onClick={() => saveRows()} disabled={!detail.canEdit || !dirtyCount || saving}>
-              {saving ? "Speichere..." : dirtyCount ? `Zaehlstaende speichern (${dirtyCount})` : "Keine ungespeicherten Aenderungen"}
+              {saving ? tr("Speichere...", "Saving...") : dirtyCount ? tr(`Zaehlstaende speichern (${dirtyCount})`, `Save counts (${dirtyCount})`) : tr("Keine ungespeicherten Aenderungen", "No unsaved changes")}
             </button>
             <button
               className="btn-secondary"
               onClick={finalizeSession}
               disabled={!detail.canFinalize || finalizing || saving || cancelling}
             >
-              {finalizing ? "Finalisiere..." : "Finalize"}
+              {finalizing ? tr("Finalisiere...", "Finalizing...") : "Finalize"}
             </button>
             <button
               className="btn-secondary"
               onClick={cancelSession}
               disabled={!detail.canEdit || detail.status !== "OPEN" || cancelling || finalizing}
             >
-              {cancelling ? "Breche ab..." : "Session abbrechen"}
+              {cancelling ? tr("Breche ab...", "Cancelling...") : tr("Session abbrechen", "Cancel session")}
             </button>
             <button className="btn-secondary" onClick={load} disabled={loading || saving || finalizing || cancelling}>
-              Neu laden
+              {tr("Neu laden", "Reload")}
             </button>
           </div>
         </div>
 
         <div className="card space-y-4">
           <div>
-            <h2 className="text-lg font-semibold">Scan / Sprung</h2>
+            <h2 className="text-lg font-semibold">{tr("Scan / Sprung", "Scan / jump")}</h2>
             <p className="text-sm text-workshop-700">
-              Label-Code scannen oder eingeben, um direkt zur passenden Zeile zu springen.
+              {tr("Label-Code scannen oder eingeben, um direkt zur passenden Zeile zu springen.", "Scan or enter a label code to jump directly to the matching row.")}
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -395,15 +403,15 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                   jumpToCode();
                 }
               }}
-              placeholder="Label-Code"
+              placeholder={tr("Label-Code", "Label code")}
             />
             <button className="btn" onClick={jumpToCode}>
-              Springen
+              {tr("Springen", "Jump")}
             </button>
           </div>
 
           <div className="space-y-2">
-            <h3 className="font-semibold">Review</h3>
+            <h3 className="font-semibold">{tr("Review", "Review")}</h3>
             {detail.warnings.length ? (
               <ul className="max-h-64 space-y-2 overflow-auto text-sm">
                 {detail.warnings.map((warning) => (
@@ -420,7 +428,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-workshop-700">Keine Warnungen. Die Session ist aus Review-Sicht konsistent.</p>
+              <p className="text-sm text-workshop-700">{tr("Keine Warnungen. Die Session ist aus Review-Sicht konsistent.", "No warnings. The session is consistent from a review perspective.")}</p>
             )}
           </div>
         </div>
@@ -429,25 +437,25 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       <div className="card hidden md:block">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Zaehlliste</h2>
-            <p className="text-sm text-workshop-700">Sortierung: Regal / Fach / Label-Code</p>
+            <h2 className="text-lg font-semibold">{tr("Zaehlliste", "Count list")}</h2>
+            <p className="text-sm text-workshop-700">{tr("Sortierung: Regal / Fach / Label-Code", "Sorting: shelf / bin / label code")}</p>
           </div>
-          <p className="text-sm text-workshop-700">{detail.rows.length} Positionen</p>
+          <p className="text-sm text-workshop-700">{detail.rows.length} {tr("Positionen", "rows")}</p>
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-[1260px] w-full text-sm">
             <thead>
               <tr className="border-b border-workshop-200 text-left text-workshop-700">
-                <th className="px-2 py-2">Code</th>
-                <th className="px-2 py-2">Name</th>
-                <th className="px-2 py-2">Platz</th>
-                <th className="px-2 py-2">Soll</th>
-                <th className="px-2 py-2">Ist</th>
-                <th className="px-2 py-2">Aktuell</th>
+                <th className="px-2 py-2">{tr("Code", "Code")}</th>
+                <th className="px-2 py-2">{tr("Name", "Name")}</th>
+                <th className="px-2 py-2">{tr("Platz", "Place")}</th>
+                <th className="px-2 py-2">{tr("Soll", "Expected")}</th>
+                <th className="px-2 py-2">{tr("Ist", "Counted")}</th>
+                <th className="px-2 py-2">{tr("Aktuell", "Current")}</th>
                 <th className="px-2 py-2">Delta</th>
-                <th className="px-2 py-2">Reserviert</th>
-                <th className="px-2 py-2">Notiz</th>
+                <th className="px-2 py-2">{tr("Reserviert", "Reserved")}</th>
+                <th className="px-2 py-2">{tr("Notiz", "Note")}</th>
               </tr>
             </thead>
             <tbody>
@@ -470,8 +478,8 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                       <div className="font-medium">{row.name}</div>
                       {row.countedAt ? (
                         <div className="text-xs text-workshop-600">
-                          gespeichert {formatDateTime(row.countedAt)}
-                          {row.countedByUser ? ` von ${row.countedByUser.name}` : ""}
+                          {tr("gespeichert", "saved")} {formatDateTime(row.countedAt, locale)}
+                          {row.countedByUser ? ` ${tr("von", "by")} ${row.countedByUser.name}` : ""}
                         </div>
                       ) : null}
                     </td>
@@ -479,7 +487,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                       <div>{getStoragePlaceLabel(row.storageArea, row.bin)}</div>
                       {row.hasDrift ? (
                         <div className="text-xs text-amber-700">
-                          jetzt: {getStoragePlaceLabel(row.currentStorageArea, row.currentBin)}
+                          {tr("jetzt", "now")}: {getStoragePlaceLabel(row.currentStorageArea, row.currentBin)}
                         </div>
                       ) : null}
                     </td>
@@ -506,7 +514,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                               setDraftNote(row.itemId, "");
                             }}
                           >
-                            Reset
+                            {tr("Reset", "Reset")}
                           </button>
                         ) : null}
                       </div>
@@ -516,7 +524,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                       {row.delta === null ? "-" : `${row.delta > 0 ? "+" : ""}${formatDisplayQuantity(row.unit, row.delta)}`}
                       {row.liveDelta !== null && row.hasDrift ? (
                         <div className="text-xs text-workshop-600">
-                          live: {row.liveDelta > 0 ? "+" : ""}
+                          {tr("live", "live")}: {row.liveDelta > 0 ? "+" : ""}
                           {formatDisplayQuantity(row.unit, row.liveDelta)}
                         </div>
                       ) : null}
@@ -529,7 +537,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                         onChange={(event) => setDraftNote(row.itemId, event.target.value)}
                         disabled={!detail.canEdit}
                       />
-                      {dirtySet.has(row.itemId) ? <div className="mt-1 text-xs text-workshop-600">Ungespeichert</div> : null}
+                      {dirtySet.has(row.itemId) ? <div className="mt-1 text-xs text-workshop-600">{tr("Ungespeichert", "Unsaved")}</div> : null}
                       {rowWarnings.length ? (
                         <div className="mt-1 space-y-1 text-xs">
                           {rowWarnings.map((warning, index) => (
@@ -566,12 +574,12 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                 <p className="text-sm text-workshop-700">{getStoragePlaceLabel(row.storageArea, row.bin)}</p>
               </div>
               <div className="grid gap-2 text-sm text-workshop-700">
-                <p>Soll: {formatDisplayQuantity(row.unit, row.expectedStock)}</p>
-                <p>Aktuell: {formatDisplayQuantity(row.unit, row.currentStock)}</p>
-                <p>Reserviert: {formatDisplayQuantity(row.unit, row.reservedQty)}</p>
+                <p>{tr("Soll", "Expected")}: {formatDisplayQuantity(row.unit, row.expectedStock)}</p>
+                <p>{tr("Aktuell", "Current")}: {formatDisplayQuantity(row.unit, row.currentStock)}</p>
+                <p>{tr("Reserviert", "Reserved")}: {formatDisplayQuantity(row.unit, row.reservedQty)}</p>
               </div>
               <label className="text-sm text-workshop-700">
-                <span className="mb-1 block">Ist</span>
+                <span className="mb-1 block">{tr("Ist", "Counted")}</span>
                 <input
                   className="input"
                   type="number"
@@ -582,7 +590,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                 />
               </label>
               <label className="text-sm text-workshop-700">
-                <span className="mb-1 block">Notiz</span>
+                <span className="mb-1 block">{tr("Notiz", "Note")}</span>
                 <textarea
                   className="input min-h-[84px]"
                   value={draftNotes[row.itemId] ?? ""}

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { fileHref } from "@/lib/file-href";
 import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
 
@@ -20,6 +21,8 @@ type ShelfOption = { id: string; name: string; storageLocationId: string };
 
 export default function EditItemPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [form, setForm] = useState<any>(null);
   const [tags, setTags] = useState<TagOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -81,20 +84,20 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
     await load();
   }
 
-  if (!form) return <p>Lade...</p>;
+  if (!form) return <p>{tr("Lade...", "Loading...")}</p>;
 
   return (
     <div className="space-y-4">
       <div className="card space-y-3">
-        <h1 className="text-xl font-semibold">Item bearbeiten</h1>
+        <h1 className="text-xl font-semibold">{tr("Item bearbeiten", "Edit item")}</h1>
 
         <label className="text-sm">
-          Name
+          {tr("Name", "Name")}
           <input className="input mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </label>
 
         <label className="text-sm">
-          Hersteller
+          {tr("Hersteller", "Manufacturer")}
           <input className="input mt-1" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} />
         </label>
 
@@ -104,7 +107,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         </label>
 
         <label className="text-sm">
-          Lagerort
+          {tr("Lagerort", "Storage location")}
           <select
             className="input mt-1"
             value={form.storageLocationId}
@@ -119,9 +122,9 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         </label>
 
         <label className="text-sm">
-          Regal
+          {tr("Regal", "Shelf")}
           <select className="input mt-1" value={form.storageArea} onChange={(e) => setForm({ ...form, storageArea: e.target.value })}>
-            <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+            <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
             {availableShelves.map((shelf) => (
               <option key={shelf.id} value={shelf.name}>
                 {shelf.name}
@@ -131,29 +134,29 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
         </label>
 
         <label className="text-sm">
-          Fach
+          {tr("Fach", "Bin")}
           <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} />
         </label>
 
         <label className="text-sm">
-          Mindestbestand ({getUnitDisplayLabel(form.unit || "STK")})
+          {tr("Mindestbestand", "Minimum stock")} ({getUnitDisplayLabel(form.unit || "STK")})
           <input
             className="input mt-1"
             type="number"
             step={getQuantityStep(form.unit || "STK")}
             value={form.minStock}
             onChange={(e) => setForm({ ...form, minStock: e.target.value })}
-            placeholder="leer = kein Mindestbestand"
+            placeholder={tr("leer = kein Mindestbestand", "empty = no minimum stock")}
           />
         </label>
 
         <label className="text-sm">
-          Beschreibung (Markdown)
+          {tr("Beschreibung (Markdown)", "Description (Markdown)")}
           <textarea className="input mt-1 min-h-28" rows={5} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </label>
 
         <fieldset className="text-sm">
-          <legend className="mb-1">Tags</legend>
+          <legend className="mb-1">{tr("Tags", "Tags")}</legend>
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => (
               <label key={tag.id} className="inline-flex items-center gap-1 rounded border border-workshop-200 px-2 py-1">
@@ -193,13 +196,13 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
             }
           }}
         >
-          Speichern
+          {tr("Speichern", "Save")}
         </button>
       </div>
 
       <div className="card space-y-3">
-        <h2 className="text-lg font-semibold">Bilder bearbeiten</h2>
-        <p className="text-sm text-workshop-700">Erstes Bild ist automatisch das Titelbild. Reihenfolge per Drag&Drop ändern.</p>
+        <h2 className="text-lg font-semibold">{tr("Bilder bearbeiten", "Edit images")}</h2>
+        <p className="text-sm text-workshop-700">{tr("Erstes Bild ist automatisch das Titelbild. Reihenfolge per Drag&Drop ändern.", "The first image automatically becomes the cover image. Change order via drag and drop.")}</p>
 
         <form
           className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
@@ -212,14 +215,14 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
           }}
         >
           <input className="input" type="file" name="files" accept="image/*" capture="environment" multiple required />
-          <input className="input sm:flex-1" type="text" name="caption" placeholder="Bildtitel (optional bei Einzelupload)" />
+          <input className="input sm:flex-1" type="text" name="caption" placeholder={tr("Bildtitel (optional bei Einzelupload)", "Image title (optional for single upload)")} />
           <button className="btn w-full sm:w-auto" type="submit">
-            Bilder hochladen
+            {tr("Bilder hochladen", "Upload images")}
           </button>
         </form>
 
         {images.length === 0 ? (
-          <p className="text-sm text-workshop-700">Noch keine Bilder vorhanden.</p>
+          <p className="text-sm text-workshop-700">{tr("Noch keine Bilder vorhanden.", "No images yet.")}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
             {images.map((img, index) => (
@@ -264,8 +267,8 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
                   <button
                     type="button"
                     className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-700 hover:bg-white"
-                    aria-label="Bild löschen"
-                    title="Bild löschen"
+                    aria-label={tr("Bild loeschen", "Delete image")}
+                    title={tr("Bild loeschen", "Delete image")}
                     onClick={async () => {
                       await fetch(`/api/items/${params.id}/images?imageId=${img.id}`, { method: "DELETE" });
                       await load();
@@ -274,7 +277,7 @@ export default function EditItemPage({ params }: { params: { id: string } }) {
                     <Trash2 size={14} />
                   </button>
                 </div>
-                <p className="mt-1 text-center text-xs">{index === 0 ? "Titelbild" : `Bild ${index + 1}`}</p>
+                <p className="mt-1 text-center text-xs">{index === 0 ? tr("Titelbild", "Cover image") : `${tr("Bild", "Image")} ${index + 1}`}</p>
               </div>
             ))}
           </div>

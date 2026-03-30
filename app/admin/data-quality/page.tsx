@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 
 type DuplicatePair = {
   leftItem: {
@@ -55,6 +56,8 @@ type MergePreview = {
 };
 
 export default function DataQualityPage() {
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [pairs, setPairs] = useState<DuplicatePair[]>([]);
   const [loading, setLoading] = useState(true);
   const [minScore, setMinScore] = useState(45);
@@ -91,16 +94,16 @@ export default function DataQualityPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sourceItemId, targetItemId })
     });
-    const data = await res.json().catch(() => null);
-    setPreviewBusy(false);
+      const data = await res.json().catch(() => null);
+      setPreviewBusy(false);
 
-    if (!res.ok) {
-      setPreview(null);
-      setFieldSelections({});
-      setCustomFieldSelections({});
-      setPreviewError(data?.error || "Preview konnte nicht geladen werden.");
-      return;
-    }
+      if (!res.ok) {
+        setPreview(null);
+        setFieldSelections({});
+        setCustomFieldSelections({});
+        setPreviewError(data?.error || tr("Preview konnte nicht geladen werden.", "Preview could not be loaded."));
+        return;
+      }
 
     setPreview(data);
     setFieldSelections(data.defaultFieldSelections || {});
@@ -125,11 +128,11 @@ export default function DataQualityPage() {
     setMergeBusy(false);
 
     if (!res.ok) {
-      setFeedback(data?.error || "Merge fehlgeschlagen.");
+      setFeedback(data?.error || tr("Merge fehlgeschlagen.", "Merge failed."));
       return;
     }
 
-    setFeedback(`Merge abgeschlossen: ${preview.sourceItem.labelCode} -> ${preview.targetItem.labelCode}`);
+    setFeedback(tr(`Merge abgeschlossen: ${preview.sourceItem.labelCode} -> ${preview.targetItem.labelCode}`, `Merge complete: ${preview.sourceItem.labelCode} -> ${preview.targetItem.labelCode}`));
     setPreview(null);
     setFieldSelections({});
     setCustomFieldSelections({});
@@ -147,12 +150,12 @@ export default function DataQualityPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Deduplizierung & Datenqualitaet</h1>
-          <p className="text-sm text-workshop-700">Admin-Workflow fuer Dubletten, Merge-Preview und sicheres Zusammenfuehren.</p>
+          <h1 className="text-2xl font-semibold">{tr("Deduplizierung & Datenqualitaet", "Deduplication & Data Quality")}</h1>
+          <p className="text-sm text-workshop-700">{tr("Admin-Workflow fuer Dubletten, Merge-Preview und sicheres Zusammenfuehren.", "Admin workflow for duplicates, merge previews, and safe merges.")}</p>
         </div>
         <div className="flex gap-2">
           <Link className="btn-secondary" href="/admin">
-            Zurueck zu Admin
+            {tr("Zurueck zu Admin", "Back to admin")}
           </Link>
           <Link className="btn-secondary" href="/admin/audit">
             Audit
@@ -162,7 +165,7 @@ export default function DataQualityPage() {
 
       <div className="card flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <label className="text-sm">
-          Mindest-Score
+          {tr("Mindest-Score", "Minimum score")}
           <input
             className="input mt-1 w-28"
             type="number"
@@ -178,10 +181,10 @@ export default function DataQualityPage() {
             checked={onlyMergeEligible}
             onChange={(e) => setOnlyMergeEligible(e.target.checked)}
           />
-          Nur mergebare Paare
+          {tr("Nur mergebare Paare", "Merge-eligible pairs only")}
         </label>
         <button className="btn-secondary" type="button" onClick={load}>
-          Neu laden
+          {tr("Neu laden", "Reload")}
         </button>
       </div>
 
@@ -191,9 +194,9 @@ export default function DataQualityPage() {
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="space-y-3">
           {loading ? (
-            <div className="card text-sm">Lade Dubletten...</div>
+            <div className="card text-sm">{tr("Lade Dubletten...", "Loading duplicates...")}</div>
           ) : pairs.length === 0 ? (
-            <div className="card text-sm text-workshop-700">Keine Dubletten-Kandidaten fuer die aktuelle Filterung gefunden.</div>
+            <div className="card text-sm text-workshop-700">{tr("Keine Dubletten-Kandidaten fuer die aktuelle Filterung gefunden.", "No duplicate candidates found for the current filter.")}</div>
           ) : (
             pairs.map((pair) => (
               <article key={`${pair.leftItem.id}:${pair.rightItem.id}`} className="card space-y-3">
@@ -209,7 +212,7 @@ export default function DataQualityPage() {
                         : "border border-yellow-300 bg-yellow-50 text-yellow-700"
                     }`}
                   >
-                    {pair.mergeEligible ? "Merge moeglich" : "Nur Warnung"}
+                    {pair.mergeEligible ? tr("Merge moeglich", "Merge available") : tr("Nur Warnung", "Warning only")}
                   </span>
                 </div>
 
@@ -238,7 +241,7 @@ export default function DataQualityPage() {
                       disabled={previewBusy}
                       onClick={() => openPreview(pair.leftItem.id, pair.rightItem.id)}
                     >
-                      {previewBusy ? "Laedt..." : `${pair.leftItem.labelCode} -> ${pair.rightItem.labelCode}`}
+                      {previewBusy ? tr("Laedt...", "Loading...") : `${pair.leftItem.labelCode} -> ${pair.rightItem.labelCode}`}
                     </button>
                     <button
                       className="btn-secondary"
@@ -246,7 +249,7 @@ export default function DataQualityPage() {
                       disabled={previewBusy}
                       onClick={() => openPreview(pair.rightItem.id, pair.leftItem.id)}
                     >
-                      {previewBusy ? "Laedt..." : `${pair.rightItem.labelCode} -> ${pair.leftItem.labelCode}`}
+                      {previewBusy ? tr("Laedt...", "Loading...") : `${pair.rightItem.labelCode} -> ${pair.leftItem.labelCode}`}
                     </button>
                   </div>
                 ) : (
@@ -259,35 +262,35 @@ export default function DataQualityPage() {
 
         <section className="space-y-3">
           {!preview ? (
-            <div className="card text-sm text-workshop-700">Waehle fuer ein Paar eine Merge-Richtung, um die Preview und Konfliktaufloesung zu laden.</div>
+            <div className="card text-sm text-workshop-700">{tr("Waehle fuer ein Paar eine Merge-Richtung, um die Preview und Konfliktaufloesung zu laden.", "Choose a merge direction for a pair to load the preview and conflict resolution.")}</div>
           ) : (
             <div className="card space-y-4">
               <div>
-                <h2 className="text-lg font-semibold">Merge-Preview</h2>
+                <h2 className="text-lg font-semibold">{tr("Merge-Preview", "Merge preview")}</h2>
                 <p className="mt-1 text-sm text-workshop-700">
-                  Quelle: <span className="font-mono">{preview.sourceItem.labelCode}</span> {"->"} Ziel:{" "}
+                  {tr("Quelle", "Source")}: <span className="font-mono">{preview.sourceItem.labelCode}</span> {"->"} {tr("Ziel", "Target")}:{" "}
                   <span className="font-mono">{preview.targetItem.labelCode}</span>
                 </p>
                 <p className="mt-1 text-sm text-workshop-700">
-                  Resultierender Bestand: {preview.scoreInfo.resultingStock} {preview.scoreInfo.unit}
+                  {tr("Resultierender Bestand", "Resulting stock")}: {preview.scoreInfo.resultingStock} {preview.scoreInfo.unit}
                 </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-workshop-200 p-3 text-sm">
-                  <p className="font-semibold">Quelle</p>
+                  <p className="font-semibold">{tr("Quelle", "Source")}</p>
                   <p>{preview.sourceItem.name}</p>
                   <p className="font-mono text-workshop-700">{preview.sourceItem.labelCode}</p>
                 </div>
                 <div className="rounded-lg border border-workshop-200 p-3 text-sm">
-                  <p className="font-semibold">Ziel</p>
+                  <p className="font-semibold">{tr("Ziel", "Target")}</p>
                   <p>{preview.targetItem.name}</p>
                   <p className="font-mono text-workshop-700">{preview.targetItem.labelCode}</p>
                 </div>
               </div>
 
               <div>
-                <p className="mb-2 text-sm font-semibold">Umzuhaengende Relationen</p>
+                <p className="mb-2 text-sm font-semibold">{tr("Umzuhaengende Relationen", "Relations to move")}</p>
                 <div className="grid gap-2 text-sm sm:grid-cols-2">
                   {Object.entries(preview.relationCounts.source).map(([key, value]) => (
                     <div key={key} className="rounded border border-workshop-200 px-3 py-2">
@@ -299,9 +302,9 @@ export default function DataQualityPage() {
 
               <div className="space-y-3">
                 <div>
-                  <p className="mb-2 text-sm font-semibold">Kernfelder</p>
+                  <p className="mb-2 text-sm font-semibold">{tr("Kernfelder", "Core fields")}</p>
                   <div className="space-y-2">
-                    {changedCoreFields.length === 0 && <p className="text-sm text-workshop-700">Keine abweichenden Kernfelder.</p>}
+                    {changedCoreFields.length === 0 && <p className="text-sm text-workshop-700">{tr("Keine abweichenden Kernfelder.", "No differing core fields.")}</p>}
                     {changedCoreFields.map((field) => (
                       <div key={field.fieldKey} className="rounded-lg border border-workshop-200 p-3 text-sm">
                         <p className="font-medium">{field.label}</p>
@@ -337,9 +340,9 @@ export default function DataQualityPage() {
                 </div>
 
                 <div>
-                  <p className="mb-2 text-sm font-semibold">Custom Fields</p>
+                  <p className="mb-2 text-sm font-semibold">{tr("Custom Fields", "Custom fields")}</p>
                   <div className="space-y-2">
-                    {changedCustomFields.length === 0 && <p className="text-sm text-workshop-700">Keine abweichenden Custom-Field-Werte.</p>}
+                    {changedCustomFields.length === 0 && <p className="text-sm text-workshop-700">{tr("Keine abweichenden Custom-Field-Werte.", "No differing custom field values.")}</p>}
                     {changedCustomFields.map((field) => (
                       <div key={field.customFieldId} className="rounded-lg border border-workshop-200 p-3 text-sm">
                         <p className="font-medium">{field.fieldName}</p>
@@ -377,7 +380,7 @@ export default function DataQualityPage() {
 
               <div className="flex flex-col gap-2 sm:flex-row">
                 <button className="btn" type="button" disabled={mergeBusy} onClick={mergePreview}>
-                  {mergeBusy ? "Mergt..." : "Merge ausfuehren"}
+                  {mergeBusy ? tr("Mergt...", "Merging...") : tr("Merge ausfuehren", "Run merge")}
                 </button>
                 <button
                   className="btn-secondary"
@@ -388,7 +391,7 @@ export default function DataQualityPage() {
                     setCustomFieldSelections({});
                   }}
                 >
-                  Preview schliessen
+                  {tr("Preview schliessen", "Close preview")}
                 </button>
               </div>
             </div>

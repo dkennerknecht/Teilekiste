@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import {
   type CustomFieldRow,
   type CustomFieldValueMap,
@@ -19,6 +20,8 @@ type Props = {
 
 export function CustomFieldsEditor({ fields, values, onChange, categoryId, typeId, disabled }: Props) {
   const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const applicableFields = useMemo(
     () =>
       filterApplicableCustomFields(fields, categoryId, typeId).sort(
@@ -48,7 +51,7 @@ export function CustomFieldsEditor({ fields, values, onChange, categoryId, typeI
 
   return (
     <fieldset className="text-sm md:col-span-2">
-      <legend className="mb-2 font-medium">Custom Fields</legend>
+      <legend className="mb-2 font-medium">{tr("Custom Fields", "Custom Fields")}</legend>
       <div className="grid gap-3 md:grid-cols-2">
         {applicableFields.map((field) => {
           const options = parseCustomFieldOptions(field);
@@ -83,7 +86,7 @@ export function CustomFieldsEditor({ fields, values, onChange, categoryId, typeI
                   required={Boolean(field.required)}
                   onChange={(e) => setValue(field.id, e.target.value)}
                 >
-                  <option value="">Bitte waehlen</option>
+                  <option value="">{tr("Bitte waehlen", "Please choose")}</option>
                   {renderedOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}

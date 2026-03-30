@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, useRef, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { formatDisplayQuantity, getUnitDisplayLabel } from "@/lib/quantity";
 
 export default function ScannerPage() {
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [code, setCode] = useState("");
   const [item, setItem] = useState<any>(null);
   const [message, setMessage] = useState("");
@@ -19,7 +22,7 @@ export default function ScannerPage() {
     const exact = (data || []).find((row: any) => row.labelCode === val) || data?.[0] || null;
     if (!exact) {
       setItem(null);
-      setMessage("Kein Treffer");
+      setMessage(tr("Kein Treffer", "No result"));
       return;
     }
     const detail = await fetch(`/api/items/${exact.id}`).then((r) => r.json());
@@ -35,18 +38,18 @@ export default function ScannerPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Scanner-Mode</h1>
+      <h1 className="text-2xl font-semibold">{tr("Scanner-Modus", "Scanner Mode")}</h1>
       <form className="card flex flex-col gap-2 sm:flex-row" onSubmit={scan}>
         <input
           ref={inputRef}
           autoFocus
           className="input font-mono"
-          placeholder="Code scannen oder eingeben (z.B. EL-KB-023)"
+          placeholder={tr("Code scannen oder eingeben (z.B. EL-KB-023)", "Scan or enter code (e.g. EL-KB-023)")}
           value={code}
           onChange={(e) => setCode(e.target.value)}
         />
         <button className="btn w-full sm:w-auto" type="submit">
-          Oeffnen
+          {tr("Oeffnen", "Open")}
         </button>
       </form>
       {message && <p className="text-sm text-red-700">{message}</p>}
@@ -54,7 +57,7 @@ export default function ScannerPage() {
         <div className="card space-y-2">
           <p className="font-mono text-workshop-700">{item.labelCode}</p>
           <h2 className="text-xl font-semibold">{item.name}</h2>
-          <p>Bestand: {formatDisplayQuantity(item.unit, item.stock)} | Verfuegbar: {formatDisplayQuantity(item.unit, item.availableStock)}</p>
+          <p>{tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} | {tr("Verfuegbar", "Available")}: {formatDisplayQuantity(item.unit, item.availableStock)}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               className="btn w-full sm:w-auto"
@@ -67,10 +70,10 @@ export default function ScannerPage() {
                 await scan();
               }}
             >
-              -1 {getUnitDisplayLabel(item.unit)} buchen
+              -1 {getUnitDisplayLabel(item.unit)} {tr("buchen", "book")}
             </button>
             <Link className="btn-secondary w-full sm:w-auto" href={`/items/${item.id}`}>
-              Detailseite
+              {tr("Detailseite", "Details")}
             </Link>
           </div>
         </div>

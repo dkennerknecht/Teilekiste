@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
@@ -22,6 +23,8 @@ function formatFileSize(bytes: number) {
 
 export default function NewItemPage() {
   const router = useRouter();
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [categories, setCategories] = useState<Option[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
   const [shelves, setShelves] = useState<ShelfOption[]>([]);
@@ -113,7 +116,7 @@ export default function NewItemPage() {
     setCreatingTag(false);
 
     if (!res.ok || !data?.id) {
-      alert(data?.error || "Tag anlegen fehlgeschlagen");
+      alert(data?.error || tr("Tag anlegen fehlgeschlagen", "Failed to create tag"));
       return;
     }
 
@@ -131,7 +134,11 @@ export default function NewItemPage() {
     const incoming = Array.from(files);
     const rejected = incoming.filter((file) => !allowedImageTypes.has(file.type));
     if (rejected.length > 0) {
-      alert(`Diese Dateitypen werden nicht unterstuetzt: ${rejected.map((file) => file.name).join(", ")}`);
+      alert(
+        language === "en"
+          ? `These file types are not supported: ${rejected.map((file) => file.name).join(", ")}`
+          : `Diese Dateitypen werden nicht unterstuetzt: ${rejected.map((file) => file.name).join(", ")}`
+      );
     }
 
     setSelectedImages((prev) => {
@@ -143,19 +150,19 @@ export default function NewItemPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Neues Item</h1>
+      <h1 className="text-2xl font-semibold">{tr("Neues Item", "New Item")}</h1>
       <div className="card">
         <div className="mb-2 text-sm text-workshop-700">
-          Code-Vorschau: <span className="font-mono">{labelPreview || "-"}</span>
+          {tr("Code-Vorschau", "Code preview")}: <span className="font-mono">{labelPreview || "-"}</span>
         </div>
         {!hasRequiredMeta && (
           <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
-            Fuer neue Items wird mindestens eine Kategorie, ein Type und ein Lagerort benoetigt. Fehlende Lagerorte kannst du unter Admin anlegen.
+            {tr("Fuer neue Items wird mindestens eine Kategorie, ein Type und ein Lagerort benoetigt. Fehlende Lagerorte kannst du unter Admin anlegen.", "New items require at least one category, one type, and one storage location. Missing locations can be created in Admin.")}
           </div>
         )}
         {duplicates.length > 0 && (
           <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
-            Moegliche Duplikate: {duplicates.map((d) => `${d.labelCode} (${d.score}, ${d.reasons.join("/")})`).join(", ")}
+            {tr("Moegliche Duplikate", "Possible duplicates")}: {duplicates.map((d) => `${d.labelCode} (${d.score}, ${d.reasons.join("/")})`).join(", ")}
           </div>
         )}
         <form
@@ -190,7 +197,11 @@ export default function NewItemPage() {
                 }
 
                 if (failedUploads.length > 0) {
-                  alert(`Item angelegt, aber diese Bilder konnten nicht hochgeladen werden: ${failedUploads.join(", ")}`);
+                  alert(
+                    language === "en"
+                      ? `Item created, but these images could not be uploaded: ${failedUploads.join(", ")}`
+                      : `Item angelegt, aber diese Bilder konnten nicht hochgeladen werden: ${failedUploads.join(", ")}`
+                  );
                 }
 
                 router.push(`/items/${item.id}`);
@@ -198,16 +209,16 @@ export default function NewItemPage() {
               }
 
               const error = await res.json().catch(() => null);
-              alert(error?.error || "Anlegen fehlgeschlagen");
+              alert(error?.error || tr("Anlegen fehlgeschlagen", "Create failed"));
             } catch {
-              alert("Anlegen fehlgeschlagen");
+              alert(tr("Anlegen fehlgeschlagen", "Create failed"));
             } finally {
               setSubmitting(false);
             }
           }}
         >
           <label className="text-sm">
-            Name
+            {tr("Name", "Name")}
             <input
               className="input mt-1"
               value={form.name}
@@ -218,12 +229,12 @@ export default function NewItemPage() {
           </label>
 
           <label className="text-sm">
-            Hersteller
+            {tr("Hersteller", "Manufacturer")}
             <input className="input mt-1" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} disabled={!hasRequiredMeta} />
           </label>
 
           <label className="text-sm md:col-span-1">
-            Beschreibung
+            {tr("Beschreibung", "Description")}
             <textarea
               className="input mt-1 min-h-28"
               value={form.description}
@@ -239,7 +250,7 @@ export default function NewItemPage() {
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
             <label className="text-sm">
-              Kategorie
+              {tr("Kategorie", "Category")}
               <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -250,7 +261,7 @@ export default function NewItemPage() {
             </label>
 
             <label className="text-sm">
-              Type (Label)
+              {tr("Type (Label)", "Type (Label)")}
               <select className="input mt-1" value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })} disabled={!hasRequiredMeta} required>
                 {types.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -263,7 +274,7 @@ export default function NewItemPage() {
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
             <label className="text-sm">
-              Lagerort
+              {tr("Lagerort", "Storage location")}
               <select
                 className="input mt-1"
                 value={form.storageLocationId}
@@ -280,14 +291,14 @@ export default function NewItemPage() {
             </label>
 
             <label className="text-sm">
-              Regal / Bereich
+              {tr("Regal / Bereich", "Shelf / area")}
               <select
                 className="input mt-1"
                 value={form.storageArea}
                 onChange={(e) => setForm({ ...form, storageArea: e.target.value })}
                 disabled={!hasRequiredMeta || !form.storageLocationId || availableShelves.length === 0}
               >
-                <option value="">{availableShelves.length ? "Kein Regal" : "Keine Regale fuer Lagerort"}</option>
+                <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
                 {availableShelves.map((shelf) => (
                   <option key={shelf.id} value={shelf.name}>
                     {shelf.name}
@@ -297,14 +308,14 @@ export default function NewItemPage() {
             </label>
 
             <label className="text-sm">
-              Fach / Bin
+              {tr("Fach / Bin", "Bin")}
               <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta} />
             </label>
           </div>
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
             <label className="text-sm">
-              Bestand ({getUnitDisplayLabel(form.unit)})
+              {tr("Bestand", "Stock")} ({getUnitDisplayLabel(form.unit)})
               <input
                 className="input mt-1"
                 type="number"
@@ -316,7 +327,7 @@ export default function NewItemPage() {
             </label>
 
             <label className="text-sm">
-              Einheit
+              {tr("Einheit", "Unit")}
               <select className="input mt-1" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} disabled={!hasRequiredMeta}>
                 <option value="STK">Stk</option>
                 <option value="M">m</option>
@@ -326,14 +337,14 @@ export default function NewItemPage() {
             </label>
 
             <label className="text-sm">
-              Mindestbestand ({getUnitDisplayLabel(form.unit)})
+              {tr("Mindestbestand", "Minimum stock")} ({getUnitDisplayLabel(form.unit)})
               <input
                 className="input mt-1"
                 type="number"
                 step={getQuantityStep(form.unit)}
                 value={form.minStock}
                 onChange={(e) => setForm({ ...form, minStock: e.target.value })}
-                placeholder="leer = kein Mindestbestand"
+                placeholder={tr("leer = kein Mindestbestand", "empty = no minimum stock")}
                 disabled={!hasRequiredMeta}
               />
             </label>
@@ -349,9 +360,9 @@ export default function NewItemPage() {
           />
 
           <fieldset className="text-sm md:col-span-2">
-            <legend className="mb-1">Tags</legend>
+            <legend className="mb-1">{tr("Tags", "Tags")}</legend>
             {tags.length === 0 ? (
-              <p className="rounded-md border border-dashed border-workshop-200 px-3 py-2 text-workshop-700">Noch keine Tags vorhanden.</p>
+              <p className="rounded-md border border-dashed border-workshop-200 px-3 py-2 text-workshop-700">{tr("Noch keine Tags vorhanden.", "No tags available yet.")}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -380,18 +391,18 @@ export default function NewItemPage() {
                 type="text"
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
-                placeholder="Neuen Tag anlegen"
+                placeholder={tr("Neuen Tag anlegen", "Create new tag")}
                 disabled={!hasRequiredMeta}
               />
               <button type="button" className="btn-secondary" onClick={createTag} disabled={!hasRequiredMeta || creatingTag || !newTagName.trim()}>
-                {creatingTag ? "Tag wird angelegt..." : "Tag anlegen"}
+                {creatingTag ? tr("Tag wird angelegt...", "Creating tag...") : tr("Tag anlegen", "Create tag")}
               </button>
             </div>
           </fieldset>
 
           <fieldset className="text-sm md:col-span-2">
-            <legend className="mb-1">Bilder</legend>
-            <p className="mb-2 text-workshop-700">Du kannst Bilder direkt mit anlegen. Das erste erfolgreiche Upload wird spaeter das Titelbild.</p>
+            <legend className="mb-1">{tr("Bilder", "Images")}</legend>
+            <p className="mb-2 text-workshop-700">{tr("Du kannst Bilder direkt mit anlegen. Das erste erfolgreiche Upload wird spaeter das Titelbild.", "You can add images right away. The first successful upload becomes the cover image later.")}</p>
             <input
               className="input"
               type="file"
@@ -410,7 +421,7 @@ export default function NewItemPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{image.name}</p>
                       <p className="text-xs text-workshop-700">
-                        Bild {index + 1} - {formatFileSize(image.size)}
+                        {tr("Bild", "Image")} {index + 1} - {formatFileSize(image.size)}
                       </p>
                     </div>
                     <button
@@ -418,7 +429,7 @@ export default function NewItemPage() {
                       className="btn-secondary"
                       onClick={() => setSelectedImages((prev) => prev.filter((_, imageIndex) => imageIndex !== index))}
                     >
-                      Entfernen
+                      {tr("Entfernen", "Remove")}
                     </button>
                   </div>
                 ))}
@@ -427,7 +438,7 @@ export default function NewItemPage() {
           </fieldset>
 
           <button className="btn md:col-span-2" type="submit" disabled={submitting || !hasRequiredMeta}>
-            {submitting ? "Speichere..." : "Speichern"}
+            {submitting ? tr("Speichere...", "Saving...") : tr("Speichern", "Save")}
           </button>
         </form>
       </div>

@@ -367,7 +367,7 @@ export default function AdminPage() {
         <h1 className="text-2xl font-semibold">{t("adminTitle")}</h1>
         <div className="flex flex-wrap gap-2">
           <Link className="btn-secondary" href="/admin/data-quality">
-            Datenqualitaet
+            {tr("Datenqualitaet", "Data Quality")}
           </Link>
           <Link className="btn-secondary" href="/admin/audit">
             {t("adminAuditHistory")}
@@ -379,7 +379,7 @@ export default function AdminPage() {
       {dash && (
         <div className="grid grid-cols-5 gap-1 sm:gap-3">
           <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3">
-            <p className="text-[10px] leading-tight sm:text-xs">Items</p>
+            <p className="text-[10px] leading-tight sm:text-xs">{tr("Items", "Items")}</p>
             <p className="text-base font-bold leading-tight sm:text-2xl">{dash.items}</p>
           </div>
           <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3">
@@ -395,7 +395,7 @@ export default function AdminPage() {
             <p className="text-base font-bold leading-tight sm:text-2xl">{dash.locations}</p>
           </div>
           <div className="card min-w-0 px-1.5 py-2 text-center sm:px-3" title={dash.latestBackup || tr("keins", "none")}>
-            <p className="text-[10px] leading-tight sm:text-xs">Backup</p>
+            <p className="text-[10px] leading-tight sm:text-xs">{tr("Backup", "Backup")}</p>
             <p className="truncate text-[10px] leading-tight sm:text-xs">{formatAdminBackupStat(dash.latestBackup, tr("kein", "none"))}</p>
           </div>
         </div>
@@ -594,7 +594,7 @@ export default function AdminPage() {
         </section>
 
         <section className="card space-y-2">
-          <h2 className="font-semibold">Types</h2>
+          <h2 className="font-semibold">{tr("Types", "Types")}</h2>
           <ul className="space-y-1 text-sm">
             {types.map((type) => (
               <li key={type.id} className="rounded border border-workshop-200 p-2">

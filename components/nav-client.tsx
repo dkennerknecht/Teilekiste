@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Brand } from "@/components/brand";
@@ -17,16 +17,53 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
-  const { t } = useAppLanguage();
+  const [desktopAdminOpen, setDesktopAdminOpen] = useState(false);
+  const desktopAdminMenuRef = useRef<HTMLDivElement | null>(null);
+  const { language, t } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
 
   function closeMobileMenu() {
     setMobileMenuOpen(false);
     setMobileAdminOpen(false);
   }
 
-  useEffect(() => {
+  function closeDesktopAdminMenu() {
+    setDesktopAdminOpen(false);
+  }
+
+  function closeAllMenus() {
     closeMobileMenu();
+    closeDesktopAdminMenu();
+  }
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setMobileAdminOpen(false);
+    setDesktopAdminOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!desktopAdminOpen) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!desktopAdminMenuRef.current?.contains(event.target as Node)) {
+        closeDesktopAdminMenu();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeDesktopAdminMenu();
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [desktopAdminOpen]);
 
   return (
     <header className="border-b border-workshop-200 bg-[var(--app-surface)]">
@@ -36,9 +73,9 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
             <Link
               href="/"
               className="inline-flex max-w-full text-workshop-800"
-              onClick={closeMobileMenu}
-              aria-label="Zur Startseite"
-              title="Startseite"
+              onClick={closeAllMenus}
+              aria-label={tr("Zur Startseite", "Go to home page")}
+              title={tr("Startseite", "Home")}
             >
               <Brand textClassName="text-base font-semibold text-workshop-800 sm:text-lg" />
             </Link>
@@ -50,7 +87,7 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
             onClick={() => setMobileMenuOpen((open) => !open)}
             aria-expanded={mobileMenuOpen}
             aria-controls="mobile-menu"
-            aria-label={mobileMenuOpen ? "Menue schliessen" : "Menue oeffnen"}
+            aria-label={mobileMenuOpen ? tr("Menue schliessen", "Close menu") : tr("Menue oeffnen", "Open menu")}
           >
             {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -75,36 +112,46 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
               {t("navScanner")}
             </Link>
             {role === "ADMIN" && (
-              <details className="relative">
-                <summary className="btn-secondary list-none cursor-pointer">{t("navAdmin")}</summary>
-                <div className="absolute right-0 top-full z-20 mt-2 flex w-52 flex-col gap-1 rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-2 shadow-lg">
-                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin">
-                    {t("navAdmin")}
-                  </Link>
-                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/audit">
-                    {t("navAudit")}
-                  </Link>
-                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/data-quality">
-                    Datenqualitaet
-                  </Link>
-                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/import">
-                    Import
-                  </Link>
-                  <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/trash">
-                    {t("navTrash")}
-                  </Link>
-                  <div className="my-1 border-t border-workshop-200" />
-                  <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/csv">
-                    {t("navCsvExport")}
-                  </a>
-                  <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/json">
-                    {t("navJsonExport")}
-                  </a>
-                  <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/ptouch">
-                    {t("navPtouchExport")}
-                  </a>
-                </div>
-              </details>
+              <div className="relative" ref={desktopAdminMenuRef}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  aria-expanded={desktopAdminOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setDesktopAdminOpen((open) => !open)}
+                >
+                  {t("navAdmin")}
+                </button>
+                {desktopAdminOpen && (
+                  <div className="absolute right-0 top-full z-20 mt-2 flex w-52 flex-col gap-1 rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-2 shadow-lg">
+                    <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin" onClick={closeDesktopAdminMenu}>
+                      {t("navAdmin")}
+                    </Link>
+                    <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/audit" onClick={closeDesktopAdminMenu}>
+                      {t("navAudit")}
+                    </Link>
+                    <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/data-quality" onClick={closeDesktopAdminMenu}>
+                      {tr("Datenqualitaet", "Data Quality")}
+                    </Link>
+                    <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/import" onClick={closeDesktopAdminMenu}>
+                      {tr("Import", "Import")}
+                    </Link>
+                    <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/trash" onClick={closeDesktopAdminMenu}>
+                      {t("navTrash")}
+                    </Link>
+                    <div className="my-1 border-t border-workshop-200" />
+                    <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/csv" onClick={closeDesktopAdminMenu}>
+                      {t("navCsvExport")}
+                    </a>
+                    <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/json" onClick={closeDesktopAdminMenu}>
+                      {t("navJsonExport")}
+                    </a>
+                    <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/ptouch" onClick={closeDesktopAdminMenu}>
+                      {t("navPtouchExport")}
+                    </a>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -171,10 +218,10 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
                           {t("navAudit")}
                         </Link>
                         <Link className="btn-secondary w-full" href="/admin/data-quality" onClick={closeMobileMenu}>
-                          Datenqualitaet
+                          {tr("Datenqualitaet", "Data Quality")}
                         </Link>
                         <Link className="btn-secondary w-full" href="/admin/import" onClick={closeMobileMenu}>
-                          Import
+                          {tr("Import", "Import")}
                         </Link>
                         <Link className="btn-secondary w-full" href="/trash" onClick={closeMobileMenu}>
                           {t("navTrash")}

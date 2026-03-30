@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { importCoreTargets, type ImportProfileMappingConfig } from "@/lib/import-profiles";
 
 type LookupRow = {
@@ -121,6 +122,8 @@ function createProfileDraft(profile: ImportProfileRow | null) {
 }
 
 export default function AdminImportPage() {
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [categories, setCategories] = useState<LookupRow[]>([]);
   const [types, setTypes] = useState<LookupRow[]>([]);
   const [locations, setLocations] = useState<LookupRow[]>([]);
@@ -175,7 +178,7 @@ export default function AdminImportPage() {
 
   async function runPreview() {
     if (!selectedFile) {
-      setError("Bitte zuerst eine CSV-Datei waehlen.");
+      setError(tr("Bitte zuerst eine CSV-Datei waehlen.", "Please choose a CSV file first."));
       return;
     }
 
@@ -197,13 +200,13 @@ export default function AdminImportPage() {
 
     if (!res.ok) {
       setPreview(null);
-      setError(data?.error || "Preview konnte nicht geladen werden.");
+      setError(data?.error || tr("Preview konnte nicht geladen werden.", "Preview could not be loaded."));
       return;
     }
 
     setPreview(data);
     setMappingDraft(data.mappingConfig || emptyMappingConfig());
-    setFeedback(`Preview geladen: ${data.readyRows}/${data.totalRows} Zeilen bereit.`);
+    setFeedback(tr(`Preview geladen: ${data.readyRows}/${data.totalRows} Zeilen bereit.`, `Preview loaded: ${data.readyRows}/${data.totalRows} rows ready.`));
   }
 
   async function runApply() {
@@ -226,17 +229,17 @@ export default function AdminImportPage() {
 
     if (!res.ok) {
       setPreview(data);
-      setError(data?.error || "Import fehlgeschlagen.");
+      setError(data?.error || tr("Import fehlgeschlagen.", "Import failed."));
       return;
     }
 
     setPreview(data);
-    setFeedback(`Import abgeschlossen: ${data.created || 0} Artikel angelegt.`);
+    setFeedback(tr(`Import abgeschlossen: ${data.created || 0} Artikel angelegt.`, `Import complete: ${data.created || 0} items created.`));
   }
 
   async function saveProfile(mode: "create" | "update") {
     if (!profileDraft.name.trim()) {
-      setError("Profilname fehlt.");
+      setError(tr("Profilname fehlt.", "Profile name is missing."));
       return;
     }
 
@@ -262,13 +265,13 @@ export default function AdminImportPage() {
     setProfileBusy(false);
 
     if (!res.ok) {
-      setError(data?.error || "Profil konnte nicht gespeichert werden.");
+      setError(data?.error || tr("Profil konnte nicht gespeichert werden.", "Profile could not be saved."));
       return;
     }
 
     await load();
     setSelectedProfileId(data.id);
-    setFeedback(mode === "create" ? "Profil gespeichert." : "Profil aktualisiert.");
+    setFeedback(mode === "create" ? tr("Profil gespeichert.", "Profile saved.") : tr("Profil aktualisiert.", "Profile updated."));
   }
 
   async function deleteProfile() {
@@ -286,7 +289,7 @@ export default function AdminImportPage() {
     setProfileBusy(false);
 
     if (!res.ok) {
-      setError(data?.error || "Profil konnte nicht geloescht werden.");
+      setError(data?.error || tr("Profil konnte nicht geloescht werden.", "Profile could not be deleted."));
       return;
     }
 
@@ -294,7 +297,7 @@ export default function AdminImportPage() {
     setProfileDraft({ name: "", description: "" });
     setMappingDraft(emptyMappingConfig());
     await load();
-    setFeedback("Profil geloescht.");
+    setFeedback(tr("Profil geloescht.", "Profile deleted."));
   }
 
   function setAssignmentSourceType(targetKey: string, sourceType: "column" | "fixed" | "ignore") {
@@ -340,7 +343,7 @@ export default function AdminImportPage() {
     if (targetKey === "category") {
       return (
         <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
-          <option value="">Kategorie waehlen</option>
+          <option value="">{tr("Kategorie waehlen", "Choose category")}</option>
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
               {category.name} ({category.code || "--"})
@@ -353,7 +356,7 @@ export default function AdminImportPage() {
     if (targetKey === "type") {
       return (
         <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
-          <option value="">Type waehlen</option>
+          <option value="">{tr("Type waehlen", "Choose type")}</option>
           {types.map((type) => (
             <option key={type.id} value={type.id}>
               {(type.code || "--")} - {type.name}
@@ -366,7 +369,7 @@ export default function AdminImportPage() {
     if (targetKey === "storageLocation") {
       return (
         <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
-          <option value="">Lagerort waehlen</option>
+          <option value="">{tr("Lagerort waehlen", "Choose storage location")}</option>
           {locations.map((location) => (
             <option key={location.id} value={location.id}>
               {location.name} ({location.code || "--"})
@@ -379,7 +382,7 @@ export default function AdminImportPage() {
     if (targetKey === "unit") {
       return (
         <select className="input" value={value} onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}>
-          <option value="">Einheit waehlen</option>
+          <option value="">{tr("Einheit waehlen", "Choose unit")}</option>
           {["STK", "M", "SET", "PACK"].map((unit) => (
             <option key={unit} value={unit}>
               {unit}
@@ -394,7 +397,7 @@ export default function AdminImportPage() {
         className="input"
         value={value}
         onChange={(e) => setAssignmentFixedValue(targetKey, e.target.value)}
-        placeholder="Fester Wert"
+        placeholder={tr("Fester Wert", "Fixed value")}
       />
     );
   }
@@ -410,15 +413,15 @@ export default function AdminImportPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Import</h1>
-          <p className="text-sm text-workshop-700">Admin-Wizard fuer CSV-Profile, Feldzuordnung, Preview und strikten Apply.</p>
+          <h1 className="text-2xl font-semibold">{tr("Import", "Import")}</h1>
+          <p className="text-sm text-workshop-700">{tr("Admin-Wizard fuer CSV-Profile, Feldzuordnung, Preview und strikten Apply.", "Admin wizard for CSV profiles, field mapping, previews, and strict apply.")}</p>
         </div>
         <div className="flex gap-2">
           <Link className="btn-secondary" href="/admin">
-            Zurueck zu Admin
+            {tr("Zurueck zu Admin", "Back to admin")}
           </Link>
           <Link className="btn-secondary" href="/admin/data-quality">
-            Datenqualitaet
+            {tr("Datenqualitaet", "Data Quality")}
           </Link>
         </div>
       </div>
@@ -427,7 +430,7 @@ export default function AdminImportPage() {
       {error && <div className="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-700">{error}</div>}
 
       <section className="card space-y-3">
-        <h2 className="text-lg font-semibold">1. Datei und Profil</h2>
+        <h2 className="text-lg font-semibold">{tr("1. Datei und Profil", "1. File and profile")}</h2>
         <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
           <div className="space-y-3">
             <input
@@ -451,7 +454,7 @@ export default function AdminImportPage() {
                   setMappingDraft(nextProfile?.mappingConfig || emptyMappingConfig());
                 }}
               >
-                <option value="">Kein Profil</option>
+                <option value="">{tr("Kein Profil", "No profile")}</option>
                 {profiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
                     {profile.name}
@@ -459,28 +462,28 @@ export default function AdminImportPage() {
                 ))}
               </select>
               <button className="btn-secondary" type="button" disabled={busy || !selectedFile} onClick={runPreview}>
-                {busy ? "Laedt..." : "Preview laden"}
+                {busy ? tr("Laedt...", "Loading...") : tr("Preview laden", "Load preview")}
               </button>
             </div>
           </div>
 
           <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-            <p className="text-sm font-semibold">Profilpflege</p>
+            <p className="text-sm font-semibold">{tr("Profilpflege", "Profile management")}</p>
             <input
               className="input"
               value={profileDraft.name}
               onChange={(e) => setProfileDraft((current) => ({ ...current, name: e.target.value }))}
-              placeholder="Profilname"
+              placeholder={tr("Profilname", "Profile name")}
             />
             <textarea
               className="input min-h-24"
               value={profileDraft.description}
               onChange={(e) => setProfileDraft((current) => ({ ...current, description: e.target.value }))}
-              placeholder="Beschreibung der Quelle"
+              placeholder={tr("Beschreibung der Quelle", "Source description")}
             />
             <div className="flex flex-wrap gap-2">
               <button className="btn-secondary" type="button" disabled={profileBusy} onClick={() => saveProfile("create")}>
-                Als neues Profil speichern
+                {tr("Als neues Profil speichern", "Save as new profile")}
               </button>
               <button
                 className="btn-secondary"
@@ -488,7 +491,7 @@ export default function AdminImportPage() {
                 disabled={profileBusy || !selectedProfileId}
                 onClick={() => saveProfile("update")}
               >
-                Profil aktualisieren
+                {tr("Profil aktualisieren", "Update profile")}
               </button>
               <button
                 className="btn-secondary"
@@ -496,7 +499,7 @@ export default function AdminImportPage() {
                 disabled={profileBusy || !selectedProfileId}
                 onClick={deleteProfile}
               >
-                Profil loeschen
+                {tr("Profil loeschen", "Delete profile")}
               </button>
             </div>
             {preview && (
@@ -510,7 +513,7 @@ export default function AdminImportPage() {
 
         {!!preview?.profileMatches?.length && (
           <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-            <p className="text-sm font-semibold">Profilvorschlaege</p>
+            <p className="text-sm font-semibold">{tr("Profilvorschlaege", "Profile suggestions")}</p>
             <div className="grid gap-2 md:grid-cols-2">
               {preview.profileMatches.map((match) => (
                 <div key={match.id} className="rounded-lg border border-workshop-200 p-3 text-sm">
@@ -527,7 +530,7 @@ export default function AdminImportPage() {
                       setMappingDraft(nextProfile?.mappingConfig || emptyMappingConfig());
                     }}
                   >
-                    Profil uebernehmen
+                    {tr("Profil uebernehmen", "Use profile")}
                   </button>
                 </div>
               ))}
@@ -539,17 +542,17 @@ export default function AdminImportPage() {
       <section className="card space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold">2. Mapping</h2>
-            <p className="text-sm text-workshop-700">Nach der ersten Preview koennen Zuordnungen angepasst und erneut ausgewertet werden.</p>
+            <h2 className="text-lg font-semibold">{tr("2. Mapping", "2. Mapping")}</h2>
+            <p className="text-sm text-workshop-700">{tr("Nach der ersten Preview koennen Zuordnungen angepasst und erneut ausgewertet werden.", "After the first preview, mappings can be adjusted and re-evaluated.")}</p>
           </div>
           <button className="btn-secondary" type="button" disabled={!selectedFile || busy} onClick={runPreview}>
-            Mapping neu auswerten
+            {tr("Mapping neu auswerten", "Re-run mapping")}
           </button>
         </div>
 
         {!preview ? (
           <div className="rounded border border-dashed border-workshop-300 p-4 text-sm text-workshop-700">
-            Erst eine Datei auswaehlen und Preview laden.
+            {tr("Erst eine Datei auswaehlen und Preview laden.", "Choose a file and load the preview first.")}
           </div>
         ) : (
           <div className="space-y-4">
@@ -575,9 +578,9 @@ export default function AdminImportPage() {
                         value={assignment?.sourceType || "ignore"}
                         onChange={(e) => setAssignmentSourceType(target.key, e.target.value as "column" | "fixed" | "ignore")}
                       >
-                        <option value="ignore">Ignorieren</option>
-                        <option value="column">CSV-Spalte</option>
-                        <option value="fixed">Fester Wert</option>
+                        <option value="ignore">{tr("Ignorieren", "Ignore")}</option>
+                        <option value="column">{tr("CSV-Spalte", "CSV column")}</option>
+                        <option value="fixed">{tr("Fester Wert", "Fixed value")}</option>
                       </select>
 
                       {assignment?.sourceType === "column" ? (
@@ -586,7 +589,7 @@ export default function AdminImportPage() {
                           value={assignment.column || ""}
                           onChange={(e) => setAssignmentColumn(target.key, e.target.value)}
                         >
-                          <option value="">Spalte waehlen</option>
+                          <option value="">{tr("Spalte waehlen", "Choose column")}</option>
                           {availableHeaders.map((header) => (
                             <option key={header} value={header}>
                               {header}
@@ -597,7 +600,7 @@ export default function AdminImportPage() {
                         renderFixedValueInput(target.key)
                       ) : (
                         <div className="rounded border border-dashed border-workshop-300 px-3 py-2 text-sm text-workshop-600">
-                          Keine Zuordnung
+                          {tr("Keine Zuordnung", "No mapping")}
                         </div>
                       )}
                     </div>
@@ -612,27 +615,27 @@ export default function AdminImportPage() {
       <section className="card space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold">3. Preview und Apply</h2>
+            <h2 className="text-lg font-semibold">{tr("3. Preview und Apply", "3. Preview and apply")}</h2>
             {preview && (
               <p className="text-sm text-workshop-700">
-                Zeilen: {preview.totalRows} | bereit: {preview.readyRows} | Fehler: {preview.errorsCount} | Warnungen: {preview.warningsCount}
+                {tr("Zeilen", "Rows")}: {preview.totalRows} | {tr("bereit", "ready")}: {preview.readyRows} | {tr("Fehler", "Errors")}: {preview.errorsCount} | {tr("Warnungen", "Warnings")}: {preview.warningsCount}
               </p>
             )}
           </div>
           <button className="btn" type="button" disabled={!canApply || busy} onClick={runApply}>
-            {busy ? "Laeuft..." : "Apply ausfuehren"}
+            {busy ? tr("Laeuft...", "Running...") : tr("Apply ausfuehren", "Run apply")}
           </button>
         </div>
 
         {!preview ? (
           <div className="rounded border border-dashed border-workshop-300 p-4 text-sm text-workshop-700">
-            Noch keine Preview vorhanden.
+            {tr("Noch keine Preview vorhanden.", "No preview available yet.")}
           </div>
         ) : (
           <div className="space-y-3">
             {!!preview.createdItems?.length && (
               <div className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
-                Angelegt: {preview.createdItems.map((item) => `${item.labelCode} (${item.name})`).join(", ")}
+                {tr("Angelegt", "Created")}: {preview.createdItems.map((item) => `${item.labelCode} (${item.name})`).join(", ")}
               </div>
             )}
 
@@ -642,12 +645,12 @@ export default function AdminImportPage() {
                   <p className="font-semibold">{entry.header}</p>
                   <p className="text-workshop-700">
                     {entry.status === "mapped"
-                      ? `Mapped: ${entry.mappedTargetKeys.join(", ")}`
+                      ? `${tr("Mapped", "Mapped")}: ${entry.mappedTargetKeys.join(", ")}`
                       : entry.status === "suggested"
-                        ? `Vorschlag: ${entry.suggestedTargetKeys.join(", ")}`
+                        ? `${tr("Vorschlag", "Suggestion")}: ${entry.suggestedTargetKeys.join(", ")}`
                         : entry.status === "ignored"
-                          ? "Ignoriert"
-                          : "Nicht zugeordnet"}
+                          ? tr("Ignoriert", "Ignored")
+                          : tr("Nicht zugeordnet", "Unmapped")}
                   </p>
                 </div>
               ))}
@@ -663,7 +666,7 @@ export default function AdminImportPage() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-semibold">
-                      Zeile {row.lineNumber} - {row.status === "ready" ? "bereit" : "fehlerhaft"}
+                      {tr("Zeile", "Row")} {row.lineNumber} - {row.status === "ready" ? tr("bereit", "ready") : tr("fehlerhaft", "invalid")}
                     </p>
                     {row.resolved && (
                       <p className="text-sm text-workshop-700">
@@ -674,15 +677,15 @@ export default function AdminImportPage() {
 
                   {row.resolved && (
                     <div className="mt-2 grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
-                      <p>Name: {row.resolved.name}</p>
-                      <p>Bestand: {row.resolved.stock} {row.resolved.unit}</p>
-                      <p>Mindestbestand: {row.resolved.minStock ?? "-"} {row.resolved.unit}</p>
-                      <p>Hersteller: {row.resolved.manufacturer || "-"}</p>
+                      <p>{tr("Name", "Name")}: {row.resolved.name}</p>
+                      <p>{tr("Bestand", "Stock")}: {row.resolved.stock} {row.resolved.unit}</p>
+                      <p>{tr("Mindestbestand", "Minimum stock")}: {row.resolved.minStock ?? "-"} {row.resolved.unit}</p>
+                      <p>{tr("Hersteller", "Manufacturer")}: {row.resolved.manufacturer || "-"}</p>
                       <p>MPN: {row.resolved.mpn || "-"}</p>
-                      <p>Datenblatt: {row.resolved.datasheetUrl || "-"}</p>
+                      <p>{tr("Datenblatt", "Datasheet")}: {row.resolved.datasheetUrl || "-"}</p>
                       {!!row.resolved.customFields.length && (
                         <p className="md:col-span-2 xl:col-span-3">
-                          Custom Fields: {row.resolved.customFields.map((field) => `${field.fieldName}: ${field.displayValue}`).join(" | ")}
+                          {tr("Custom Fields", "Custom fields")}: {row.resolved.customFields.map((field) => `${field.fieldName}: ${field.displayValue}`).join(" | ")}
                         </p>
                       )}
                     </div>

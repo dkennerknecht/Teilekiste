@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
+import { useAppLanguage } from "@/components/app-language-provider";
 
 type BomChild = {
   childItemId: string;
@@ -44,6 +45,8 @@ export function ItemBomSection(props: {
   editMode: boolean;
   onChanged: () => Promise<void>;
 }) {
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchItem[]>([]);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, number>>({});
@@ -84,7 +87,7 @@ export function ItemBomSection(props: {
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      alert(data?.error || "Stückliste konnte nicht gespeichert werden");
+      alert(data?.error || tr("Stueckliste konnte nicht gespeichert werden", "Bill of materials could not be saved"));
       return;
     }
 
@@ -101,7 +104,7 @@ export function ItemBomSection(props: {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      alert(data?.error || "Stückliste konnte nicht gelöscht werden");
+      alert(data?.error || tr("Stueckliste konnte nicht geloescht werden", "Bill of materials could not be deleted"));
       return;
     }
     await props.onChanged();
@@ -110,8 +113,8 @@ export function ItemBomSection(props: {
   return (
     <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
       <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-lg font-semibold text-[var(--app-text)]">Stückliste</h3>
-        <span className="theme-muted text-sm">{props.bomChildren.length} Komponenten</span>
+        <h3 className="text-lg font-semibold text-[var(--app-text)]">{tr("Stueckliste", "Bill of materials")}</h3>
+        <span className="theme-muted text-sm">{props.bomChildren.length} {tr("Komponenten", "components")}</span>
       </div>
 
       {props.editMode && (
@@ -121,7 +124,7 @@ export function ItemBomSection(props: {
               className="input w-full sm:min-w-[16rem] sm:flex-1"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Komponente suchen (Code, Name, MPN)"
+              placeholder={tr("Komponente suchen (Code, Name, MPN)", "Search component (code, name, MPN)")}
             />
             <input
               className="input w-full sm:w-24"
@@ -140,7 +143,7 @@ export function ItemBomSection(props: {
                     <p className="theme-muted">{result.name}</p>
                   </div>
                   <button type="button" className="btn-secondary w-full sm:w-auto" onClick={() => upsertBom(result.id, newQty)}>
-                    Hinzufügen
+                    {tr("Hinzufuegen", "Add")}
                   </button>
                 </li>
               ))}
@@ -151,7 +154,7 @@ export function ItemBomSection(props: {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div>
-          <p className="theme-muted mb-2 text-sm font-semibold">Komponenten</p>
+          <p className="theme-muted mb-2 text-sm font-semibold">{tr("Komponenten", "Components")}</p>
           <ul className="space-y-2">
             {props.bomChildren.map((entry) => (
               <li key={entry.childItemId} className="rounded-xl border border-workshop-200 p-3">
@@ -162,7 +165,7 @@ export function ItemBomSection(props: {
                     </Link>
                     <p>{entry.child.name}</p>
                     <p className="theme-muted text-sm">
-                      Bestand: {entry.child.stock} {entry.child.unit} • Ort: {entry.child.storageLocation.name}
+                      {tr("Bestand", "Stock")}: {entry.child.stock} {entry.child.unit} • {tr("Ort", "Location")}: {entry.child.storageLocation.name}
                     </p>
                   </div>
                   {props.editMode ? (
@@ -180,7 +183,7 @@ export function ItemBomSection(props: {
                         }
                       />
                       <button type="button" className="btn-secondary w-full sm:w-auto" onClick={() => upsertBom(entry.childItemId, qtyDrafts[entry.childItemId] ?? entry.qty)}>
-                        Menge
+                        {tr("Menge", "Qty")}
                       </button>
                       <button type="button" className="rounded p-2 [color:var(--app-danger-text)]" onClick={() => removeBom(entry.childItemId)}>
                         <Trash2 size={14} />
@@ -193,13 +196,13 @@ export function ItemBomSection(props: {
               </li>
             ))}
             {props.bomChildren.length === 0 && (
-              <li className="theme-muted text-sm">Keine Komponenten hinterlegt.</li>
+              <li className="theme-muted text-sm">{tr("Keine Komponenten hinterlegt.", "No components assigned.")}</li>
             )}
           </ul>
         </div>
 
         <div>
-          <p className="theme-muted mb-2 text-sm font-semibold">Verwendet in Baugruppen</p>
+          <p className="theme-muted mb-2 text-sm font-semibold">{tr("Verwendet in Baugruppen", "Used in assemblies")}</p>
           <ul className="space-y-2">
             {props.bomParents.map((entry) => (
               <li key={entry.parentItemId} className="rounded-xl border border-workshop-200 p-3">
@@ -208,12 +211,12 @@ export function ItemBomSection(props: {
                 </Link>
                 <p>{entry.parent.name}</p>
                 <p className="theme-muted text-sm">
-                  Verwendet: x {entry.qty} • Ort: {entry.parent.storageLocation.name}
+                  {tr("Verwendet", "Used")}: x {entry.qty} • {tr("Ort", "Location")}: {entry.parent.storageLocation.name}
                 </p>
               </li>
             ))}
             {props.bomParents.length === 0 && (
-              <li className="theme-muted text-sm">Dieses Item ist in keiner Baugruppe referenziert.</li>
+              <li className="theme-muted text-sm">{tr("Dieses Item ist in keiner Baugruppe referenziert.", "This item is not referenced in any assembly.")}</li>
             )}
           </ul>
         </div>

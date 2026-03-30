@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { fileHref } from "@/lib/file-href";
 
 type ItemImage = {
@@ -20,6 +21,8 @@ export function ItemImageGallery(props: {
   editMode: boolean;
   onReload: () => Promise<void>;
 }) {
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [previewImage, setPreviewImage] = useState<ItemImage | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [images, setImages] = useState<ItemImage[]>(props.images);
@@ -63,7 +66,7 @@ export function ItemImageGallery(props: {
     const files = formData.getAll("files").filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
     if (!files.length) {
-      setUploadError("Bitte mindestens ein Bild auswaehlen.");
+      setUploadError(tr("Bitte mindestens ein Bild auswaehlen.", "Please select at least one image."));
       return;
     }
 
@@ -77,7 +80,7 @@ export function ItemImageGallery(props: {
 
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        setUploadError(payload?.error || "Upload fehlgeschlagen.");
+        setUploadError(payload?.error || tr("Upload fehlgeschlagen.", "Upload failed."));
         return;
       }
 
@@ -101,7 +104,7 @@ export function ItemImageGallery(props: {
       form.reset();
       await props.onReload();
     } catch {
-      setUploadError("Upload fehlgeschlagen.");
+      setUploadError(tr("Upload fehlgeschlagen.", "Upload failed."));
     } finally {
       setUploading(false);
     }
@@ -138,7 +141,7 @@ export function ItemImageGallery(props: {
           </button>
         ) : props.editMode ? (
           <div className="theme-muted flex min-h-[7rem] items-center justify-center px-4 py-6 text-center text-sm">
-            Noch kein Bild hochgeladen.
+            {tr("Noch kein Bild hochgeladen.", "No image uploaded yet.")}
           </div>
         ) : null}
       </div>
@@ -200,12 +203,12 @@ export function ItemImageGallery(props: {
         <div className="mt-3 space-y-2">
           <form className="flex flex-col gap-2 sm:flex-row sm:flex-wrap" onSubmit={handleUpload}>
             <input className="input" type="file" name="files" accept="image/*" capture="environment" multiple required />
-            <input className="input sm:flex-1" type="text" name="caption" placeholder="Bildtitel (optional bei Einzelupload)" />
+            <input className="input sm:flex-1" type="text" name="caption" placeholder={tr("Bildtitel (optional bei Einzelupload)", "Image title (optional for single upload)")} />
             <button className="btn-secondary w-full sm:w-auto" type="submit" disabled={uploading}>
-              {uploading ? "Laedt..." : "Bilder hochladen"}
+              {uploading ? tr("Laedt...", "Uploading...") : tr("Bilder hochladen", "Upload images")}
             </button>
           </form>
-          <p className="theme-muted text-xs">Mehrfachauswahl ist moeglich. Ein gemeinsamer Bildtitel wird nur bei Einzelupload gesetzt.</p>
+          <p className="theme-muted text-xs">{tr("Mehrfachauswahl ist moeglich. Ein gemeinsamer Bildtitel wird nur bei Einzelupload gesetzt.", "Multiple selection is supported. A shared image title is only applied for single uploads.")}</p>
           {uploadError && <p className="text-sm text-red-700">{uploadError}</p>}
         </div>
       )}

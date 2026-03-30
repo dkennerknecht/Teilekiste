@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, CheckCheck, ChevronDown, ChevronUp, MapPin, PencilLine, Trash2, X } from "lucide-react";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
@@ -70,6 +71,8 @@ const initialBulkTransferForm: BulkTransferForm = {
 export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { language } = useAppLanguage();
+  const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
@@ -194,7 +197,7 @@ export default function HomePage() {
 
   async function applyBulkEdit() {
     if (!selected.length) {
-      setBulkError("Bitte zuerst mindestens ein Item auswaehlen.");
+      setBulkError(tr("Bitte zuerst mindestens ein Item auswaehlen.", "Please select at least one item first."));
       return;
     }
 
@@ -202,12 +205,12 @@ export default function HomePage() {
       !bulkForm.categoryEnabled &&
       !bulkForm.tagsEnabled
     ) {
-      setBulkError("Bitte mindestens ein Feld fuer die Sammelbearbeitung aktivieren.");
+      setBulkError(tr("Bitte mindestens ein Feld fuer die Sammelbearbeitung aktivieren.", "Please enable at least one field for bulk editing."));
       return;
     }
 
     if (bulkForm.categoryEnabled && !bulkForm.categoryId) {
-      setBulkError("Bitte eine Kategorie auswaehlen.");
+      setBulkError(tr("Bitte eine Kategorie auswaehlen.", "Please choose a category."));
       return;
     }
 
@@ -231,7 +234,7 @@ export default function HomePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setBulkError(data?.error || "Die Sammelbearbeitung konnte nicht gespeichert werden.");
+      setBulkError(data?.error || tr("Die Sammelbearbeitung konnte nicht gespeichert werden.", "Bulk edit could not be saved."));
       setBulkSaving(false);
       return;
     }
@@ -243,11 +246,11 @@ export default function HomePage() {
 
   async function previewBulkTransfer() {
     if (!selected.length) {
-      setBulkTransferError("Bitte zuerst mindestens ein Item auswaehlen.");
+      setBulkTransferError(tr("Bitte zuerst mindestens ein Item auswaehlen.", "Please select at least one item first."));
       return;
     }
     if (!bulkTransferForm.storageLocationId) {
-      setBulkTransferError("Bitte einen Ziel-Lagerort auswaehlen.");
+      setBulkTransferError(tr("Bitte einen Ziel-Lagerort auswaehlen.", "Please choose a target storage location."));
       return;
     }
 
@@ -270,23 +273,23 @@ export default function HomePage() {
     setBulkTransferBusy(false);
 
     if (!res.ok && !data) {
-      setBulkTransferError("Transfer-Vorschau konnte nicht geladen werden.");
+      setBulkTransferError(tr("Transfer-Vorschau konnte nicht geladen werden.", "Transfer preview could not be loaded."));
       return;
     }
 
     setBulkTransferPreview(data);
     if (!res.ok) {
-      setBulkTransferError(data?.targetError || data?.error || "Transfer-Vorschau hat Blocker.");
+      setBulkTransferError(data?.targetError || data?.error || tr("Transfer-Vorschau hat Blocker.", "Transfer preview has blockers."));
     }
   }
 
   async function applyBulkTransfer() {
     if (!selected.length) {
-      setBulkTransferError("Bitte zuerst mindestens ein Item auswaehlen.");
+      setBulkTransferError(tr("Bitte zuerst mindestens ein Item auswaehlen.", "Please select at least one item first."));
       return;
     }
     if (!bulkTransferForm.storageLocationId) {
-      setBulkTransferError("Bitte einen Ziel-Lagerort auswaehlen.");
+      setBulkTransferError(tr("Bitte einen Ziel-Lagerort auswaehlen.", "Please choose a target storage location."));
       return;
     }
 
@@ -309,7 +312,7 @@ export default function HomePage() {
 
     if (!res.ok) {
       setBulkTransferPreview(data);
-      setBulkTransferError(data?.targetError || data?.error || "Die Sammelumlagerung konnte nicht gespeichert werden.");
+      setBulkTransferError(data?.targetError || data?.error || tr("Die Sammelumlagerung konnte nicht gespeichert werden.", "Bulk transfer could not be saved."));
       return;
     }
 
@@ -320,7 +323,7 @@ export default function HomePage() {
 
   async function applyBulkArchive() {
     if (!selected.length) {
-      setBulkActionError("Bitte zuerst mindestens ein Item auswaehlen.");
+      setBulkActionError(tr("Bitte zuerst mindestens ein Item auswaehlen.", "Please select at least one item first."));
       return;
     }
 
@@ -338,7 +341,7 @@ export default function HomePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setBulkActionError(data?.error || "Die markierten Items konnten nicht archiviert werden.");
+      setBulkActionError(data?.error || tr("Die markierten Items konnten nicht archiviert werden.", "The selected items could not be archived."));
       setBulkArchiving(false);
       return;
     }
@@ -350,7 +353,7 @@ export default function HomePage() {
 
   async function applyBulkDelete() {
     if (!selected.length) {
-      setBulkDeleteError("Bitte zuerst mindestens ein Item auswaehlen.");
+      setBulkDeleteError(tr("Bitte zuerst mindestens ein Item auswaehlen.", "Please select at least one item first."));
       return;
     }
 
@@ -368,7 +371,7 @@ export default function HomePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setBulkDeleteError(data?.error || "Die markierten Items konnten nicht geloescht werden.");
+      setBulkDeleteError(data?.error || tr("Die markierten Items konnten nicht geloescht werden.", "The selected items could not be deleted."));
       setBulkDeleting(false);
       return;
     }
@@ -440,8 +443,8 @@ export default function HomePage() {
                 <button
                   className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
                   onClick={() => toggleAllVisible(true)}
-                  aria-label="Alle sichtbaren auswaehlen"
-                  title="Alle sichtbaren auswaehlen"
+                  aria-label={tr("Alle sichtbaren auswaehlen", "Select all visible")}
+                  title={tr("Alle sichtbaren auswaehlen", "Select all visible")}
                 >
                   <CheckCheck size={18} />
                 </button>
@@ -449,16 +452,16 @@ export default function HomePage() {
               <button
                 className="btn inline-flex h-10 w-10 items-center justify-center px-0 py-0"
                 onClick={() => setBulkEditorOpen(true)}
-                aria-label="Sammelbearbeitung"
-                title="Sammelbearbeitung"
+                aria-label={tr("Sammelbearbeitung", "Bulk edit")}
+                title={tr("Sammelbearbeitung", "Bulk edit")}
               >
                 <PencilLine size={18} />
               </button>
               <button
                 className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
                 onClick={() => setBulkTransferOpen(true)}
-                aria-label="Sammelumlagerung"
-                title="Sammelumlagerung"
+                aria-label={tr("Sammelumlagerung", "Bulk transfer")}
+                title={tr("Sammelumlagerung", "Bulk transfer")}
               >
                 <MapPin size={18} />
               </button>
@@ -466,24 +469,24 @@ export default function HomePage() {
                 className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
                 onClick={applyBulkArchive}
                 disabled={bulkArchiving}
-                aria-label="Archivieren"
-                title="Archivieren"
+                aria-label={tr("Archivieren", "Archive")}
+                title={tr("Archivieren", "Archive")}
               >
                 <Archive size={18} />
               </button>
               <button
                 className="theme-status-danger inline-flex h-10 w-10 items-center justify-center rounded-xl border border-transparent px-0 py-0"
                 onClick={() => setBulkDeleteOpen(true)}
-                aria-label="Loeschen"
-                title="Loeschen"
+                aria-label={tr("Loeschen", "Delete")}
+                title={tr("Loeschen", "Delete")}
               >
                 <Trash2 size={18} />
               </button>
               <button
                 className="btn-secondary inline-flex h-10 w-10 items-center justify-center px-0 py-0"
                 onClick={() => setSelected([])}
-                aria-label="Auswahl aufheben"
-                title="Auswahl aufheben"
+                aria-label={tr("Auswahl aufheben", "Clear selection")}
+                title={tr("Auswahl aufheben", "Clear selection")}
               >
                 <X size={18} />
               </button>
@@ -502,9 +505,9 @@ export default function HomePage() {
             className="btn-secondary flex h-10 w-full items-center justify-between px-3 py-1 text-sm"
             onClick={() => setMobileFiltersOpen((current) => !current)}
             aria-expanded={mobileFiltersOpen}
-            aria-label="Filter umschalten"
+            aria-label={tr("Filter umschalten", "Toggle filters")}
           >
-            <span>Filter{activeFilterCount ? ` (${activeFilterCount})` : ""}</span>
+            <span>{tr("Filter", "Filters")}{activeFilterCount ? ` (${activeFilterCount})` : ""}</span>
             {mobileFiltersOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </button>
         </div>
@@ -521,9 +524,9 @@ export default function HomePage() {
                 else params.delete("categoryId");
               })
             }
-            aria-label="Nach Kategorie filtern"
+            aria-label={tr("Nach Kategorie filtern", "Filter by category")}
           >
-            <option value="">Alle Kategorien</option>
+            <option value="">{tr("Alle Kategorien", "All categories")}</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -540,9 +543,9 @@ export default function HomePage() {
                 else params.delete("storageLocationId");
               })
             }
-            aria-label="Nach Lagerort filtern"
+            aria-label={tr("Nach Lagerort filtern", "Filter by storage location")}
           >
-            <option value="">Alle Orte</option>
+            <option value="">{tr("Alle Orte", "All locations")}</option>
             {locations.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
@@ -559,9 +562,9 @@ export default function HomePage() {
                 else params.delete("tagId");
               })
             }
-            aria-label="Nach Tag filtern"
+            aria-label={tr("Nach Tag filtern", "Filter by tag")}
           >
-            <option value="">Alle Tags</option>
+            <option value="">{tr("Alle Tags", "All tags")}</option>
             {tags.map((tag) => (
               <option key={tag.id} value={tag.id}>
                 {tag.name}
@@ -579,7 +582,7 @@ export default function HomePage() {
               })
             }
           >
-            Unter Minimum
+            {tr("Unter Minimum", "Below minimum")}
           </button>
 
           <button
@@ -592,7 +595,7 @@ export default function HomePage() {
               })
             }
           >
-            Mit Bild
+            {tr("Mit Bild", "With image")}
           </button>
 
           {hasActiveFilters && (
@@ -601,7 +604,7 @@ export default function HomePage() {
               className="btn-secondary h-10 w-full px-3 py-1 text-sm xl:w-auto xl:whitespace-nowrap"
               onClick={clearFilters}
             >
-              Filter zuruecksetzen
+              {tr("Filter zuruecksetzen", "Reset filters")}
             </button>
           )}
         </div>
@@ -610,11 +613,11 @@ export default function HomePage() {
       <div className="space-y-3 md:hidden">
         {loading ? (
           <div className="card">
-            <p>Lade...</p>
+            <p>{tr("Lade...", "Loading...")}</p>
           </div>
         ) : items.length === 0 ? (
           <div className="card">
-            <p className="text-sm text-workshop-700">Keine Items gefunden.</p>
+            <p className="text-sm text-workshop-700">{tr("Keine Items gefunden.", "No items found.")}</p>
           </div>
         ) : (
           items.map((item) => (
@@ -659,7 +662,7 @@ export default function HomePage() {
                     {item.category.name} · {item.storageLocation.name}
                   </p>
                   <p className={`text-xs ${item.minStock !== null && item.availableStock <= item.minStock ? "text-red-700" : "text-workshop-700"}`}>
-                    Verfuegbar {formatDisplayQuantity(item.unit, item.availableStock)}
+                    {tr("Verfuegbar", "Available")} {formatDisplayQuantity(item.unit, item.availableStock)}
                   </p>
                 </div>
                 <div
@@ -686,7 +689,7 @@ export default function HomePage() {
       <div className="hidden md:block">
         {loading ? (
           <div className="card">
-            <p>Lade...</p>
+            <p>{tr("Lade...", "Loading...")}</p>
           </div>
         ) : (
           <div className="card overflow-x-auto">
@@ -698,15 +701,15 @@ export default function HomePage() {
                       type="checkbox"
                       checked={allVisibleSelected}
                       onChange={(e) => toggleAllVisible(e.target.checked)}
-                      aria-label="Alle sichtbaren Items auswaehlen"
+                      aria-label={tr("Alle sichtbaren Items auswaehlen", "Select all visible items")}
                     />
                   </th>
-                  <th className="px-2 py-2">Bild</th>
-                  <th className="px-2 py-2">Code</th>
-                  <th className="px-2 py-2">Name</th>
-                  <th className="px-2 py-2">Kategorie</th>
-                  <th className="px-2 py-2">Ort</th>
-                  <th className="px-2 py-2">Verfuegbar</th>
+                  <th className="px-2 py-2">{tr("Bild", "Image")}</th>
+                  <th className="px-2 py-2">{tr("Code", "Code")}</th>
+                  <th className="px-2 py-2">{tr("Name", "Name")}</th>
+                  <th className="px-2 py-2">{tr("Kategorie", "Category")}</th>
+                  <th className="px-2 py-2">{tr("Ort", "Location")}</th>
+                  <th className="px-2 py-2">{tr("Verfuegbar", "Available")}</th>
                   <th className="px-2 py-2">+/-</th>
                 </tr>
               </thead>
@@ -782,14 +785,14 @@ export default function HomePage() {
           >
             <div className="flex items-start justify-between gap-4 border-b border-workshop-200 px-4 py-3">
               <div>
-                <p className="text-base font-semibold">Sammelbearbeitung</p>
-                <p className="text-sm text-workshop-700">{selected.length} Items werden gemeinsam aktualisiert.</p>
+                <p className="text-base font-semibold">{tr("Sammelbearbeitung", "Bulk edit")}</p>
+                <p className="text-sm text-workshop-700">{language === "en" ? `${selected.length} items will be updated together.` : `${selected.length} Items werden gemeinsam aktualisiert.`}</p>
               </div>
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-workshop-200 text-lg"
                 onClick={resetBulkEditor}
-                aria-label="Sammelbearbeitung schliessen"
+                aria-label={tr("Sammelbearbeitung schliessen", "Close bulk edit")}
               >
                 ×
               </button>
@@ -798,7 +801,7 @@ export default function HomePage() {
             <div className="max-h-[calc(90vh-8.5rem)] space-y-4 overflow-y-auto px-4 py-4">
               {bulkError && <p className="theme-status-danger rounded-lg border border-transparent px-3 py-2 text-sm">{bulkError}</p>}
               <p className="text-xs text-workshop-700">
-                Kategorie und Tags koennen hier gemeinsam gesetzt werden. Lagerwechsel laufen separat ueber die Sammelumlagerung.
+                {tr("Kategorie und Tags koennen hier gemeinsam gesetzt werden. Lagerwechsel laufen separat ueber die Sammelumlagerung.", "Categories and tags can be set together here. Location changes are handled separately through bulk transfer.")}
               </p>
 
               <div className="grid gap-3 sm:grid-cols-2">
@@ -809,7 +812,7 @@ export default function HomePage() {
                       checked={bulkForm.categoryEnabled}
                       onChange={(e) => setBulkForm((prev) => ({ ...prev, categoryEnabled: e.target.checked }))}
                     />
-                    Kategorie setzen
+                    {tr("Kategorie setzen", "Set category")}
                   </label>
                   <select
                     className="input h-10 min-h-0"
@@ -822,7 +825,7 @@ export default function HomePage() {
                       }))
                     }
                   >
-                    <option value="">Kategorie waehlen</option>
+                    <option value="">{tr("Kategorie waehlen", "Choose category")}</option>
                     {categories.map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name}
@@ -840,11 +843,11 @@ export default function HomePage() {
                     checked={bulkForm.tagsEnabled}
                     onChange={(e) => setBulkForm((prev) => ({ ...prev, tagsEnabled: e.target.checked }))}
                   />
-                  Tags ersetzen
+                  {tr("Tags ersetzen", "Replace tags")}
                 </label>
-                <p className="text-xs text-workshop-700">Wenn aktiv, wird die Tag-Auswahl fuer alle markierten Items exakt auf diesen Stand gesetzt.</p>
+                <p className="text-xs text-workshop-700">{tr("Wenn aktiv, wird die Tag-Auswahl fuer alle markierten Items exakt auf diesen Stand gesetzt.", "When enabled, the tag selection will be set exactly to this state for all selected items.")}</p>
                 {tags.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-workshop-200 px-3 py-2 text-sm text-workshop-700">Keine Tags vorhanden.</p>
+                  <p className="rounded-lg border border-dashed border-workshop-200 px-3 py-2 text-sm text-workshop-700">{tr("Keine Tags vorhanden.", "No tags available.")}</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {tags.map((tag) => (
@@ -874,10 +877,10 @@ export default function HomePage() {
 
             <div className="flex flex-col-reverse gap-2 border-t border-workshop-200 px-4 py-3 sm:flex-row sm:justify-end">
               <button type="button" className="btn-secondary w-full sm:w-auto" onClick={resetBulkEditor}>
-                Abbrechen
+                {tr("Abbrechen", "Cancel")}
               </button>
               <button type="button" className="btn w-full sm:w-auto" onClick={applyBulkEdit} disabled={bulkSaving}>
-                {bulkSaving ? "Speichert..." : "Aenderungen uebernehmen"}
+                {bulkSaving ? tr("Speichert...", "Saving...") : tr("Aenderungen uebernehmen", "Apply changes")}
               </button>
             </div>
           </div>
@@ -892,14 +895,14 @@ export default function HomePage() {
           >
             <div className="flex items-start justify-between gap-4 border-b border-workshop-200 px-4 py-3">
               <div>
-                <p className="text-base font-semibold">Sammelumlagerung</p>
-                <p className="text-sm text-workshop-700">{selected.length} Items werden an denselben Zielplatz verschoben.</p>
+                <p className="text-base font-semibold">{tr("Sammelumlagerung", "Bulk transfer")}</p>
+                <p className="text-sm text-workshop-700">{language === "en" ? `${selected.length} items will be moved to the same target location.` : `${selected.length} Items werden an denselben Zielplatz verschoben.`}</p>
               </div>
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-workshop-200 text-lg"
                 onClick={resetBulkTransfer}
-                aria-label="Sammelumlagerung schliessen"
+                aria-label={tr("Sammelumlagerung schliessen", "Close bulk transfer")}
               >
                 ×
               </button>
@@ -910,7 +913,7 @@ export default function HomePage() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2 rounded-xl border border-workshop-200 p-3 sm:col-span-2">
-                  <label className="text-sm font-medium">Ziel-Lagerort</label>
+                  <label className="text-sm font-medium">{tr("Ziel-Lagerort", "Target storage location")}</label>
                   <select
                     className="input h-10 min-h-0"
                     value={bulkTransferForm.storageLocationId}
@@ -922,7 +925,7 @@ export default function HomePage() {
                       }))
                     }
                   >
-                    <option value="">Lagerort waehlen</option>
+                    <option value="">{tr("Lagerort waehlen", "Choose storage location")}</option>
                     {locations.map((location) => (
                       <option key={location.id} value={location.id}>
                         {location.name}
@@ -932,7 +935,7 @@ export default function HomePage() {
                 </div>
 
                 <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="text-sm font-medium">Ziel-Regal / Bereich</label>
+                  <label className="text-sm font-medium">{tr("Ziel-Regal / Bereich", "Target shelf / area")}</label>
                   <select
                     className="input h-10 min-h-0"
                     value={bulkTransferForm.storageArea}
@@ -941,10 +944,10 @@ export default function HomePage() {
                   >
                     <option value="">
                       {!bulkTransferForm.storageLocationId
-                        ? "Erst Lagerort waehlen"
+                        ? tr("Erst Lagerort waehlen", "Choose storage location first")
                         : availableBulkTransferShelves.length
-                        ? "Kein Regal"
-                        : "Keine Regale fuer Lagerort"}
+                        ? tr("Kein Regal", "No shelf")
+                        : tr("Keine Regale fuer Lagerort", "No shelves for location")}
                     </option>
                     {availableBulkTransferShelves.map((shelf) => (
                       <option key={shelf.id} value={shelf.name}>
@@ -955,32 +958,32 @@ export default function HomePage() {
                 </div>
 
                 <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="text-sm font-medium">Ziel-Fach / Bin</label>
+                  <label className="text-sm font-medium">{tr("Ziel-Fach / Bin", "Target bin")}</label>
                   <input
                     className="input h-10 min-h-0"
                     value={bulkTransferForm.bin}
                     onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, bin: e.target.value }))}
-                    placeholder="Leer = Fach entfernen"
+                    placeholder={tr("Leer = Fach entfernen", "Empty = clear bin")}
                   />
                 </div>
               </div>
 
               <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                <label className="text-sm font-medium">Notiz</label>
+                <label className="text-sm font-medium">{tr("Notiz", "Note")}</label>
                 <textarea
                   className="input min-h-24"
                   value={bulkTransferForm.note}
                   onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, note: e.target.value }))}
-                  placeholder="Optional fuer Audit und Nachvollziehbarkeit"
+                  placeholder={tr("Optional fuer Audit und Nachvollziehbarkeit", "Optional for audit trail and traceability")}
                 />
               </div>
 
               {bulkTransferPreview && (
                 <div className="space-y-3 rounded-xl border border-workshop-200 p-3">
                   <div className="text-sm text-workshop-700">
-                    <p>Items: {bulkTransferPreview.count} | uebertragbar: {bulkTransferPreview.transferableCount}</p>
+                    <p>{tr("Items", "Items")}: {bulkTransferPreview.count} | {tr("uebertragbar", "transferable")}: {bulkTransferPreview.transferableCount}</p>
                     <p>
-                      Ziel: {bulkTransferPreview.target.storageLocationName || "-"}
+                      {tr("Ziel", "Target")}: {bulkTransferPreview.target.storageLocationName || "-"}
                       {bulkTransferPreview.target.storageArea ? ` / ${bulkTransferPreview.target.storageArea}` : ""}
                       {bulkTransferPreview.target.bin ? ` / ${bulkTransferPreview.target.bin}` : ""}
                     </p>
@@ -989,7 +992,7 @@ export default function HomePage() {
 
                   {!!bulkTransferPreview.sourceGroups?.length && (
                     <div className="space-y-1 text-sm">
-                      <p className="font-medium">Quellplaetze</p>
+                      <p className="font-medium">{tr("Quellplaetze", "Source locations")}</p>
                       {bulkTransferPreview.sourceGroups.map((group: any) => (
                         <p key={`${group.storageLocationId}:${group.storageArea || ""}:${group.bin || ""}`}>
                           {group.count}x {group.storageLocationName}
@@ -1002,7 +1005,7 @@ export default function HomePage() {
 
                   {!!bulkTransferPreview.blockedItems?.length && (
                     <div className="space-y-1 text-sm text-red-700">
-                      <p className="font-medium">Blockierte Items</p>
+                      <p className="font-medium">{tr("Blockierte Items", "Blocked items")}</p>
                       {bulkTransferPreview.blockedItems.map((entry: any) => (
                         <p key={`${entry.itemId}:${entry.reason}`}>
                           {(entry.labelCode || entry.itemId) + (entry.name ? ` (${entry.name})` : "")}: {entry.reason}
@@ -1016,13 +1019,13 @@ export default function HomePage() {
 
             <div className="flex flex-col-reverse gap-2 border-t border-workshop-200 px-4 py-3 sm:flex-row sm:justify-end">
               <button type="button" className="btn-secondary w-full sm:w-auto" onClick={resetBulkTransfer}>
-                Abbrechen
+                {tr("Abbrechen", "Cancel")}
               </button>
               <button type="button" className="btn-secondary w-full sm:w-auto" onClick={previewBulkTransfer} disabled={bulkTransferBusy}>
-                {bulkTransferBusy ? "Laedt..." : "Vorschau"}
+                {bulkTransferBusy ? tr("Laedt...", "Loading...") : tr("Vorschau", "Preview")}
               </button>
               <button type="button" className="btn w-full sm:w-auto" onClick={applyBulkTransfer} disabled={bulkTransferBusy}>
-                {bulkTransferBusy ? "Speichert..." : "Umlagerung ausfuehren"}
+                {bulkTransferBusy ? tr("Speichert...", "Saving...") : tr("Umlagerung ausfuehren", "Run transfer")}
               </button>
             </div>
           </div>
@@ -1037,16 +1040,16 @@ export default function HomePage() {
           >
             <div className="space-y-3 px-4 py-4">
               <div>
-                <p className="text-base font-semibold">Items loeschen</p>
+                <p className="text-base font-semibold">{tr("Items loeschen", "Delete items")}</p>
                 <p className="mt-1 text-sm text-workshop-700">
-                  {selected.length} markierte Items werden in den Papierkorb verschoben und bleiben dort {TRASH_RETENTION_DAYS} Tage lang wiederherstellbar.
+                  {language === "en" ? `${selected.length} selected items will be moved to trash and can be restored there for ${TRASH_RETENTION_DAYS} days.` : `${selected.length} markierte Items werden in den Papierkorb verschoben und bleiben dort ${TRASH_RETENTION_DAYS} Tage lang wiederherstellbar.`}
                 </p>
               </div>
               {bulkDeleteError && <p className="theme-status-danger rounded-lg border border-transparent px-3 py-2 text-sm">{bulkDeleteError}</p>}
             </div>
             <div className="flex flex-col-reverse gap-2 border-t border-workshop-200 px-4 py-3 sm:flex-row sm:justify-end">
               <button type="button" className="btn-secondary w-full sm:w-auto" onClick={resetBulkDelete}>
-                Abbrechen
+                {tr("Abbrechen", "Cancel")}
               </button>
               <button
                 type="button"
@@ -1054,7 +1057,7 @@ export default function HomePage() {
                 onClick={applyBulkDelete}
                 disabled={bulkDeleting}
               >
-                {bulkDeleting ? "Loescht..." : "In Papierkorb verschieben"}
+                {bulkDeleting ? tr("Loescht...", "Deleting...") : tr("In Papierkorb verschieben", "Move to trash")}
               </button>
             </div>
           </div>
