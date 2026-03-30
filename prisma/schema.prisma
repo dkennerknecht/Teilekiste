@@ -26,6 +26,9 @@ model User {
   accounts      Account[]
   sessions      Session[]
   apiTokens     ApiToken[]
+  ownedInventorySessions InventorySession[]    @relation("InventorySessionOwner")
+  createdInventorySessions InventorySession[]  @relation("InventorySessionCreator")
+  countedInventorySessionRows InventorySessionRow[] @relation("InventorySessionRowCounter")
 }
 
 model UserLocation {
@@ -68,6 +71,7 @@ model StorageLocation {
   items     Item[]
   scopes    UserLocation[]
   shelves   StorageShelf[]
+  inventorySessions InventorySession[]
 }
 
 model StorageShelf {
@@ -189,6 +193,7 @@ model Item {
   recentViews       RecentView[]
   bomParents        BillOfMaterial[]    @relation("BOMChild")
   bomChildren       BillOfMaterial[]    @relation("BOMParent")
+  inventorySessionRows InventorySessionRow[]
 
   @@index([name])
   @@index([labelCode])
@@ -241,15 +246,18 @@ model Attachment {
 model StockMovement {
   id        String         @id @default(uuid())
   itemId    String
+  inventorySessionId String?
   delta     Int
   reason    String
   note      String?
   userId    String
   createdAt DateTime       @default(now())
   item      Item           @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  inventorySession InventorySession? @relation(fields: [inventorySessionId], references: [id], onDelete: SetNull)
   user      User           @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([itemId, createdAt])
+  @@index([inventorySessionId])
 }
 
 model Reservation {
@@ -336,6 +344,53 @@ model ImportProfile {
   updatedAt        DateTime @updatedAt
 
   @@index([headerFingerprint])
+}
+
+model InventorySession {
+  id                String                @id @default(uuid())
+  title             String?
+  status            String                @default("OPEN")
+  storageLocationId String
+  storageArea       String?
+  ownerUserId       String
+  createdByUserId   String?
+  note              String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  finalizedAt       DateTime?
+  cancelledAt       DateTime?
+  storageLocation   StorageLocation       @relation(fields: [storageLocationId], references: [id], onDelete: Restrict)
+  ownerUser         User                  @relation("InventorySessionOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  createdByUser     User?                 @relation("InventorySessionCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  rows              InventorySessionRow[]
+  stockMovements    StockMovement[]
+
+  @@index([storageLocationId, status])
+  @@index([ownerUserId, status])
+  @@index([createdByUserId])
+}
+
+model InventorySessionRow {
+  id              String            @id @default(uuid())
+  sessionId       String
+  itemId          String
+  labelCode       String
+  name            String
+  unit            String
+  storageArea     String?
+  bin             String?
+  expectedStock   Int
+  countedStock    Int?
+  countedByUserId String?
+  countedAt       DateTime?
+  note            String?
+  session         InventorySession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  item            Item              @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  countedByUser   User?             @relation("InventorySessionRowCounter", fields: [countedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, itemId])
+  @@index([itemId])
+  @@index([countedByUserId])
 }
 
 model ItemCustomFieldValue {

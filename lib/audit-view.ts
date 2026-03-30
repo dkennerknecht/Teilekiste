@@ -83,6 +83,25 @@ export function summarizeAuditEntry(entry: AuditLike) {
       const base = `Umlagerung: ${from} -> ${to}`;
       return note ? `${base} (${note})` : base;
     }
+    case "INVENTORY_SESSION_CREATE": {
+      const scope = formatStoragePlace({
+        storageLocationName: String(after?.storageLocationName || after?.storageLocationId || "Unbekannt"),
+        storageArea: String(after?.storageArea || ""),
+        bin: null
+      });
+      return `Inventur-Session angelegt: ${scope}`;
+    }
+    case "INVENTORY_SESSION_FINALIZE": {
+      const scope = String(after?.scopeLabel || "Unbekannt");
+      const countedRows = typeof after?.countedRows === "number" ? after.countedRows : null;
+      return countedRows !== null
+        ? `Inventur-Session finalisiert: ${scope} (${countedRows} gezaehlte Positionen)`
+        : `Inventur-Session finalisiert: ${scope}`;
+    }
+    case "INVENTORY_SESSION_CANCEL": {
+      const scope = String(after?.scopeLabel || "Unbekannt");
+      return `Inventur-Session abgebrochen: ${scope}`;
+    }
     case "ITEM_SOFT_DELETE":
       return "Item in den Papierkorb verschoben";
     case "ITEM_ARCHIVE":

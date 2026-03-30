@@ -102,6 +102,23 @@ export const inventoryUpdateSchema = z.object({
   ).default([])
 });
 
+export const inventorySessionCreateSchema = z.object({
+  storageLocationId: uuidSchema,
+  storageArea: z.string().trim().max(120).optional().nullable(),
+  title: z.string().trim().max(180).optional().nullable(),
+  note: z.string().trim().max(500).optional().nullable()
+});
+
+export const inventorySessionCountsSchema = z.object({
+  counts: z.array(
+    z.object({
+      itemId: uuidSchema,
+      countedStock: z.number().finite().nullable().optional(),
+      note: z.string().trim().max(500).optional().nullable()
+    })
+  ).default([])
+});
+
 export const storageLocationCreateSchema = z.object({
   name: nameSchema,
   code: z.string().trim().max(40).optional().nullable()
