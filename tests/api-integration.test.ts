@@ -30,8 +30,8 @@ describe("API Integration", () => {
   it("GET /api/items/duplicates returns duplicate candidates", async () => {
     requireAuthMock.mockResolvedValue({ user: { id: "u1", role: "ADMIN", email: "admin@local" } });
     findManyMock.mockResolvedValue([
-      { id: "1", labelCode: "EL-KB-023", name: "ESP32 DevKit V1" },
-      { id: "2", labelCode: "EL-KB-024", name: "ESP32 S3" }
+      { id: "1", labelCode: "EL-KB-023", name: "ESP32 DevKit V1", storageLocationId: "loc-1" },
+      { id: "2", labelCode: "EL-KB-024", name: "ESP32 S3", storageLocationId: "loc-1" }
     ]);
 
     const { GET } = await import("@/app/api/items/duplicates/route");
@@ -42,6 +42,26 @@ describe("API Integration", () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
       expect(findManyMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("GET /api/items/duplicates ignores same-name items in different storage locations", async () => {
+    requireAuthMock.mockResolvedValue({ user: { id: "u1", role: "ADMIN", email: "admin@local" } });
+    findManyMock.mockResolvedValue([
+      { id: "1", labelCode: "EL-KB-023", name: "ESP32 DevKit V1", storageLocationId: "loc-1" },
+      { id: "2", labelCode: "EL-KB-024", name: "ESP32 DevKit V1", storageLocationId: "loc-2" }
+    ]);
+
+    const { GET } = await import("@/app/api/items/duplicates/route");
+    const server = createRouteServer(GET);
+    try {
+      const res = await request(server).get("/api/items/duplicates?name=ESP32%20DevKit%20V1&storageLocationId=loc-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0]).toEqual(expect.objectContaining({ id: "1" }));
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

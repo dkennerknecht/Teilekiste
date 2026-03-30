@@ -12,6 +12,7 @@ export type DuplicateItemRecord = {
   name: string;
   categoryId: string;
   typeId?: string | null;
+  storageLocationId?: string | null;
   unit: string;
   manufacturer?: string | null;
   mpn?: string | null;
@@ -30,6 +31,7 @@ export type DuplicateProbe = {
   mpn?: string | null;
   categoryId?: string | null;
   typeId?: string | null;
+  storageLocationId?: string | null;
   unit?: string | null;
 };
 
@@ -103,6 +105,7 @@ function normalizeDuplicateProbe(probe: DuplicateProbe): NormalizedDuplicateReco
     name: String(probe.name || ""),
     categoryId: String(probe.categoryId || ""),
     typeId: probe.typeId || null,
+    storageLocationId: probe.storageLocationId || null,
     unit: String(probe.unit || ""),
     manufacturer: probe.manufacturer || null,
     mpn: probe.mpn || null
@@ -216,6 +219,18 @@ function dedupeReasons(reasons: DuplicateReason[]) {
 }
 
 function scoreDuplicateRecords(left: NormalizedDuplicateRecord, right: NormalizedDuplicateRecord) {
+  const differentStorageLocation =
+    !!left.item.storageLocationId &&
+    !!right.item.storageLocationId &&
+    left.item.storageLocationId !== right.item.storageLocationId;
+
+  if (differentStorageLocation) {
+    return {
+      score: 0,
+      reasons: [] as string[]
+    };
+  }
+
   let score = 0;
   const reasons: DuplicateReason[] = [];
 
@@ -274,6 +289,9 @@ export function getMergeEligibility(source: DuplicateItemRecord, target: Duplica
   if (source.isArchived || target.isArchived) blockedReasons.push("Archivierte Items koennen in V1 nicht gemerged werden");
   if (!source.typeId || !target.typeId || source.typeId !== target.typeId) blockedReasons.push("Merge nur bei gleichem Type moeglich");
   if (source.categoryId !== target.categoryId) blockedReasons.push("Merge nur bei gleicher Kategorie moeglich");
+  if (!!source.storageLocationId && !!target.storageLocationId && source.storageLocationId !== target.storageLocationId) {
+    blockedReasons.push("Merge nur bei gleichem Lagerort moeglich");
+  }
   if (source.unit !== target.unit) blockedReasons.push("Merge nur bei gleicher Einheit moeglich");
 
   return {
@@ -324,6 +342,7 @@ export function findDuplicateCandidates<TItem extends DuplicateItemRecord>(items
         name: String(probe.name || ""),
         categoryId: String(probe.categoryId || ""),
         typeId: probe.typeId || null,
+        storageLocationId: probe.storageLocationId || null,
         unit: String(probe.unit || candidate.item.unit),
         manufacturer: probe.manufacturer || null,
         mpn: probe.mpn || null,

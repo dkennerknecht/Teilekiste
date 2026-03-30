@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const manufacturer = req.nextUrl.searchParams.get("manufacturer") || "";
   const categoryId = req.nextUrl.searchParams.get("categoryId") || "";
   const typeId = req.nextUrl.searchParams.get("typeId") || "";
+  const storageLocationId = req.nextUrl.searchParams.get("storageLocationId") || "";
   const unit = req.nextUrl.searchParams.get("unit") || "";
   const itemId = req.nextUrl.searchParams.get("itemId") || "";
 
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
       name: true,
       categoryId: true,
       typeId: true,
+      storageLocationId: true,
       unit: true,
       manufacturer: true,
       mpn: true,
@@ -51,6 +53,7 @@ export async function GET(req: NextRequest) {
     mpn,
     categoryId: categoryId || null,
     typeId: typeId || null,
+    storageLocationId: storageLocationId || null,
     unit: unit || null
   });
 

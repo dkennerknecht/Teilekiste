@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
       name: true,
       categoryId: true,
       typeId: true,
+      storageLocationId: true,
       unit: true,
       manufacturer: true,
       mpn: true,

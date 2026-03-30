@@ -92,6 +92,27 @@ describe("admin duplicate routes", () => {
     );
   });
 
+  it("does not list duplicate pairs when storage locations differ", async () => {
+    requireAdminMock.mockResolvedValue({
+      user: { id: "admin-1", role: "ADMIN", email: "admin@example.com" }
+    });
+    itemFindManyMock.mockResolvedValue([
+      createMergeableItem({ id: "11111111-1111-4111-8111-111111111111", labelCode: "EL-MC-001", manufacturer: null, mpn: null, storageLocationId: "loc-1" }),
+      createMergeableItem({ id: "22222222-2222-4222-8222-222222222222", labelCode: "EL-MC-002", manufacturer: null, mpn: null, storageLocationId: "loc-2" })
+    ]);
+
+    const { GET } = await import("@/app/api/admin/duplicates/route");
+    const response = await GET(new NextRequest("http://localhost/api/admin/duplicates"));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({
+        total: 0,
+        items: []
+      })
+    );
+  });
+
   it("blocks preview when merge would create a BOM self reference", async () => {
     requireAdminMock.mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN", email: "admin@example.com" }

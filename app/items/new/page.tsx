@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppLanguage } from "@/components/app-language-provider";
@@ -96,11 +97,11 @@ export default function NewItemPage() {
       return;
     }
     fetch(
-      `/api/items/duplicates?name=${encodeURIComponent(form.name)}&manufacturer=${encodeURIComponent(form.manufacturer)}&mpn=${encodeURIComponent(form.mpn)}&categoryId=${encodeURIComponent(form.categoryId)}&typeId=${encodeURIComponent(form.typeId)}&unit=${encodeURIComponent(form.unit)}`
+      `/api/items/duplicates?name=${encodeURIComponent(form.name)}&manufacturer=${encodeURIComponent(form.manufacturer)}&mpn=${encodeURIComponent(form.mpn)}&categoryId=${encodeURIComponent(form.categoryId)}&typeId=${encodeURIComponent(form.typeId)}&storageLocationId=${encodeURIComponent(form.storageLocationId)}&unit=${encodeURIComponent(form.unit)}`
     )
       .then((r) => r.json())
       .then(setDuplicates);
-  }, [form.name, form.manufacturer, form.mpn, form.categoryId, form.typeId, form.unit]);
+  }, [form.name, form.manufacturer, form.mpn, form.categoryId, form.typeId, form.storageLocationId, form.unit]);
 
   async function createTag() {
     const name = newTagName.trim();
@@ -156,13 +157,28 @@ export default function NewItemPage() {
           {tr("Code-Vorschau", "Code preview")}: <span className="font-mono">{labelPreview || "-"}</span>
         </div>
         {!hasRequiredMeta && (
-          <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
+          <div className="mb-3 rounded-md border border-amber-300 bg-amber-100 p-2 text-sm text-amber-950">
             {tr("Fuer neue Items wird mindestens eine Kategorie, ein Type und ein Lagerort benoetigt. Fehlende Lagerorte kannst du unter Admin anlegen.", "New items require at least one category, one type, and one storage location. Missing locations can be created in Admin.")}
           </div>
         )}
         {duplicates.length > 0 && (
-          <div className="mb-3 rounded-md border border-yellow-500 bg-yellow-50 p-2 text-sm">
-            {tr("Moegliche Duplikate", "Possible duplicates")}: {duplicates.map((d) => `${d.labelCode} (${d.score}, ${d.reasons.join("/")})`).join(", ")}
+          <div className="mb-3 rounded-md border border-amber-300 bg-amber-100 p-3 text-sm text-amber-950">
+            <p className="font-medium">{tr("Moegliche Duplikate", "Possible duplicates")}</p>
+            <ul className="mt-2 space-y-1">
+              {duplicates.map((d) => (
+                <li key={d.id}>
+                  <Link
+                    href={`/items/${d.id}`}
+                    className="font-medium underline decoration-amber-800 underline-offset-2 hover:text-amber-700"
+                  >
+                    {d.labelCode}
+                  </Link>{" "}
+                  <span>
+                    {d.name} ({d.score}, {d.reasons.join("/")})
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         <form

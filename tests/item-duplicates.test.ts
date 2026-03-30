@@ -8,6 +8,7 @@ const baseItems = [
     name: "ESP32 DevKit V1",
     categoryId: "cat-1",
     typeId: "type-mc",
+    storageLocationId: "loc-1",
     unit: "STK",
     manufacturer: "Espressif",
     mpn: "ESP32-DEVKIT-V1",
@@ -22,6 +23,7 @@ const baseItems = [
     name: "ESP32 DevKit V1",
     categoryId: "cat-1",
     typeId: "type-mc",
+    storageLocationId: "loc-1",
     unit: "STK",
     manufacturer: "Espressif",
     mpn: "ESP32-DEVKIT-V1",
@@ -66,5 +68,47 @@ describe("item duplicate logic", () => {
     expect(eligibility.mergeEligible).toBe(false);
     expect(eligibility.mergeBlockedReasons).toContain("Merge nur bei gleichem Type moeglich");
     expect(eligibility.mergeBlockedReasons).toContain("Merge nur bei gleicher Einheit moeglich");
+  });
+
+  it("blocks merges when storage locations differ", () => {
+    const eligibility = getMergeEligibility(baseItems[0], {
+      ...baseItems[1],
+      storageLocationId: "loc-2"
+    });
+
+    expect(eligibility.mergeEligible).toBe(false);
+    expect(eligibility.mergeBlockedReasons).toContain("Merge nur bei gleichem Lagerort moeglich");
+  });
+
+  it("does not treat same-name items in different storage locations as duplicates", () => {
+    const items = [
+      baseItems[0],
+      {
+        ...baseItems[1],
+        id: "item-3",
+        labelCode: "EL-MC-003",
+        mpn: "",
+        manufacturer: "",
+        storageLocationId: "loc-2"
+      }
+    ];
+
+    const pairs = buildDuplicatePairs(items);
+    const candidates = findDuplicateCandidates(items, {
+      name: "ESP32 DevKit V1",
+      manufacturer: "",
+      mpn: "",
+      categoryId: "cat-1",
+      typeId: "type-mc",
+      storageLocationId: "loc-2",
+      unit: "STK"
+    });
+
+    expect(pairs).toHaveLength(0);
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        item: expect.objectContaining({ id: "item-3" })
+      })
+    ]);
   });
 });
