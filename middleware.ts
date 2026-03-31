@@ -1,4 +1,5 @@
 import { withAuth } from "next-auth/middleware";
+import { readE2eBypassRoleFromRequest } from "@/lib/e2e-auth";
 
 export default withAuth(
   function middleware() {},
@@ -6,6 +7,12 @@ export default withAuth(
     callbacks: {
       authorized: ({ token, req }) => {
         const path = req.nextUrl.pathname;
+        const bypassRole = readE2eBypassRoleFromRequest(req);
+        if (bypassRole) {
+          if (path.startsWith("/admin")) return bypassRole === "ADMIN";
+          if (path.startsWith("/api/admin")) return bypassRole === "ADMIN";
+          return true;
+        }
         if (!token) return false;
         const role = token.role as string;
 
