@@ -3,7 +3,7 @@ import { requireWriteAccess } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { bulkTransferSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
-import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 import { applyItemTransfer, buildTransferSourceGroups, validateTransferTarget } from "@/lib/item-transfer";
 
 function buildBlockedItem(item: { id: string; labelCode: string; name: string }, reason: string) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   if (allowedLocationIds) {
     blockedItems.push(
       ...items
-        .filter((item) => !allowedLocationIds.includes(item.storageLocationId))
+        .filter((item) => item.storageLocationId ? !allowedLocationIds.includes(item.storageLocationId) : !canWrite(auth.user!.role))
         .map((item) => buildBlockedItem(item, "Quelle ausserhalb des erlaubten Lager-Scope"))
     );
   }

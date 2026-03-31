@@ -5,6 +5,7 @@ import { toCsv } from "@/lib/csv";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
 import { serializeStoredQuantity } from "@/lib/quantity";
+import { formatItemPosition } from "@/lib/storage-bins";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -34,11 +35,11 @@ export async function GET(req: NextRequest) {
         typeId: item.typeId,
         typeCode: item.labelType?.code || null,
         typeName: item.labelType?.name || null,
-        storageLocation: item.storageLocation.name,
+        storageLocation: item.storageLocation?.name || null,
         storageArea: item.storageArea,
-        bin: item.bin,
+        bin: formatItemPosition(item) || item.bin,
         stock: serializeStoredQuantity(item.unit, item.stock),
-        available: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reserved)),
+        available: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reserved, item.placementStatus)),
         unit: item.unit,
         minStock: serializeStoredQuantity(item.unit, item.minStock),
         manufacturer: item.manufacturer,

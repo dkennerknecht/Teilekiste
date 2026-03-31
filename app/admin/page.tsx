@@ -366,6 +366,9 @@ export default function AdminPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t("adminTitle")}</h1>
         <div className="flex flex-wrap gap-2">
+          <Link className="btn-secondary" href="/admin/bins">
+            {tr("Drawer", "Drawers")}
+          </Link>
           <Link className="btn-secondary" href="/admin/data-quality">
             {tr("Datenqualitaet", "Data Quality")}
           </Link>

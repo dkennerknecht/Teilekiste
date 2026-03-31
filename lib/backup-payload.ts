@@ -17,7 +17,14 @@ export async function buildBackupPayload(input?: {
   };
 
   const items = await prisma.item.findMany({
-    where: { storageLocationId: locationFilter },
+    where: locationFilter
+      ? {
+          OR: [
+            { storageLocationId: locationFilter },
+            { storageLocationId: null }
+          ]
+        }
+      : undefined,
     include: {
       tags: true,
       images: true,
@@ -29,7 +36,7 @@ export async function buildBackupPayload(input?: {
   });
 
   const itemIds = items.map((item) => item.id);
-  const [categories, tags, locations, shelves, customFields, technicalFieldScopeAssignments, importProfiles, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
+  const [categories, tags, locations, shelves, bins, customFields, technicalFieldScopeAssignments, importProfiles, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
     await Promise.all([
       prisma.category.findMany(),
       prisma.tag.findMany(),
@@ -37,6 +44,9 @@ export async function buildBackupPayload(input?: {
         where: locationFilter ? { id: locationFilter } : undefined
       }),
       prisma.storageShelf.findMany({
+        where: locationFilter ? { storageLocationId: locationFilter } : undefined
+      }),
+      prisma.storageBin.findMany({
         where: locationFilter ? { storageLocationId: locationFilter } : undefined
       }),
       prisma.customField.findMany(),
@@ -91,6 +101,7 @@ export async function buildBackupPayload(input?: {
     tags,
     locations,
     shelves,
+    bins,
     customFields,
     technicalFieldScopeAssignments,
     importProfiles,

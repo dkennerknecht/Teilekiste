@@ -7,11 +7,12 @@ import { summarizeAuditEntry } from "@/lib/audit-view";
 import { assignNextLabelCode } from "@/lib/label-code";
 import { loadItemBom } from "@/lib/item-bom";
 import { applyItemTransfer, validateTransferTarget } from "@/lib/item-transfer";
-import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 import { canSetStock, getAvailableQty, getReservedQty } from "@/lib/stock";
 import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson } from "@/lib/http";
+import { formatItemPosition, mapPlacementError, normalizePlacementStatus, resolveItemPlacement } from "@/lib/storage-bins";
 
 function safeParseAuditPayload(value?: string | null) {
   if (!value) return null;
@@ -26,6 +27,7 @@ function serializeItemDetailQuantities(item: any, reservedQty: number) {
   return {
     ...item,
     stock: serializeStoredQuantity(item.unit, item.stock),
+    incomingQty: serializeStoredQuantity(item.unit, item.incomingQty ?? 0),
     minStock: serializeStoredQuantity(item.unit, item.minStock),
     movements: (item.movements || []).map((movement: any) => ({
       ...movement,
@@ -36,7 +38,8 @@ function serializeItemDetailQuantities(item: any, reservedQty: number) {
       reservedQty: serializeStoredQuantity(item.unit, reservation.reservedQty)
     })),
     reservedQty: serializeStoredQuantity(item.unit, reservedQty),
-    availableStock: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reservedQty))
+    availableStock: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reservedQty, item.placementStatus)),
+    displayBin: formatItemPosition(item)
   };
 }
 
@@ -63,6 +66,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       category: true,
       labelType: true,
       storageLocation: true,
+      storageBin: {
+        select: {
+          id: true,
+          code: true,
+          slotCount: true,
+          storageLocationId: true,
+          storageArea: true
+        }
+      },
       tags: { include: { tag: true } },
       images: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
       attachments: true,
@@ -82,7 +94,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!mergedTarget) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const mergedAllowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-    if (mergedAllowedLocationIds && !mergedAllowedLocationIds.includes(mergedTarget.storageLocationId)) {
+    if (
+      mergedTarget.storageLocationId &&
+      mergedAllowedLocationIds &&
+      !mergedAllowedLocationIds.includes(mergedTarget.storageLocationId)
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (!mergedTarget.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -90,7 +109,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+  if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!item.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -175,11 +197,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const reservedQty = reservedQtyResult._sum.reservedQty || 0;
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
+  if (existing.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const targetLocationId = body.storageLocationId || existing.storageLocationId;
-  if (allowedLocationIds && !allowedLocationIds.includes(targetLocationId)) {
+  if (!existing.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (body.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(body.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const nextUnit = body.unit || existing.unit;
@@ -199,6 +223,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   let nextStock: number | undefined;
+  let nextIncomingQty: number | undefined;
   let nextMinStock: number | null | undefined;
   try {
     if (body.stock !== undefined || unitChanged) {
@@ -206,6 +231,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         field: "Bestand",
         allowNegative: false
       })!;
+    }
+    if (body.incomingQty !== undefined || unitChanged) {
+      nextIncomingQty = toStoredQuantity(
+        nextUnit,
+        body.incomingQty !== undefined ? body.incomingQty : serializeStoredQuantity(existing.unit, existing.incomingQty),
+        {
+          field: "Erwartete Menge",
+          allowNegative: false
+        }
+      )!;
     }
     if (body.minStock !== undefined || unitChanged) {
       nextMinStock = toStoredQuantity(
@@ -234,10 +269,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     customValues: _customValues,
     typeId: _typeId,
     categoryId,
+    placementStatus: _placementStatus,
+    storageBinId: _storageBinId,
+    binSlot: _binSlot,
     storageLocationId: _storageLocationId,
     storageArea: _storageArea,
     bin: _bin,
     stock: _stock,
+    incomingQty: _incomingQty,
     unit: _unit,
     minStock: _minStock,
     ...itemData
@@ -264,7 +303,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const targetStorageLocationId = body.storageLocationId || existing.storageLocationId;
+  const placementFieldKeys = ["placementStatus", "storageBinId", "binSlot", "storageLocationId", "storageArea", "bin"];
+  const hasRequestedPlacementChanges = placementFieldKeys.some((key) => key in body);
+  const targetStorageLocationId = body.storageLocationId !== undefined ? body.storageLocationId || null : existing.storageLocationId || null;
   const targetStorageArea =
     body.storageArea !== undefined
       ? body.storageArea?.trim() || null
@@ -276,15 +317,57 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     targetStorageLocationId !== existing.storageLocationId ||
     targetStorageArea !== (existing.storageArea || null) ||
     targetBin !== (existing.bin || null);
+  const usesLegacyTransferOnly =
+    locationChanged &&
+    !("placementStatus" in body) &&
+    !("storageBinId" in body) &&
+    !("binSlot" in body);
+  let resolvedPlacement = {
+    placementStatus: normalizePlacementStatus(existing.placementStatus, "PLACED"),
+    storageLocationId: existing.storageLocationId || null,
+    storageArea: existing.storageArea || null,
+    bin: existing.bin || null,
+    storageBinId: existing.storageBinId || null,
+    binSlot: existing.binSlot ?? null
+  };
+  if (hasRequestedPlacementChanges && !usesLegacyTransferOnly) {
+    try {
+      resolvedPlacement = await resolveItemPlacement(prisma, {
+        placementStatus: body.placementStatus ?? existing.placementStatus,
+        storageLocationId: body.storageLocationId !== undefined ? body.storageLocationId || null : existing.storageLocationId || null,
+        storageArea: body.storageArea !== undefined ? body.storageArea || null : existing.storageArea || null,
+        bin: body.bin !== undefined ? body.bin || null : existing.bin || null,
+        storageBinId: body.storageBinId !== undefined ? body.storageBinId || null : existing.storageBinId || null,
+        binSlot: body.binSlot !== undefined ? body.binSlot ?? null : existing.binSlot ?? null,
+        allowedLocationIds,
+        existingItemId: existing.id
+      });
+    } catch (error) {
+      const placementError = mapPlacementError(error);
+      if (placementError) {
+        return NextResponse.json(placementError.body, { status: placementError.status });
+      }
+      throw error;
+    }
+  }
+  const placementChanged =
+    resolvedPlacement.placementStatus !== normalizePlacementStatus(existing.placementStatus, "PLACED") ||
+    resolvedPlacement.storageLocationId !== (existing.storageLocationId || null) ||
+    resolvedPlacement.storageArea !== (existing.storageArea || null) ||
+    resolvedPlacement.bin !== (existing.bin || null) ||
+    resolvedPlacement.storageBinId !== (existing.storageBinId || null) ||
+    resolvedPlacement.binSlot !== (existing.binSlot ?? null);
   const hasRequestedNonTransferChanges = Object.keys(body).some(
     (key) => !["storageLocationId", "storageArea", "bin"].includes(key)
   );
 
-  if (!locationChanged && !hasRequestedNonTransferChanges) {
+  if (!locationChanged && !placementChanged && !hasRequestedNonTransferChanges) {
     return NextResponse.json({
       ...existing,
       stock: serializeStoredQuantity(existing.unit, existing.stock),
-      minStock: serializeStoredQuantity(existing.unit, existing.minStock)
+      incomingQty: serializeStoredQuantity(existing.unit, existing.incomingQty),
+      minStock: serializeStoredQuantity(existing.unit, existing.minStock),
+      displayBin: formatItemPosition(existing as never)
     });
   }
 
@@ -292,9 +375,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const item = await prisma.$transaction(async (tx) => {
       let workingItem = existing;
 
-      if (locationChanged) {
+      if (locationChanged && usesLegacyTransferOnly) {
+        if (existing.storageBinId) {
+          const siblingCount = await tx.item.count({
+            where: {
+              storageBinId: existing.storageBinId,
+              id: { not: existing.id },
+              deletedAt: null,
+              isArchived: false,
+              mergedIntoItemId: null
+            }
+          });
+          if (siblingCount > 0) {
+            throw new Error("SHARED_DRAWER_SPLIT_BLOCKED");
+          }
+        }
         const validatedTarget = await validateTransferTarget(tx, {
-          storageLocationId: targetStorageLocationId,
+          storageLocationId: targetStorageLocationId!,
           storageArea: targetStorageArea,
           allowedLocationIds
         });
@@ -322,13 +419,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         data: {
           ...itemData,
           labelCode: nextLabelCode,
-          ...(categoryId ? { category: { connect: { id: categoryId } } } : {}),
+          ...(categoryId ? { categoryId } : {}),
           ...(nextStock !== undefined ? { stock: nextStock } : {}),
+          ...(nextIncomingQty !== undefined ? { incomingQty: nextIncomingQty } : {}),
           ...(body.unit !== undefined ? { unit: nextUnit } : {}),
-          ...(body.typeId !== undefined
-            ? nextTypeId
-              ? { labelType: { connect: { id: nextTypeId } } }
-              : { labelType: { disconnect: true } }
+          ...(body.typeId !== undefined ? { typeId: nextTypeId } : {}),
+          ...(hasRequestedPlacementChanges && !usesLegacyTransferOnly
+            ? {
+                placementStatus: resolvedPlacement.placementStatus,
+                storageLocationId: resolvedPlacement.storageLocationId,
+                storageArea: resolvedPlacement.storageArea,
+                bin: resolvedPlacement.bin,
+                storageBinId: resolvedPlacement.storageBinId,
+                binSlot: resolvedPlacement.binSlot
+              }
             : {}),
           minStock: nextMinStock === undefined ? undefined : nextMinStock,
           manufacturer: itemData.manufacturer || null,
@@ -390,12 +494,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({
       ...item,
       stock: serializeStoredQuantity(item.unit, item.stock),
-      minStock: serializeStoredQuantity(item.unit, item.minStock)
+      incomingQty: serializeStoredQuantity(item.unit, item.incomingQty),
+      minStock: serializeStoredQuantity(item.unit, item.minStock),
+      displayBin: formatItemPosition(item as never)
     });
   } catch (error) {
+    if ((error as Error).message === "SHARED_DRAWER_SPLIT_BLOCKED") {
+      return NextResponse.json(
+        { error: "Ein einzelnes Item kann nicht direkt aus einem mehrfach belegten Drawer transferiert werden" },
+        { status: 409 }
+      );
+    }
     const transferError = mapTransferError(error);
     if (transferError) {
       return NextResponse.json(transferError.body, { status: transferError.status });
+    }
+    const placementError = mapPlacementError(error);
+    if (placementError) {
+      return NextResponse.json(placementError.body, { status: placementError.status });
     }
     throw error;
   }
@@ -409,7 +525,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
+  if (existing.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(existing.storageLocationId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!existing.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

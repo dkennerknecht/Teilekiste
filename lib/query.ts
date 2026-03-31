@@ -1,6 +1,12 @@
 import { Prisma } from "@prisma/client";
+import type { AppRole } from "@/lib/permissions";
+import { buildPlacementAccessWhere } from "@/lib/storage-bins";
 
-export function buildItemFilter(params: URLSearchParams, allowedLocationIds: string[] | null): Prisma.ItemWhereInput {
+export function buildItemFilter(
+  params: URLSearchParams,
+  allowedLocationIds: string[] | null,
+  role: AppRole = "ADMIN"
+): Prisma.ItemWhereInput {
   const q = params.get("q")?.trim();
   const categoryId = params.get("categoryId");
   const locationId = params.get("storageLocationId");
@@ -16,6 +22,8 @@ export function buildItemFilter(params: URLSearchParams, allowedLocationIds: str
   const archivedOnly = params.get("archived") === "1";
   const customFieldId = params.get("customFieldId");
   const customValue = params.get("customValue");
+  const placementStatus = params.get("placementStatus");
+  const storageBinId = params.get("storageBinId");
 
   const where: Prisma.ItemWhereInput = {
     deletedAt: includeDeleted ? undefined : null,
@@ -29,12 +37,15 @@ export function buildItemFilter(params: URLSearchParams, allowedLocationIds: str
       { description: { contains: q } },
       { mpn: { contains: q } },
       { manufacturer: { contains: q } },
+      { bin: { contains: q } },
       { tags: { some: { tag: { name: { contains: q } } } } }
     ];
   }
 
   if (categoryId) where.categoryId = categoryId;
   if (locationId) where.storageLocationId = locationId;
+  if (storageBinId) where.storageBinId = storageBinId;
+  if (placementStatus) where.placementStatus = placementStatus;
   if (tagId) where.tags = { some: { tagId } };
   if (area) where.storageArea = { contains: area };
   if (bin) where.bin = { contains: bin };
@@ -56,14 +67,16 @@ export function buildItemFilter(params: URLSearchParams, allowedLocationIds: str
     where.minStock = { not: null };
   }
 
-  if (allowedLocationIds && allowedLocationIds.length) {
-    where.storageLocationId = {
-      in: locationId ? [locationId].filter((id) => allowedLocationIds.includes(id)) : allowedLocationIds
-    };
-  }
-
-  if (allowedLocationIds && !allowedLocationIds.length) {
-    where.id = "__none__";
+  const accessWhere = buildPlacementAccessWhere(allowedLocationIds, role);
+  if (accessWhere) {
+    const baseAccessWhere =
+      allowedLocationIds && locationId
+        ? buildPlacementAccessWhere(allowedLocationIds.filter((id) => id === locationId), role)
+        : accessWhere;
+    if (baseAccessWhere) {
+      const currentAnd = Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : [];
+      where.AND = [...currentAnd, baseAccessWhere];
+    }
   }
 
   return where;

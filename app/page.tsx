@@ -16,13 +16,16 @@ type Item = {
   labelCode: string;
   name: string;
   stock: number;
+  incomingQty: number;
   availableStock: number;
   minStock: number | null;
   unit: string;
+  placementStatus: string;
+  displayBin: string | null;
   storageArea: string | null;
   bin: string | null;
   category: { name: string };
-  storageLocation: { name: string };
+  storageLocation: { name: string } | null;
   primaryImage: {
     path: string;
     thumbPath: string | null;
@@ -101,6 +104,13 @@ export default function HomePage() {
   const tagFilter = searchParams.get("tagId") || "";
   const lowStockFilter = searchParams.get("lowStock") === "1";
   const hasImagesFilter = searchParams.get("hasImages") === "1";
+
+  function formatPlacement(item: Item) {
+    const parts = [item.storageLocation?.name || null, item.storageArea || null, item.displayBin || item.bin || null].filter(Boolean);
+    if (item.placementStatus === "INCOMING") return tr("Erwartet / noch nicht eingelagert", "Incoming / not stored yet");
+    if (item.placementStatus === "UNPLACED") return tr("Braucht Lagerplatz", "Needs placement");
+    return parts.join(" / ") || "-";
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -607,6 +617,10 @@ export default function HomePage() {
               {tr("Filter zuruecksetzen", "Reset filters")}
             </button>
           )}
+
+          <Link className="btn-secondary h-10 w-full px-3 py-1 text-sm xl:w-auto xl:whitespace-nowrap" href="/placements">
+            {tr("Braucht Lagerplatz", "Needs placement")}
+          </Link>
         </div>
       </div>
 
@@ -659,11 +673,16 @@ export default function HomePage() {
                   </Link>
                   <p className="mt-0.5 truncate text-sm font-medium">{item.name}</p>
                   <p className="truncate text-xs text-workshop-700">
-                    {item.category.name} · {item.storageLocation.name}
+                    {item.category.name} · {formatPlacement(item)}
                   </p>
                   <p className={`text-xs ${item.minStock !== null && item.availableStock <= item.minStock ? "text-red-700" : "text-workshop-700"}`}>
                     {tr("Verfuegbar", "Available")} {formatDisplayQuantity(item.unit, item.availableStock)}
                   </p>
+                  {item.incomingQty > 0 && (
+                    <p className="truncate text-xs text-workshop-700">
+                      {tr("Erwartet", "Incoming")} {formatDisplayQuantity(item.unit, item.incomingQty)}
+                    </p>
+                  )}
                 </div>
                 <div
                   className="flex shrink-0 items-center gap-1 rounded-xl px-1 py-1"
@@ -752,7 +771,7 @@ export default function HomePage() {
                     </td>
                     <td className="px-2 py-2">{item.name}</td>
                     <td className="px-2 py-2">{item.category.name}</td>
-                    <td className="px-2 py-2">{item.storageLocation.name}</td>
+                    <td className="px-2 py-2">{formatPlacement(item)}</td>
                     <td className={`px-2 py-2 ${item.minStock !== null && item.availableStock <= item.minStock ? "text-red-700" : ""}`}>
                       {formatDisplayQuantity(item.unit, item.availableStock)}
                     </td>

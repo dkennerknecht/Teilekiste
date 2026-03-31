@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { formatDisplayQuantity, getUnitDisplayLabel } from "@/lib/quantity";
 
 export default function ScannerPage() {
+  const router = useRouter();
   const { language } = useAppLanguage();
   const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [code, setCode] = useState("");
@@ -17,6 +19,17 @@ export default function ScannerPage() {
     e?.preventDefault();
     const val = code.trim();
     if (!val) return;
+    const drawerRes = await fetch(`/api/bins/${encodeURIComponent(val)}`);
+    if (drawerRes.ok) {
+      const drawer = await drawerRes.json();
+      router.push(`/bins/${encodeURIComponent(drawer.code || val.toUpperCase())}`);
+      return;
+    }
+    if (drawerRes.status === 403) {
+      setItem(null);
+      setMessage(tr("Kein Zugriff auf diesen Drawer", "No access to this drawer"));
+      return;
+    }
     const res = await fetch(`/api/search?q=${encodeURIComponent(val)}`);
     const data = await res.json();
     const exact = (data || []).find((row: any) => row.labelCode === val) || data?.[0] || null;
@@ -57,6 +70,7 @@ export default function ScannerPage() {
         <div className="card space-y-2">
           <p className="font-mono text-workshop-700">{item.labelCode}</p>
           <h2 className="text-xl font-semibold">{item.name}</h2>
+          {item.displayBin && <p className="font-mono text-sm text-workshop-700">{tr("Position", "Position")}: {item.displayBin}</p>}
           <p>{tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} | {tr("Verfuegbar", "Available")}: {formatDisplayQuantity(item.unit, item.availableStock)}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button

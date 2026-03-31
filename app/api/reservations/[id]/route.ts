@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
-import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireWriteAccess(req);
@@ -19,7 +19,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!reservation) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(reservation.item.storageLocationId)) {
+  if (reservation.item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(reservation.item.storageLocationId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!reservation.item.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

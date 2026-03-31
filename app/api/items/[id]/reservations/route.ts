@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireWriteAccess } from "@/lib/api";
 import { auditLog } from "@/lib/audit";
 import { reservationSchema } from "@/lib/validation";
-import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 import { canReserveQty } from "@/lib/stock";
 import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson } from "@/lib/http";
@@ -20,7 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+  if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!item.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const reservedQtyResult = await prisma.reservation.aggregate({
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     throw error;
   }
 
-  if (!canReserveQty(item.stock, reservedQty, storedReservedQty)) {
+  if (!canReserveQty(item.stock, reservedQty, storedReservedQty, item.placementStatus)) {
     return NextResponse.json({ error: "Nicht genug verfuegbarer Bestand fuer diese Reservierung" }, { status: 400 });
   }
 

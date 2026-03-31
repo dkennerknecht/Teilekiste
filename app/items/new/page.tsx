@@ -10,6 +10,7 @@ import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
 
 type Option = { id: string; name: string; code?: string; codeLabel?: string };
 type ShelfOption = { id: string; name: string; storageLocationId: string };
+type StorageBinOption = { id: string; code: string; storageLocationId: string; storageArea?: string | null; slotCount: number; isActive?: boolean };
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
@@ -29,6 +30,7 @@ export default function NewItemPage() {
   const [categories, setCategories] = useState<Option[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
   const [shelves, setShelves] = useState<ShelfOption[]>([]);
+  const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [types, setTypes] = useState<Option[]>([]);
   const [tags, setTags] = useState<Option[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
@@ -40,15 +42,19 @@ export default function NewItemPage() {
   const [newTagName, setNewTagName] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const hasRequiredMeta = categories.length > 0 && locations.length > 0 && types.length > 0;
+  const hasRequiredMeta = categories.length > 0 && types.length > 0;
   const [form, setForm] = useState({
     name: "",
     description: "",
     categoryId: "",
+    placementStatus: "PLACED",
     storageLocationId: "",
     storageArea: "",
     bin: "",
+    storageBinId: "",
+    binSlot: "",
     stock: 0,
+    incomingQty: 0,
     unit: "STK",
     minStock: "",
     manufacturer: "",
@@ -60,15 +66,16 @@ export default function NewItemPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { categories: cat, locations: loc, shelves: sh, types: ty, tags: tg, customFields: cf } = await fetch("/api/meta").then((r) => r.json());
+      const { categories: cat, locations: loc, shelves: sh, bins: bn, types: ty, tags: tg, customFields: cf } = await fetch("/api/meta").then((r) => r.json());
       setCategories(cat);
       setLocations(loc);
       setShelves(sh || []);
+      setBins((bn || []).filter((entry: StorageBinOption) => entry.isActive !== false));
       setTypes(ty);
       setTags(tg || []);
       setCustomFields(cf || []);
       if (cat[0]) setForm((f) => ({ ...f, categoryId: cat[0].id }));
-      if (loc[0]) setForm((f) => ({ ...f, storageLocationId: loc[0].id }));
+      if (loc[0]) setForm((f) => ({ ...f, storageLocationId: f.storageLocationId || loc[0].id }));
       if (ty[0]) setForm((f) => ({ ...f, typeId: ty[0].id }));
     };
     load();
@@ -82,7 +89,31 @@ export default function NewItemPage() {
     }
   }, [form.storageArea, form.storageLocationId, shelves]);
 
+  useEffect(() => {
+    if (!form.storageBinId) return;
+    const selectedBin = bins.find((entry) => entry.id === form.storageBinId);
+    if (!selectedBin) {
+      setForm((prev) => ({ ...prev, storageBinId: "", binSlot: "" }));
+      return;
+    }
+    if (form.storageLocationId !== selectedBin.storageLocationId || form.storageArea !== (selectedBin.storageArea || "")) {
+      setForm((prev) => ({
+        ...prev,
+        storageLocationId: selectedBin.storageLocationId,
+        storageArea: selectedBin.storageArea || "",
+        bin: selectedBin.code
+      }));
+    }
+    if (form.binSlot && Number(form.binSlot) > selectedBin.slotCount) {
+      setForm((prev) => ({ ...prev, binSlot: "" }));
+    }
+  }, [bins, form.storageArea, form.storageBinId, form.storageLocationId, form.binSlot]);
+
   const availableShelves = shelves.filter((shelf) => shelf.storageLocationId === form.storageLocationId);
+  const availableBins = bins.filter((entry) => !form.storageLocationId || entry.storageLocationId === form.storageLocationId);
+  const selectedBin = bins.find((entry) => entry.id === form.storageBinId) || null;
+  const isPlaced = form.placementStatus === "PLACED";
+  const usesManagedDrawer = isPlaced && !!form.storageBinId;
 
   useEffect(() => {
     if (!form.categoryId || !form.typeId) return;
@@ -189,6 +220,11 @@ export default function NewItemPage() {
             try {
               const payload = {
                 ...form,
+                storageLocationId: isPlaced ? form.storageLocationId || null : null,
+                storageArea: isPlaced ? form.storageArea || null : null,
+                bin: isPlaced ? form.bin || null : null,
+                storageBinId: usesManagedDrawer ? form.storageBinId || null : null,
+                binSlot: usesManagedDrawer && form.binSlot !== "" ? Number(form.binSlot) : null,
                 minStock: form.minStock === "" ? null : Number(form.minStock)
               };
               const res = await fetch("/api/items", {
@@ -266,8 +302,8 @@ export default function NewItemPage() {
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
             <label className="text-sm">
-              {tr("Kategorie", "Category")}
-              <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
+            {tr("Kategorie", "Category")}
+            <select className="input mt-1" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} disabled={!hasRequiredMeta} required>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.code ? `${c.code} - ${c.name}` : c.name}
@@ -290,14 +326,36 @@ export default function NewItemPage() {
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
             <label className="text-sm">
+              {tr("Status", "Status")}
+              <select
+                className="input mt-1"
+                value={form.placementStatus}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    placementStatus: e.target.value,
+                    ...(e.target.value !== "PLACED"
+                      ? { storageBinId: "", binSlot: "", storageLocationId: "", storageArea: "", bin: "" }
+                      : {})
+                  }))
+                }
+                disabled={!hasRequiredMeta}
+              >
+                <option value="PLACED">{tr("Eingelagert", "Placed")}</option>
+                <option value="UNPLACED">{tr("Vorhanden, aber ohne Platz", "On hand, but unplaced")}</option>
+                <option value="INCOMING">{tr("Erwartet / bestellt", "Incoming / expected")}</option>
+              </select>
+            </label>
+
+            <label className="text-sm">
               {tr("Lagerort", "Storage location")}
               <select
                 className="input mt-1"
                 value={form.storageLocationId}
-                onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "" })}
-                disabled={!hasRequiredMeta}
-                required
+                onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "", storageBinId: "", binSlot: "", bin: "" })}
+                disabled={!hasRequiredMeta || !isPlaced || usesManagedDrawer}
               >
+                <option value="">{tr("Kein Lagerort", "No storage location")}</option>
                 {locations.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
@@ -312,7 +370,7 @@ export default function NewItemPage() {
                 className="input mt-1"
                 value={form.storageArea}
                 onChange={(e) => setForm({ ...form, storageArea: e.target.value })}
-                disabled={!hasRequiredMeta || !form.storageLocationId || availableShelves.length === 0}
+                disabled={!hasRequiredMeta || !isPlaced || usesManagedDrawer || !form.storageLocationId || availableShelves.length === 0}
               >
                 <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
                 {availableShelves.map((shelf) => (
@@ -325,7 +383,44 @@ export default function NewItemPage() {
 
             <label className="text-sm">
               {tr("Fach / Bin", "Bin")}
-              <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta} />
+              <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta || !isPlaced || usesManagedDrawer} />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+            <label className="text-sm">
+              {tr("Drawer", "Drawer")}
+              <select
+                className="input mt-1"
+                value={form.storageBinId}
+                onChange={(e) => setForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
+                disabled={!hasRequiredMeta || !isPlaced}
+              >
+                <option value="">{tr("Kein managed Drawer", "No managed drawer")}</option>
+                {availableBins.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.code} ({locations.find((location) => location.id === entry.storageLocationId)?.name || "--"})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              {tr("Unterfach", "Slot")}
+              <select
+                className="input mt-1"
+                value={form.binSlot}
+                onChange={(e) => setForm((prev) => ({ ...prev, binSlot: e.target.value }))}
+                disabled={!hasRequiredMeta || !selectedBin}
+              >
+                <option value="">{selectedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
+                {selectedBin &&
+                  Array.from({ length: selectedBin.slotCount }, (_, index) => (
+                    <option key={index + 1} value={String(index + 1)}>
+                      {selectedBin.code}-{index + 1}
+                    </option>
+                  ))}
+              </select>
             </label>
           </div>
 
@@ -338,6 +433,18 @@ export default function NewItemPage() {
                 step={getQuantityStep(form.unit)}
                 value={form.stock}
                 onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
+                disabled={!hasRequiredMeta}
+              />
+            </label>
+
+            <label className="text-sm">
+              {tr("Erwartete Menge", "Incoming quantity")} ({getUnitDisplayLabel(form.unit)})
+              <input
+                className="input mt-1"
+                type="number"
+                step={getQuantityStep(form.unit)}
+                value={form.incomingQty}
+                onChange={(e) => setForm({ ...form, incomingQty: Number(e.target.value) })}
                 disabled={!hasRequiredMeta}
               />
             </label>

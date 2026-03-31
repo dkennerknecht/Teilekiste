@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
     items: (payload.items || []).map((item) => ({
       ...item,
       stock: serializeStoredQuantity(item.unit, item.stock),
+      incomingQty: serializeStoredQuantity(item.unit, item.incomingQty ?? 0),
       minStock: serializeStoredQuantity(item.unit, item.minStock),
       movements: (item.movements || []).map((movement) => ({
         ...movement,

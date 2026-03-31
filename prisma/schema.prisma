@@ -71,6 +71,7 @@ model StorageLocation {
   items     Item[]
   scopes    UserLocation[]
   shelves   StorageShelf[]
+  bins      StorageBin[]
   inventorySessions InventorySession[]
 }
 
@@ -84,6 +85,21 @@ model StorageShelf {
 
   @@unique([storageLocationId, name])
   @@index([storageLocationId])
+}
+
+model StorageBin {
+  id                String          @id @default(uuid())
+  code              String          @unique
+  storageLocationId String
+  storageArea       String?
+  slotCount         Int             @default(1)
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+  items             Item[]
+
+  @@index([storageLocationId, storageArea])
 }
 
 model Area {
@@ -162,10 +178,14 @@ model Item {
   description       String
   categoryId        String
   typeId            String?
-  storageLocationId String
+  storageLocationId String?
   storageArea       String?
   bin               String?
+  storageBinId      String?
+  binSlot           Int?
+  placementStatus   String              @default("PLACED")
   stock             Int                 @default(0)
+  incomingQty       Int                 @default(0)
   unit              String              @default("STK")
   minStock          Int?
   manufacturer      String?
@@ -180,7 +200,8 @@ model Item {
   updatedAt         DateTime            @updatedAt
   category          Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   labelType         LabelType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
-  storageLocation   StorageLocation     @relation(fields: [storageLocationId], references: [id], onDelete: Restrict)
+  storageLocation   StorageLocation?    @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  storageBin        StorageBin?         @relation(fields: [storageBinId], references: [id], onDelete: SetNull)
   mergedIntoItem    Item?               @relation("MergedItems", fields: [mergedIntoItemId], references: [id], onDelete: SetNull)
   mergedSourceItems Item[]              @relation("MergedItems")
   tags              ItemTag[]
@@ -201,9 +222,13 @@ model Item {
   @@index([manufacturer])
   @@index([typeId])
   @@index([storageLocationId])
+  @@index([storageBinId])
+  @@index([placementStatus])
+  @@index([storageBinId, binSlot])
   @@index([deletedAt])
   @@index([mergedIntoItemId])
   @@index([minStock, stock])
+  @@unique([storageBinId, binSlot])
 }
 
 model ItemTag {

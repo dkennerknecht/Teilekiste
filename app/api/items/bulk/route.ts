@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const items = await prisma.item.findMany({ where: { id: { in: itemIds } } });
 
   if (allowedLocationIds) {
-    const forbidden = items.some((item) => !allowedLocationIds.includes(item.storageLocationId));
+    const forbidden = items.some((item) => item.storageLocationId && !allowedLocationIds.includes(item.storageLocationId));
     if (forbidden) return NextResponse.json({ error: "Forbidden by storage scope" }, { status: 403 });
   }
 

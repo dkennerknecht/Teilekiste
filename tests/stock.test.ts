@@ -16,4 +16,11 @@ describe("stock helpers", () => {
     expect(canSetStock(4, 4)).toBe(true);
     expect(canSetStock(3, 4)).toBe(false);
   });
+
+  it("treats incoming and unplaced stock as unavailable for reservations", () => {
+    expect(getRawAvailableQty(10, 3, "PLACED")).toBe(7);
+    expect(getRawAvailableQty(10, 3, "UNPLACED")).toBe(0);
+    expect(getAvailableQty(10, 3, "INCOMING")).toBe(0);
+    expect(canReserveQty(10, 0, 1, "UNPLACED")).toBe(false);
+  });
 });

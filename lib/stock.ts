@@ -1,4 +1,5 @@
 type ReservationLike = { reservedQty: number };
+type PlacementStatusLike = string | null | undefined;
 
 function resolveReservedQty(input: number | ReservationLike[] | null | undefined) {
   if (typeof input === "number") return input;
@@ -9,16 +10,34 @@ export function getReservedQty(input: ReservationLike[] | null | undefined) {
   return resolveReservedQty(input);
 }
 
-export function getRawAvailableQty(stock: number, input: number | ReservationLike[] | null | undefined) {
+function countsAsAvailableStock(placementStatus?: PlacementStatusLike) {
+  return !placementStatus || placementStatus === "PLACED";
+}
+
+export function getRawAvailableQty(
+  stock: number,
+  input: number | ReservationLike[] | null | undefined,
+  placementStatus?: PlacementStatusLike
+) {
+  if (!countsAsAvailableStock(placementStatus)) return 0;
   return stock - resolveReservedQty(input);
 }
 
-export function getAvailableQty(stock: number, input: number | ReservationLike[] | null | undefined) {
-  return Math.max(0, getRawAvailableQty(stock, input));
+export function getAvailableQty(
+  stock: number,
+  input: number | ReservationLike[] | null | undefined,
+  placementStatus?: PlacementStatusLike
+) {
+  return Math.max(0, getRawAvailableQty(stock, input, placementStatus));
 }
 
-export function canReserveQty(stock: number, input: number | ReservationLike[] | null | undefined, requestedQty: number) {
-  return requestedQty <= getRawAvailableQty(stock, input);
+export function canReserveQty(
+  stock: number,
+  input: number | ReservationLike[] | null | undefined,
+  requestedQty: number,
+  placementStatus?: PlacementStatusLike
+) {
+  return requestedQty <= getRawAvailableQty(stock, input, placementStatus);
 }
 
 export function canSetStock(stock: number, input: number | ReservationLike[] | null | undefined) {

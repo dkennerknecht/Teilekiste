@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
 import { serializeStoredQuantity } from "@/lib/quantity";
+import { formatItemPosition } from "@/lib/storage-bins";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   const items = rows
     .map((item) => {
       const reserved = getReservedQty(item.reservations);
-      const available = getAvailableQty(item.stock, reserved);
+      const available = getAvailableQty(item.stock, reserved, item.placementStatus);
       const min = item.minStock || 0;
       const needed = Math.max(0, min - available);
       return {
@@ -41,7 +42,8 @@ export async function GET(req: NextRequest) {
         minStock: serializeStoredQuantity(item.unit, min),
         needed: serializeStoredQuantity(item.unit, needed),
         unit: item.unit,
-        storageLocation: item.storageLocation.name,
+        storageLocation: item.storageLocation?.name || "-",
+        bin: formatItemPosition(item) || item.bin || null,
         manufacturer: item.manufacturer,
         mpn: item.mpn
       };

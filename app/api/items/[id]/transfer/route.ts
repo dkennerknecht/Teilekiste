@@ -3,7 +3,7 @@ import { requireWriteAccess } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { itemTransferSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
-import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 import { serializeStoredQuantity } from "@/lib/quantity";
 import { applyItemTransfer, validateTransferTarget } from "@/lib/item-transfer";
 
@@ -39,8 +39,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+  if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (!item.storageLocationId && auth.user!.role !== "ADMIN" && !canWrite(auth.user!.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (item.storageBinId) {
+    const siblingCount = await prisma.item.count({
+      where: {
+        storageBinId: item.storageBinId,
+        id: { not: item.id },
+        deletedAt: null,
+        isArchived: false,
+        mergedIntoItemId: null
+      }
+    });
+    if (siblingCount > 0) {
+      return NextResponse.json(
+        { error: "Ein einzelnes Item kann nicht direkt aus einem mehrfach belegten Drawer transferiert werden" },
+        { status: 409 }
+      );
+    }
   }
 
   try {

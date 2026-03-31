@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   const { areaId } = await syncLabelCatalog(prisma);
 
-  const [categories, locations, shelves, types, tags, customFields] = await Promise.all([
+  const [categories, locations, shelves, bins, types, tags, customFields] = await Promise.all([
     prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.storageLocation.findMany({
       where: allowedLocationIds ? { id: { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } } : undefined,
@@ -25,6 +25,15 @@ export async function GET(req: NextRequest) {
           select: { id: true, name: true, code: true }
         }
       }
+    }),
+    prisma.storageBin.findMany({
+      where: allowedLocationIds ? { storageLocationId: { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } } : undefined,
+      include: {
+        storageLocation: {
+          select: { id: true, name: true, code: true }
+        }
+      },
+      orderBy: [{ code: "asc" }]
     }),
     prisma.labelType.findMany({ where: { active: true, areaId }, orderBy: { code: "asc" } }),
     prisma.tag.findMany({ orderBy: { name: "asc" } }),
@@ -42,5 +51,15 @@ export async function GET(req: NextRequest) {
     })
   ]);
 
-  return NextResponse.json({ categories, locations, shelves, areas: [], systemAreaCode: SYSTEM_LABEL_AREA.code, types, tags, customFields });
+  return NextResponse.json({
+    categories,
+    locations,
+    shelves,
+    bins,
+    areas: [],
+    systemAreaCode: SYSTEM_LABEL_AREA.code,
+    types,
+    tags,
+    customFields
+  });
 }

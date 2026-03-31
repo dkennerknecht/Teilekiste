@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+  if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -31,6 +31,7 @@ type TagOption = { id: string; name: string };
 type CategoryOption = { id: string; name: string; code?: string | null };
 type LocationOption = { id: string; name: string; code?: string | null };
 type ShelfOption = { id: string; name: string; storageLocationId: string };
+type StorageBinOption = { id: string; code: string; storageLocationId: string; storageArea?: string | null; slotCount: number; isActive?: boolean };
 type TypeOption = { id: string; code: string; name: string };
 type TransferFormState = {
   storageLocationId: string;
@@ -53,10 +54,14 @@ function buildItemFormState(data: any) {
     name: data.name || "",
     description: data.description || "",
     categoryId: data.categoryId || "",
+    placementStatus: data.placementStatus || "PLACED",
     storageLocationId: data.storageLocationId || "",
     storageArea: data.storageArea || "",
     bin: data.bin || "",
+    storageBinId: data.storageBinId || "",
+    binSlot: data.binSlot ? String(data.binSlot) : "",
     minStock: data.minStock ?? "",
+    incomingQty: data.incomingQty ?? 0,
     manufacturer: data.manufacturer || "",
     mpn: data.mpn || "",
     tagIds: (data.tags || []).map((t: any) => t.tagId),
@@ -78,8 +83,9 @@ function formatStoragePlace(data: {
   storageLocation?: { name?: string | null } | null;
   storageArea?: string | null;
   bin?: string | null;
+  displayBin?: string | null;
 }) {
-  return [data.storageLocation?.name || null, data.storageArea || null, data.bin || null].filter(Boolean).join(" / ") || "-";
+  return [data.storageLocation?.name || null, data.storageArea || null, data.displayBin || data.bin || null].filter(Boolean).join(" / ") || "-";
 }
 
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
@@ -100,6 +106,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [shelves, setShelves] = useState<ShelfOption[]>([]);
+  const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [types, setTypes] = useState<TypeOption[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
   const [delta, setDelta] = useState(1);
@@ -142,6 +149,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         setCategories(meta.categories || []);
         setLocations(meta.locations || []);
         setShelves(meta.shelves || []);
+        setBins((meta.bins || []).filter((entry: StorageBinOption) => entry.isActive !== false));
         setTypes(meta.types || []);
         setCustomFields(meta.customFields || []);
       });
@@ -161,6 +169,23 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       typeId: type.id
     }));
   }, [editMode, item, types, form?.typeId]);
+
+  useEffect(() => {
+    if (!editMode || !form?.storageBinId) return;
+    const selectedBin = bins.find((entry) => entry.id === form.storageBinId);
+    if (!selectedBin) return;
+    setForm((prev: any) => {
+      const nextBinSlot =
+        prev.binSlot && Number(prev.binSlot) <= selectedBin.slotCount ? prev.binSlot : "";
+      return {
+        ...prev,
+        storageLocationId: selectedBin.storageLocationId,
+        storageArea: selectedBin.storageArea || "",
+        bin: selectedBin.code,
+        binSlot: nextBinSlot
+      };
+    });
+  }, [bins, editMode, form?.storageBinId]);
 
   const history = useMemo(() => {
     if (!item) return [];
@@ -201,6 +226,16 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     return [{ id: `legacy-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
   }, [form?.storageArea, form?.storageLocationId, shelves]);
 
+  const availableBins = useMemo(
+    () => bins.filter((entry) => !form?.storageLocationId || entry.storageLocationId === form.storageLocationId),
+    [bins, form?.storageLocationId]
+  );
+
+  const selectedManagedBin = useMemo(
+    () => bins.find((entry) => entry.id === form?.storageBinId) || null,
+    [bins, form?.storageBinId]
+  );
+
   const availableTransferShelves = useMemo(() => {
     const currentLocationId = transferForm.storageLocationId || "";
     const currentStorageArea = transferForm.storageArea || "";
@@ -230,6 +265,9 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const hasMpn = Boolean(String(item.mpn || "").trim());
   const hasStorageArea = Boolean(String(item.storageArea || "").trim());
   const hasBin = Boolean(String(item.bin || "").trim());
+  const hasIncomingQty = Number(item.incomingQty || 0) > 0;
+  const isPlaced = form.placementStatus === "PLACED";
+  const usesManagedDrawer = isPlaced && !!form.storageBinId;
   const hasTags = (item.tags || []).length > 0;
   const hasCustomFieldValues = itemCustomValues.length > 0;
   const currentStoragePlace = formatStoragePlace(item);
@@ -437,13 +475,17 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         name: form.name,
                         description: form.description,
                         categoryId: form.categoryId,
-                        storageLocationId: form.storageLocationId,
-                        storageArea: form.storageArea,
-                        bin: form.bin,
+                        placementStatus: form.placementStatus,
+                        storageLocationId: isPlaced ? form.storageLocationId || null : null,
+                        storageArea: isPlaced ? form.storageArea || null : null,
+                        bin: isPlaced ? form.bin || null : null,
+                        storageBinId: usesManagedDrawer ? form.storageBinId || null : null,
+                        binSlot: usesManagedDrawer && form.binSlot ? Number(form.binSlot) : null,
                         manufacturer: form.manufacturer,
                         mpn: form.mpn,
                         tagIds: form.tagIds,
                         minStock: form.minStock === "" ? null : Number(form.minStock),
+                        incomingQty: Number(form.incomingQty || 0),
                         customValues: form.customValues,
                         ...(shouldSendTypeId ? { typeId: selectedType.id } : {})
                       };
@@ -626,15 +668,48 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               )}
 
               {(editMode || item.storageLocation || hasStorageArea || hasBin) && (
-                <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+                <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2 xl:grid-cols-3"}`}>
+                  <div>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Status", "Status")}</p>
+                    {editMode ? (
+                      <select
+                        className="input"
+                        value={form.placementStatus}
+                        onChange={(e) =>
+                          setForm((prev: any) => ({
+                            ...prev,
+                            placementStatus: e.target.value,
+                            ...(e.target.value !== "PLACED"
+                              ? { storageLocationId: "", storageArea: "", bin: "", storageBinId: "", binSlot: "" }
+                              : {})
+                          }))
+                        }
+                      >
+                        <option value="PLACED">{tr("Eingelagert", "Placed")}</option>
+                        <option value="UNPLACED">{tr("Vorhanden, aber ohne Platz", "On hand, but unplaced")}</option>
+                        <option value="INCOMING">{tr("Erwartet / bestellt", "Incoming / expected")}</option>
+                      </select>
+                    ) : (
+                      <p className="text-lg font-medium text-[var(--app-text)]">
+                        {item.placementStatus === "INCOMING"
+                          ? tr("Erwartet / bestellt", "Incoming / expected")
+                          : item.placementStatus === "UNPLACED"
+                            ? tr("Vorhanden, aber ohne Platz", "On hand, but unplaced")
+                            : tr("Eingelagert", "Placed")}
+                      </p>
+                    )}
+                  </div>
+
                   <div>
                     <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> {tr("Ort", "Location")}</p>
                     {editMode ? (
                       <select
                         className="input"
                         value={form.storageLocationId}
-                        onChange={(e) => setForm((v: any) => ({ ...v, storageLocationId: e.target.value, storageArea: "" }))}
+                        onChange={(e) => setForm((v: any) => ({ ...v, storageLocationId: e.target.value, storageArea: "", storageBinId: "", binSlot: "", bin: "" }))}
+                        disabled={!isPlaced || usesManagedDrawer}
                       >
+                        <option value="">{tr("Kein Lagerort", "No storage location")}</option>
                         {locations.map((location) => (
                           <option key={location.id} value={location.id}>
                             {location.name} ({location.code || "--"})
@@ -646,11 +721,35 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     )}
                   </div>
 
+                  {editMode && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Drawer", "Drawer")}</p>
+                      <select
+                        className="input"
+                        value={form.storageBinId}
+                        onChange={(e) => setForm((v: any) => ({ ...v, storageBinId: e.target.value, binSlot: "" }))}
+                        disabled={!isPlaced}
+                      >
+                        <option value="">{tr("Kein managed Drawer", "No managed drawer")}</option>
+                        {availableBins.map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.code}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {(editMode || hasStorageArea) && (
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Regal / Bereich", "Shelf / area")}</p>
                       {editMode ? (
-                        <select className="input" value={form.storageArea} onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}>
+                        <select
+                          className="input"
+                          value={form.storageArea}
+                          onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}
+                          disabled={!isPlaced || usesManagedDrawer}
+                        >
                           <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
                           {availableShelves.map((shelf) => (
                             <option key={shelf.id} value={shelf.name}>
@@ -667,10 +766,34 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Fach / Bin", "Bin")}</p>
                       {editMode ? (
-                        <input className="input" value={form.bin} onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))} />
+                        <input
+                          className="input"
+                          value={form.bin}
+                          onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))}
+                          disabled={!isPlaced || usesManagedDrawer}
+                        />
                       ) : (
-                        <p className="text-lg text-[var(--app-text)]">{item.bin}</p>
+                        <p className="text-lg text-[var(--app-text)]">{item.displayBin || item.bin}</p>
                       )}
+                    </div>
+                  )}
+                  {editMode && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Unterfach", "Slot")}</p>
+                      <select
+                        className="input"
+                        value={form.binSlot}
+                        onChange={(e) => setForm((v: any) => ({ ...v, binSlot: e.target.value }))}
+                        disabled={!selectedManagedBin}
+                      >
+                        <option value="">{selectedManagedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
+                        {selectedManagedBin &&
+                          Array.from({ length: selectedManagedBin.slotCount }, (_, index) => (
+                            <option key={index + 1} value={String(index + 1)}>
+                              {selectedManagedBin.code}-{index + 1}
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   )}
                 </div>
@@ -869,12 +992,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       <section className="rounded-xl border border-workshop-200 bg-[var(--app-surface)] p-4">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="inline-flex items-center gap-2 text-2xl font-semibold text-[var(--app-text)]"><Package2 size={18} /> {tr("Bestandsverwaltung", "Stock management")}</h3>
-          <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.isArchived ? "theme-status-warning" : "theme-status-success"}`}>
-            {item.isArchived ? tr("Archiviert", "Archived") : tr("Auf Lager", "In stock")}
+          <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.isArchived || item.placementStatus !== "PLACED" ? "theme-status-warning" : "theme-status-success"}`}>
+            {item.isArchived
+              ? tr("Archiviert", "Archived")
+              : item.placementStatus === "INCOMING"
+                ? tr("Erwartet", "Incoming")
+                : item.placementStatus === "UNPLACED"
+                  ? tr("Unplatziert", "Unplaced")
+                  : tr("Auf Lager", "In stock")}
           </span>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="theme-surface-tonal rounded-xl p-4 text-center">
             <p className="theme-muted text-sm">{tr("Gesamtbestand", "Total stock")}</p>
             <div className="mt-2 flex items-center justify-center gap-3">
@@ -896,6 +1025,21 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           <div className="theme-status-success rounded-xl p-4 text-center">
             <p className="text-sm">{tr("Verfuegbar", "Available")}</p>
             <p className="mt-2 text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.availableStock)}</p>
+          </div>
+
+          <div className="rounded-xl border border-workshop-200 bg-[var(--app-surface-alt)] p-4 text-center">
+            <p className="text-sm text-workshop-700">{tr("Erwartet", "Incoming")}</p>
+            {editMode ? (
+              <input
+                className="input mt-3 text-center"
+                type="number"
+                step={getQuantityStep(item.unit)}
+                value={form.incomingQty}
+                onChange={(e) => setForm((prev: any) => ({ ...prev, incomingQty: e.target.value }))}
+              />
+            ) : (
+              <p className="mt-2 text-4xl font-semibold">{formatDisplayQuantity(item.unit, item.incomingQty)}</p>
+            )}
           </div>
         </div>
 

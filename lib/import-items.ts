@@ -177,7 +177,7 @@ function createResolvedPreview(itemInput: ReturnType<typeof itemSchema.parse>, c
     name: itemInput.name,
     category: categories.get(itemInput.categoryId) || null,
     type: types.get(itemInput.typeId) || null,
-    storageLocation: locations.get(itemInput.storageLocationId) || null,
+    storageLocation: itemInput.storageLocationId ? locations.get(itemInput.storageLocationId) || null : null,
     unit: itemInput.unit,
     stock: serializeStoredQuantity(itemInput.unit, itemInput.stock) || 0,
     minStock: serializeStoredQuantity(itemInput.unit, itemInput.minStock),

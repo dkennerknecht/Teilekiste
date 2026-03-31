@@ -29,7 +29,7 @@ async function checkItemAccess(itemId: string, user: { id: string; role: string 
   if (!item) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
 
   const allowedLocationIds = await resolveAllowedLocationIds(user as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+  if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 

@@ -22,7 +22,7 @@ async function getScopedItem(itemId: string, user: { id: string; role: string })
   }
 
   const allowedLocationIds = await resolveAllowedLocationIds(user as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+  if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!childItem) return NextResponse.json({ error: "Komponente nicht gefunden" }, { status: 404 });
 
-  if (access.allowedLocationIds && !access.allowedLocationIds.includes(childItem.storageLocationId)) {
+  if (childItem.storageLocationId && access.allowedLocationIds && !access.allowedLocationIds.includes(childItem.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (await createsBomCycle(params.id, childItem.id)) {
@@ -173,7 +173,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   });
   if (!childItem) return NextResponse.json({ error: "Komponente nicht gefunden" }, { status: 404 });
 
-  if (access.allowedLocationIds && !access.allowedLocationIds.includes(childItem.storageLocationId)) {
+  if (childItem.storageLocationId && access.allowedLocationIds && !access.allowedLocationIds.includes(childItem.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

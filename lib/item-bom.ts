@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 
 type AccessibleLocationIds = string[] | null;
 
-function isLocationAllowed(storageLocationId: string, allowedLocationIds: AccessibleLocationIds) {
+function isLocationAllowed(storageLocationId: string | null, allowedLocationIds: AccessibleLocationIds) {
+  if (!storageLocationId) return true;
   return allowedLocationIds === null || allowedLocationIds.includes(storageLocationId);
 }
 

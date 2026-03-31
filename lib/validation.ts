@@ -15,6 +15,7 @@ const importProfileAssignmentSchema = z.object({
   column: z.string().trim().min(1).max(200).optional().nullable(),
   fixedValue: z.string().trim().max(200).optional().nullable()
 });
+export const placementStatusSchema = z.enum(["INCOMING", "UNPLACED", "PLACED"]);
 export const importProfileMappingConfigSchema = z.object({
   assignments: z.array(importProfileAssignmentSchema).default([])
 });
@@ -24,10 +25,14 @@ export const itemSchema = z.object({
   name: z.string().min(2).max(180),
   description: z.string().max(8000).default(""),
   categoryId: z.string().uuid(),
-  storageLocationId: z.string().uuid(),
+  storageLocationId: z.string().uuid().optional().nullable(),
   storageArea: z.string().optional().nullable(),
   bin: z.string().optional().nullable(),
+  storageBinId: z.string().uuid().optional().nullable(),
+  binSlot: z.number().int().positive().optional().nullable(),
+  placementStatus: placementStatusSchema.default("PLACED"),
   stock: z.number().finite().default(0),
+  incomingQty: z.number().finite().default(0),
   unit: z.enum(["STK", "M", "SET", "PACK"]).default("STK"),
   minStock: z.number().finite().optional().nullable(),
   manufacturer: z.string().max(180).optional().nullable(),
@@ -137,6 +142,40 @@ export const storageShelfCreateSchema = z.object({
 
 export const storageShelfUpdateSchema = storageShelfCreateSchema.extend({
   id: uuidSchema
+});
+
+export const storageBinCreateSchema = z.object({
+  code: z.string().trim().min(1).max(40),
+  storageLocationId: uuidSchema,
+  storageArea: z.string().trim().max(120).optional().nullable(),
+  slotCount: z.number().int().min(1).max(99).default(1),
+  isActive: z.boolean().optional().default(true)
+});
+
+export const storageBinUpdateSchema = storageBinCreateSchema.partial().extend({
+  id: uuidSchema
+});
+
+export const storageBinRangeCreateSchema = z.object({
+  storageLocationId: uuidSchema,
+  storageArea: z.string().trim().max(120).optional().nullable(),
+  prefix: z.string().trim().min(1).max(20),
+  start: z.number().int().positive(),
+  end: z.number().int().positive(),
+  slotCount: z.number().int().min(1).max(99).default(1)
+}).refine((value) => value.end >= value.start, {
+  message: "end must be greater than or equal to start",
+  path: ["end"]
+});
+
+export const storageBinSlotCountPreviewSchema = z.object({
+  id: uuidSchema,
+  slotCount: z.number().int().min(1).max(99)
+});
+
+export const storageBinSwapSchema = z.object({
+  leftBinId: uuidSchema,
+  rightBinId: uuidSchema
 });
 
 export const customFieldCreateSchema = z.object({

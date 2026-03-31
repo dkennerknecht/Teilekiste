@@ -38,6 +38,17 @@ afterEach(() => {
 describe("Item create transaction", () => {
   it("creates the item, stock movement, and audit log inside one transaction context", async () => {
     const tx = {
+      storageLocation: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "11111111-1111-4111-8111-111111111111"
+        })
+      },
+      storageShelf: {
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      storageBin: {
+        findUnique: vi.fn().mockResolvedValue(null)
+      },
       customField: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -123,6 +134,17 @@ describe("Item create transaction", () => {
 
   it("stores meter quantities in mm but returns meters in the response", async () => {
     const tx = {
+      storageLocation: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "11111111-1111-4111-8111-111111111111"
+        })
+      },
+      storageShelf: {
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      storageBin: {
+        findUnique: vi.fn().mockResolvedValue(null)
+      },
       customField: {
         findMany: vi.fn().mockResolvedValue([])
       },
@@ -200,6 +222,98 @@ describe("Item create transaction", () => {
         stock: 12.5,
         unit: "M",
         minStock: 0.25
+      })
+    );
+  });
+
+  it("creates incoming items without a storage location and stores incoming quantity separately", async () => {
+    const tx = {
+      storageLocation: {
+        findUnique: vi.fn()
+      },
+      storageShelf: {
+        findFirst: vi.fn()
+      },
+      storageBin: {
+        findUnique: vi.fn()
+      },
+      customField: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      item: {
+        create: vi.fn().mockResolvedValue({
+          id: "item-incoming-1",
+          labelCode: "EL-KB-003",
+          name: "Bestellte Klemme",
+          stock: 0,
+          incomingQty: 3,
+          unit: "STK",
+          minStock: null,
+          placementStatus: "INCOMING",
+          storageLocationId: null,
+          storageArea: null,
+          bin: null,
+          storageBinId: null,
+          binSlot: null
+        })
+      },
+      itemCustomFieldValue: {
+        findMany: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn().mockResolvedValue({})
+      },
+      stockMovement: {
+        create: vi.fn().mockResolvedValue({})
+      }
+    };
+
+    requireWriteAccessMock.mockResolvedValue({
+      user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
+    });
+    resolveAllowedLocationIdsMock.mockResolvedValue([]);
+    assignNextLabelCodeMock.mockResolvedValue("EL-KB-003");
+    transactionMock.mockImplementation(async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx));
+
+    const { POST } = await import("@/app/api/items/route");
+    const request = new NextRequest(
+      new Request("http://localhost/api/items", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Bestellte Klemme",
+          description: "",
+          categoryId: "22222222-2222-4222-8222-222222222222",
+          placementStatus: "INCOMING",
+          stock: 0,
+          incomingQty: 3,
+          unit: "STK",
+          minStock: null,
+          manufacturer: "",
+          mpn: "",
+          typeId: "44444444-4444-4444-8444-444444444444",
+          tagIds: [],
+          customValues: {}
+        })
+      })
+    );
+
+    const response = await POST(request);
+    expect(response?.status).toBe(201);
+    expect(tx.item.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          placementStatus: "INCOMING",
+          storageLocationId: null,
+          stock: 0,
+          incomingQty: 3
+        })
+      })
+    );
+    expect(tx.stockMovement.create).not.toHaveBeenCalled();
+    await expect(response!.json()).resolves.toEqual(
+      expect.objectContaining({
+        placementStatus: "INCOMING",
+        stock: 0,
+        incomingQty: 3
       })
     );
   });

@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       for (const update of body.updates || []) {
         const item = await tx.item.findUnique({ where: { id: update.itemId } });
         if (!item) continue;
-        if (allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
+        if (item.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(item.storageLocationId)) {
           throw new Error("FORBIDDEN");
         }
         const reservedQtyResult = await tx.reservation.aggregate({

@@ -33,6 +33,15 @@ type BackupShelf = {
   storageLocationId: string;
 };
 
+type BackupStorageBin = {
+  id: string;
+  code: string;
+  storageLocationId: string;
+  storageArea?: string | null;
+  slotCount?: number;
+  isActive?: boolean;
+};
+
 type BackupTag = {
   id: string;
   name: string;
@@ -162,10 +171,14 @@ type BackupItem = {
   description: string;
   categoryId: string;
   typeId?: string | null;
-  storageLocationId: string;
+  storageLocationId?: string | null;
   storageArea?: string | null;
   bin?: string | null;
+  storageBinId?: string | null;
+  binSlot?: number | null;
+  placementStatus?: string | null;
   stock: number;
+  incomingQty?: number | null;
   unit: string;
   minStock?: number | null;
   manufacturer?: string | null;
@@ -206,6 +219,7 @@ export type BackupPayload = {
   categories?: BackupCategory[];
   locations?: BackupLocation[];
   shelves?: BackupShelf[];
+  bins?: BackupStorageBin[];
   tags?: BackupTag[];
   customFields?: BackupCustomField[];
   technicalFieldScopeAssignments?: BackupTechnicalFieldScopeAssignment[];
@@ -232,6 +246,7 @@ export type RestoreResult = {
   restoredCategories: number;
   restoredLocations: number;
   restoredShelves: number;
+  restoredBins: number;
   restoredTags: number;
   restoredAreas: number;
   restoredTypes: number;
@@ -349,6 +364,7 @@ export async function restoreBackupData(input: {
   const { userIdMap, restoredUsers, placeholderUsers } = await resolveUserIds(payload.users, strategy);
   const categoryIdMap = new Map<string, string>();
   const locationIdMap = new Map<string, string>();
+  const storageBinIdMap = new Map<string, string>();
   const tagIdMap = new Map<string, string>();
   const customFieldIdMap = new Map<string, string>();
   const technicalFieldScopeAssignmentIdMap = new Map<string, string>();
@@ -421,6 +437,40 @@ export async function restoreBackupData(input: {
     const created = await prisma.storageShelf.create({
       data: { id: shelf.id, name: shelf.name, storageLocationId: resolvedLocationId }
     });
+  }
+
+  for (const storageBin of payload.bins || []) {
+    const resolvedLocationId = locationIdMap.get(storageBin.storageLocationId) || storageBin.storageLocationId;
+    const existing = await prisma.storageBin.findFirst({
+      where: { OR: [{ id: storageBin.id }, { code: storageBin.code }] }
+    });
+
+    if (existing) {
+      storageBinIdMap.set(storageBin.id, existing.id);
+      await prisma.storageBin.update({
+        where: { id: existing.id },
+        data: {
+          code: storageBin.code,
+          storageLocationId: resolvedLocationId,
+          storageArea: storageBin.storageArea || null,
+          slotCount: storageBin.slotCount ?? 1,
+          isActive: storageBin.isActive !== false
+        }
+      });
+      continue;
+    }
+
+    const created = await prisma.storageBin.create({
+      data: {
+        id: storageBin.id,
+        code: storageBin.code,
+        storageLocationId: resolvedLocationId,
+        storageArea: storageBin.storageArea || null,
+        slotCount: storageBin.slotCount ?? 1,
+        isActive: storageBin.isActive !== false
+      }
+    });
+    storageBinIdMap.set(storageBin.id, created.id);
   }
 
   for (const tag of payload.tags || []) {
@@ -676,7 +726,8 @@ export async function restoreBackupData(input: {
 
   for (const item of payload.items || []) {
     const resolvedCategoryId = categoryIdMap.get(item.categoryId) || item.categoryId;
-    const resolvedLocationId = locationIdMap.get(item.storageLocationId) || item.storageLocationId;
+    const resolvedLocationId = item.storageLocationId ? locationIdMap.get(item.storageLocationId) || item.storageLocationId : null;
+    const resolvedStorageBinId = item.storageBinId ? storageBinIdMap.get(item.storageBinId) || item.storageBinId : null;
     const byLabel = await prisma.item.findUnique({ where: { labelCode: item.labelCode } });
 
     if (byLabel && byLabel.id !== item.id && strategy === "merge") {
@@ -697,7 +748,11 @@ export async function restoreBackupData(input: {
           storageLocationId: resolvedLocationId,
           storageArea: item.storageArea || null,
           bin: item.bin || null,
+          storageBinId: resolvedStorageBinId,
+          binSlot: item.binSlot ?? null,
+          placementStatus: item.placementStatus || "PLACED",
           stock: item.stock,
+          incomingQty: item.incomingQty ?? 0,
           unit: item.unit,
           minStock: item.minStock ?? null,
           manufacturer: item.manufacturer || null,
@@ -719,7 +774,11 @@ export async function restoreBackupData(input: {
           storageLocationId: resolvedLocationId,
           storageArea: item.storageArea || null,
           bin: item.bin || null,
+          storageBinId: resolvedStorageBinId,
+          binSlot: item.binSlot ?? null,
+          placementStatus: item.placementStatus || "PLACED",
           stock: item.stock,
+          incomingQty: item.incomingQty ?? 0,
           unit: item.unit,
           minStock: item.minStock ?? null,
           manufacturer: item.manufacturer || null,
@@ -929,6 +988,7 @@ export async function restoreBackupData(input: {
     restoredCategories: (payload.categories || []).length,
     restoredLocations: (payload.locations || []).length,
     restoredShelves: (payload.shelves || []).length,
+    restoredBins: (payload.bins || []).length,
     restoredTags: (payload.tags || []).length,
     restoredAreas: (payload.areas || []).length,
     restoredTypes: (payload.types || []).length,

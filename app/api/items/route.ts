@@ -10,8 +10,9 @@ import { getAvailableQty, getReservedQty } from "@/lib/stock";
 import { CustomFieldValidationError, prepareCustomFieldValueWrites } from "@/lib/custom-fields";
 import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
 import { parseJson, parsePagination, serverError } from "@/lib/http";
+import { formatItemPosition, mapPlacementError, resolveItemPlacement } from "@/lib/storage-bins";
 
-function serializeListItemQuantities<T extends { unit: string; stock: number; minStock: number | null }>(
+function serializeListItemQuantities<T extends { unit: string; stock: number; minStock: number | null; incomingQty?: number; placementStatus?: string | null }>(
   item: T,
   reservedQty: number,
   availableStock: number
@@ -19,9 +20,11 @@ function serializeListItemQuantities<T extends { unit: string; stock: number; mi
   return {
     ...item,
     stock: serializeStoredQuantity(item.unit, item.stock),
+    incomingQty: serializeStoredQuantity(item.unit, item.incomingQty ?? 0),
     minStock: serializeStoredQuantity(item.unit, item.minStock),
     reservedQty: serializeStoredQuantity(item.unit, reservedQty),
-    availableStock: serializeStoredQuantity(item.unit, availableStock)
+    availableStock: serializeStoredQuantity(item.unit, availableStock),
+    displayBin: formatItemPosition(item as never)
   };
 }
 
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest) {
   if (auth.error) return auth.error;
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  const where = buildItemFilter(req.nextUrl.searchParams, allowedLocationIds);
+  const where = buildItemFilter(req.nextUrl.searchParams, allowedLocationIds, auth.user!.role);
   const { limit, offset } = parsePagination(req.nextUrl.searchParams, 200);
 
   const sort = req.nextUrl.searchParams.get("sort") || "labelCode";
@@ -48,6 +51,7 @@ export async function GET(req: NextRequest) {
     include: {
       category: true,
       storageLocation: true,
+      storageBin: { select: { id: true, code: true, slotCount: true } },
       tags: { include: { tag: true } },
       _count: { select: { images: true, attachments: true, reservations: true } },
       reservations: { select: { reservedQty: true } },
@@ -67,7 +71,7 @@ export async function GET(req: NextRequest) {
   const shaped = items
     .map((item) => {
       const reservedQty = getReservedQty(item.reservations);
-      const availableStock = getAvailableQty(item.stock, reservedQty);
+      const availableStock = getAvailableQty(item.stock, reservedQty, item.placementStatus);
       return {
         ...serializeListItemQuantities(item, reservedQty, availableStock),
         primaryImage: item.images[0] ?? null
@@ -87,15 +91,17 @@ export async function POST(req: NextRequest) {
   const parsed = { data: parsedBody.data as ReturnType<typeof itemSchema.parse> };
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(parsed.data.storageLocationId)) {
-    return NextResponse.json({ error: "Storage location not allowed" }, { status: 403 });
-  }
 
   let storedStock: number;
+  let storedIncomingQty: number;
   let storedMinStock: number | null;
   try {
     storedStock = toStoredQuantity(parsed.data.unit, parsed.data.stock, {
       field: "Bestand",
+      allowNegative: false
+    })!;
+    storedIncomingQty = toStoredQuantity(parsed.data.unit, parsed.data.incomingQty, {
+      field: "Erwartete Menge",
       allowNegative: false
     })!;
     storedMinStock = toStoredQuantity(parsed.data.unit, parsed.data.minStock, {
@@ -116,6 +122,15 @@ export async function POST(req: NextRequest) {
     try {
       const item = await prisma.$transaction(async (tx) => {
         const labelCode = await assignNextLabelCode(parsed.data.categoryId, parsed.data.typeId, tx);
+        const placement = await resolveItemPlacement(tx, {
+          placementStatus: parsed.data.placementStatus,
+          storageLocationId: parsed.data.storageLocationId || null,
+          storageArea: parsed.data.storageArea || null,
+          bin: parsed.data.bin || null,
+          storageBinId: parsed.data.storageBinId || null,
+          binSlot: parsed.data.binSlot ?? null,
+          allowedLocationIds
+        });
         const customFieldWrites = await prepareCustomFieldValueWrites(tx, {
           rawValues: parsed.data.customValues,
           categoryId: parsed.data.categoryId,
@@ -129,10 +144,14 @@ export async function POST(req: NextRequest) {
             description: parsed.data.description,
             categoryId: parsed.data.categoryId,
             typeId: parsed.data.typeId,
-            storageLocationId: parsed.data.storageLocationId,
-            storageArea: parsed.data.storageArea || null,
-            bin: parsed.data.bin || null,
+            storageLocationId: placement.storageLocationId,
+            storageArea: placement.storageArea,
+            bin: placement.bin,
+            storageBinId: placement.storageBinId,
+            binSlot: placement.binSlot,
+            placementStatus: placement.placementStatus,
             stock: storedStock,
+            incomingQty: storedIncomingQty,
             unit: parsed.data.unit,
             minStock: storedMinStock,
             manufacturer: parsed.data.manufacturer || null,
@@ -185,7 +204,9 @@ export async function POST(req: NextRequest) {
         {
           ...item,
           stock: serializeStoredQuantity(item.unit, item.stock),
-          minStock: serializeStoredQuantity(item.unit, item.minStock)
+          incomingQty: serializeStoredQuantity(item.unit, item.incomingQty),
+          minStock: serializeStoredQuantity(item.unit, item.minStock),
+          displayBin: formatItemPosition(item as never)
         },
         { status: 201 }
       );
@@ -199,6 +220,10 @@ export async function POST(req: NextRequest) {
           },
           { status: 400 }
         );
+      }
+      const placementError = mapPlacementError(error);
+      if (placementError) {
+        return NextResponse.json(placementError.body, { status: placementError.status });
       }
       if (attempts >= 3) {
         return serverError(`Create failed: ${(error as Error).message}`);

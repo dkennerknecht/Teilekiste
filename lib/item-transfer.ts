@@ -9,7 +9,7 @@ type TransferItem = {
   id: string;
   labelCode?: string | null;
   name?: string | null;
-  storageLocationId: string;
+  storageLocationId: string | null;
   storageArea?: string | null;
   bin?: string | null;
   storageLocation?: { id: string; name: string; code?: string | null } | null;
@@ -48,7 +48,7 @@ function describeStoragePlace(input: {
 
 async function resolveLocationMeta(
   db: TransferDb,
-  sourceLocationId: string,
+  sourceLocationId: string | null,
   targetLocationId: string,
   sourceLocation?: TransferLocationMeta | null,
   targetLocation?: TransferLocationMeta | null
@@ -68,7 +68,11 @@ async function resolveLocationMeta(
   const byId = new Map(rows.map((row) => [row.id, row]));
 
   return {
-    sourceLocation: sourceLocation || byId.get(sourceLocationId) || { id: sourceLocationId, name: sourceLocationId, code: null },
+    sourceLocation:
+      sourceLocation ||
+      (sourceLocationId
+        ? byId.get(sourceLocationId) || { id: sourceLocationId, name: sourceLocationId, code: null }
+        : { id: "unplaced", name: "Unplaced", code: null }),
     targetLocation: targetLocation || byId.get(targetLocationId) || { id: targetLocationId, name: targetLocationId, code: null }
   };
 }
@@ -213,15 +217,15 @@ export function buildTransferSourceGroups(
   for (const item of items) {
     const storageArea = normalizeOptionalText(item.storageArea);
     const bin = normalizeOptionalText(item.bin);
-    const key = [item.storageLocationId, storageArea || "", bin || ""].join("::");
+    const key = [item.storageLocationId || "unplaced", storageArea || "", bin || ""].join("::");
     const current = groups.get(key);
     if (current) {
       current.count += 1;
       continue;
     }
     groups.set(key, {
-      storageLocationId: item.storageLocationId,
-      storageLocationName: item.storageLocation?.name || item.storageLocationId,
+      storageLocationId: item.storageLocationId || "unplaced",
+      storageLocationName: item.storageLocation?.name || item.storageLocationId || "Unplaced",
       storageArea,
       bin,
       count: 1
