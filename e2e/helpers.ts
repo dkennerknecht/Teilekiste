@@ -1,7 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import * as nextAuthJwt from "next-auth/jwt";
 
-const { encode } = nextAuthJwt as { encode: (params: { secret: string; maxAge: number; token: Record<string, unknown> }) => Promise<string> };
+const { encode } = nextAuthJwt as {
+  encode: (params: { secret: string; salt?: string; maxAge: number; token: Record<string, unknown> }) => Promise<string>;
+};
 
 function resolveBaseUrl() {
   return process.env.PLAYWRIGHT_BASE_URL || process.env.NEXTAUTH_URL || process.env.APP_BASE_URL || "http://127.0.0.1:3000";
@@ -10,9 +12,11 @@ function resolveBaseUrl() {
 export async function login(page: Page, email = "admin@local") {
   const baseUrl = resolveBaseUrl();
   const secureCookie = baseUrl.startsWith("https://");
+  const cookieName = secureCookie ? "__Secure-next-auth.session-token" : "next-auth.session-token";
   const maxAge = 30 * 24 * 60 * 60;
   const sessionToken = await encode({
     secret: process.env.NEXTAUTH_SECRET || "playwright-secret",
+    salt: cookieName,
     maxAge,
     token: {
       sub: "e2e-admin",
@@ -24,7 +28,7 @@ export async function login(page: Page, email = "admin@local") {
 
   await page.context().addCookies([
     {
-      name: secureCookie ? "__Secure-next-auth.session-token" : "next-auth.session-token",
+      name: cookieName,
       value: sessionToken,
       url: baseUrl,
       httpOnly: true,
@@ -34,6 +38,7 @@ export async function login(page: Page, email = "admin@local") {
     }
   ]);
 
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/($|items|admin)/);
+  await expect(page.context().cookies(baseUrl)).resolves.toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: cookieName })])
+  );
 }
