@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getE2eBypassUserFromRequestCookies, getSessionUser } from "@/lib/auth";
 import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 import type { AppRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -44,6 +44,12 @@ export async function requireAuth(req?: NextRequest) {
   if (tokenUser) {
     await purgeExpiredDeletedItems().catch(() => 0);
     return { user: tokenUser };
+  }
+
+  const bypassUser = req ? await getE2eBypassUserFromRequestCookies(req.cookies) : null;
+  if (bypassUser) {
+    await purgeExpiredDeletedItems().catch(() => 0);
+    return { user: { ...bypassUser, authType: "session" as const } };
   }
 
   const user = await getSessionUser();
