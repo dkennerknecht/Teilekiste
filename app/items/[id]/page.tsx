@@ -30,13 +30,14 @@ import { formatDisplayQuantity, getQuantityStep, getUnitDisplayLabel } from "@/l
 type TagOption = { id: string; name: string };
 type CategoryOption = { id: string; name: string; code?: string | null };
 type LocationOption = { id: string; name: string; code?: string | null };
-type ShelfOption = { id: string; name: string; storageLocationId: string };
-type StorageBinOption = { id: string; code: string; storageLocationId: string; storageArea?: string | null; slotCount: number; isActive?: boolean };
+type ShelfOption = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
+type StorageBinOption = { id: string; code: string; storageLocationId: string; storageShelfId: string; slotCount: number; isActive?: boolean };
 type TypeOption = { id: string; code: string; name: string };
 type TransferFormState = {
   storageLocationId: string;
-  storageArea: string;
-  bin: string;
+  storageShelfId: string;
+  storageBinId: string;
+  binSlot: string;
   note: string;
 };
 
@@ -56,8 +57,7 @@ function buildItemFormState(data: any) {
     categoryId: data.categoryId || "",
     placementStatus: data.placementStatus || "PLACED",
     storageLocationId: data.storageLocationId || "",
-    storageArea: data.storageArea || "",
-    bin: data.bin || "",
+    storageShelfId: data.storageShelfId || "",
     storageBinId: data.storageBinId || "",
     binSlot: data.binSlot ? String(data.binSlot) : "",
     minStock: data.minStock ?? "",
@@ -73,19 +73,17 @@ function buildItemFormState(data: any) {
 function buildTransferFormState(data: any): TransferFormState {
   return {
     storageLocationId: data.storageLocationId || "",
-    storageArea: data.storageArea || "",
-    bin: data.bin || "",
+    storageShelfId: data.storageShelfId || "",
+    storageBinId: data.storageBinId || "",
+    binSlot: data.binSlot ? String(data.binSlot) : "",
     note: ""
   };
 }
 
 function formatStoragePlace(data: {
-  storageLocation?: { name?: string | null } | null;
-  storageArea?: string | null;
-  bin?: string | null;
-  displayBin?: string | null;
+  displayPosition?: string | null;
 }) {
-  return [data.storageLocation?.name || null, data.storageArea || null, data.displayBin || data.bin || null].filter(Boolean).join(" / ") || "-";
+  return data.displayPosition || "-";
 }
 
 export default function ItemDetailPage({ params }: { params: { id: string } }) {
@@ -98,8 +96,9 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const [form, setForm] = useState<any>(null);
   const [transferForm, setTransferForm] = useState<TransferFormState>({
     storageLocationId: "",
-    storageArea: "",
-    bin: "",
+    storageShelfId: "",
+    storageBinId: "",
+    binSlot: "",
     note: ""
   });
   const [tags, setTags] = useState<TagOption[]>([]);
@@ -180,8 +179,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       return {
         ...prev,
         storageLocationId: selectedBin.storageLocationId,
-        storageArea: selectedBin.storageArea || "",
-        bin: selectedBin.code,
+        storageShelfId: selectedBin.storageShelfId,
         binSlot: nextBinSlot
       };
     });
@@ -218,17 +216,18 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
   const availableShelves = useMemo(() => {
     const currentLocationId = form?.storageLocationId || "";
-    const currentStorageArea = form?.storageArea || "";
     const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
-    if (!currentStorageArea || filtered.some((shelf) => shelf.name === currentStorageArea)) {
-      return filtered;
-    }
-    return [{ id: `legacy-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
-  }, [form?.storageArea, form?.storageLocationId, shelves]);
+    return filtered;
+  }, [form?.storageLocationId, shelves]);
 
   const availableBins = useMemo(
-    () => bins.filter((entry) => !form?.storageLocationId || entry.storageLocationId === form.storageLocationId),
-    [bins, form?.storageLocationId]
+    () => bins.filter((entry) => entry.storageShelfId === form?.storageShelfId),
+    [bins, form?.storageShelfId]
+  );
+
+  const selectedShelf = useMemo(
+    () => shelves.find((entry) => entry.id === form?.storageShelfId) || null,
+    [form?.storageShelfId, shelves]
   );
 
   const selectedManagedBin = useMemo(
@@ -238,13 +237,19 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
   const availableTransferShelves = useMemo(() => {
     const currentLocationId = transferForm.storageLocationId || "";
-    const currentStorageArea = transferForm.storageArea || "";
     const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
-    if (!currentStorageArea || filtered.some((shelf) => shelf.name === currentStorageArea)) {
-      return filtered;
-    }
-    return [{ id: `legacy-transfer-${currentStorageArea}`, name: currentStorageArea, storageLocationId: currentLocationId }, ...filtered];
-  }, [shelves, transferForm.storageArea, transferForm.storageLocationId]);
+    return filtered;
+  }, [shelves, transferForm.storageLocationId]);
+
+  const selectedTransferShelf = useMemo(
+    () => shelves.find((entry) => entry.id === transferForm.storageShelfId) || null,
+    [shelves, transferForm.storageShelfId]
+  );
+
+  const availableTransferBins = useMemo(
+    () => bins.filter((entry) => entry.storageShelfId === transferForm.storageShelfId),
+    [bins, transferForm.storageShelfId]
+  );
 
   const itemCustomValues = useMemo(
     () =>
@@ -263,18 +268,22 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const hasDescription = Boolean(String(item.description || "").trim());
   const hasManufacturer = Boolean(String(item.manufacturer || "").trim());
   const hasMpn = Boolean(String(item.mpn || "").trim());
-  const hasStorageArea = Boolean(String(item.storageArea || "").trim());
-  const hasBin = Boolean(String(item.bin || "").trim());
+  const hasPlacement = Boolean(String(item.displayPosition || "").trim());
   const hasIncomingQty = Number(item.incomingQty || 0) > 0;
   const isPlaced = form.placementStatus === "PLACED";
-  const usesManagedDrawer = isPlaced && !!form.storageBinId;
+  const selectedPlacementShelf = selectedShelf;
+  const usesManagedDrawer = isPlaced && selectedPlacementShelf?.mode === "DRAWER_HOST";
   const hasTags = (item.tags || []).length > 0;
   const hasCustomFieldValues = itemCustomValues.length > 0;
   const currentStoragePlace = formatStoragePlace(item);
   const targetStoragePlace = [
     locations.find((location) => location.id === transferForm.storageLocationId)?.name || null,
-    transferForm.storageArea || null,
-    transferForm.bin || null
+    selectedTransferShelf ? [selectedTransferShelf.code, selectedTransferShelf.name].filter(Boolean).join(" - ") : null,
+    (() => {
+      const selectedTransferBin = availableTransferBins.find((entry) => entry.id === transferForm.storageBinId);
+      if (!selectedTransferBin) return null;
+      return `${selectedTransferBin.code}${transferForm.binSlot ? `-${transferForm.binSlot}` : ""}`;
+    })()
   ]
     .filter(Boolean)
     .join(" / ");
@@ -391,8 +400,9 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           storageLocationId: transferForm.storageLocationId,
-          storageArea: transferForm.storageArea.trim() || null,
-          bin: transferForm.bin.trim() || null,
+          storageShelfId: transferForm.storageShelfId || null,
+          storageBinId: transferForm.storageBinId || null,
+          binSlot: transferForm.storageBinId && transferForm.binSlot ? Number(transferForm.binSlot) : null,
           note: transferForm.note.trim() || null
         })
       });
@@ -477,8 +487,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         categoryId: form.categoryId,
                         placementStatus: form.placementStatus,
                         storageLocationId: isPlaced ? form.storageLocationId || null : null,
-                        storageArea: isPlaced ? form.storageArea || null : null,
-                        bin: isPlaced ? form.bin || null : null,
+                        storageShelfId: isPlaced ? form.storageShelfId || null : null,
                         storageBinId: usesManagedDrawer ? form.storageBinId || null : null,
                         binSlot: usesManagedDrawer && form.binSlot ? Number(form.binSlot) : null,
                         manufacturer: form.manufacturer,
@@ -667,7 +676,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                 </div>
               )}
 
-              {(editMode || item.storageLocation || hasStorageArea || hasBin) && (
+              {(editMode || item.storageLocation || hasPlacement) && (
                 <div className={`grid gap-4 border-t border-workshop-200 pt-4 ${editMode ? "md:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2 xl:grid-cols-3"}`}>
                   <div>
                     <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Status", "Status")}</p>
@@ -680,7 +689,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                             ...prev,
                             placementStatus: e.target.value,
                             ...(e.target.value !== "PLACED"
-                              ? { storageLocationId: "", storageArea: "", bin: "", storageBinId: "", binSlot: "" }
+                              ? { storageLocationId: "", storageShelfId: "", storageBinId: "", binSlot: "" }
                               : {})
                           }))
                         }
@@ -706,8 +715,16 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                       <select
                         className="input"
                         value={form.storageLocationId}
-                        onChange={(e) => setForm((v: any) => ({ ...v, storageLocationId: e.target.value, storageArea: "", storageBinId: "", binSlot: "", bin: "" }))}
-                        disabled={!isPlaced || usesManagedDrawer}
+                        onChange={(e) =>
+                          setForm((v: any) => ({
+                            ...v,
+                            storageLocationId: e.target.value,
+                            storageShelfId: "",
+                            storageBinId: "",
+                            binSlot: ""
+                          }))
+                        }
+                        disabled={!isPlaced}
                       >
                         <option value="">{tr("Kein Lagerort", "No storage location")}</option>
                         {locations.map((location) => (
@@ -721,79 +738,86 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     )}
                   </div>
 
-                  {editMode && (
-                    <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Drawer", "Drawer")}</p>
-                      <select
-                        className="input"
-                        value={form.storageBinId}
-                        onChange={(e) => setForm((v: any) => ({ ...v, storageBinId: e.target.value, binSlot: "" }))}
-                        disabled={!isPlaced}
-                      >
-                        <option value="">{tr("Kein managed Drawer", "No managed drawer")}</option>
-                        {availableBins.map((entry) => (
-                          <option key={entry.id} value={entry.id}>
-                            {entry.code}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {(editMode || hasStorageArea) && (
+                  {(editMode || item.storageShelf) && (
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Regal / Bereich", "Shelf / area")}</p>
                       {editMode ? (
                         <select
                           className="input"
-                          value={form.storageArea}
-                          onChange={(e) => setForm((v: any) => ({ ...v, storageArea: e.target.value }))}
-                          disabled={!isPlaced || usesManagedDrawer}
+                          value={form.storageShelfId}
+                          onChange={(e) =>
+                            setForm((v: any) => ({
+                              ...v,
+                              storageShelfId: e.target.value,
+                              storageBinId: "",
+                              binSlot: ""
+                            }))
+                          }
+                          disabled={!isPlaced || !form.storageLocationId}
                         >
-                          <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
+                          <option value="">
+                            {!form.storageLocationId
+                              ? tr("Erst Lagerort waehlen", "Choose storage location first")
+                              : availableShelves.length
+                                ? tr("Regal waehlen", "Choose shelf")
+                                : tr("Keine Regale fuer Lagerort", "No shelves for location")}
+                          </option>
                           {availableShelves.map((shelf) => (
-                            <option key={shelf.id} value={shelf.name}>
-                              {shelf.name}
+                            <option key={shelf.id} value={shelf.id}>
+                              {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
                             </option>
                           ))}
                         </select>
                       ) : (
-                        <p className="text-lg text-[var(--app-text)]">{item.storageArea}</p>
+                        <p className="text-lg text-[var(--app-text)]">{[item.storageShelf?.code, item.storageShelf?.name].filter(Boolean).join(" - ") || "-"}</p>
                       )}
                     </div>
                   )}
-                  {(editMode || hasBin) && (
+
+                  {(editMode ? usesManagedDrawer : item.storageBin) && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Fach / Bin", "Bin")}</p>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Drawer", "Drawer")}</p>
                       {editMode ? (
-                        <input
+                        <select
                           className="input"
-                          value={form.bin}
-                          onChange={(e) => setForm((v: any) => ({ ...v, bin: e.target.value }))}
-                          disabled={!isPlaced || usesManagedDrawer}
-                        />
-                      ) : (
-                        <p className="text-lg text-[var(--app-text)]">{item.displayBin || item.bin}</p>
-                      )}
-                    </div>
-                  )}
-                  {editMode && (
-                    <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Unterfach", "Slot")}</p>
-                      <select
-                        className="input"
-                        value={form.binSlot}
-                        onChange={(e) => setForm((v: any) => ({ ...v, binSlot: e.target.value }))}
-                        disabled={!selectedManagedBin}
-                      >
-                        <option value="">{selectedManagedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
-                        {selectedManagedBin &&
-                          Array.from({ length: selectedManagedBin.slotCount }, (_, index) => (
-                            <option key={index + 1} value={String(index + 1)}>
-                              {selectedManagedBin.code}-{index + 1}
+                          value={form.storageBinId}
+                          onChange={(e) => setForm((v: any) => ({ ...v, storageBinId: e.target.value, binSlot: "" }))}
+                          disabled={!isPlaced || !usesManagedDrawer}
+                        >
+                          <option value="">{tr("Drawer waehlen", "Choose drawer")}</option>
+                          {availableBins.map((entry) => (
+                            <option key={entry.id} value={entry.id}>
+                              {entry.code}
                             </option>
                           ))}
-                      </select>
+                        </select>
+                      ) : (
+                        <p className="text-lg text-[var(--app-text)]">{item.storageBin?.code || "-"}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {(editMode ? usesManagedDrawer : item.storageBin) && (
+                    <div>
+                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Unterfach", "Slot")}</p>
+                      {editMode ? (
+                        <select
+                          className="input"
+                          value={form.binSlot}
+                          onChange={(e) => setForm((v: any) => ({ ...v, binSlot: e.target.value }))}
+                          disabled={!selectedManagedBin}
+                        >
+                          <option value="">{selectedManagedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
+                          {selectedManagedBin &&
+                            Array.from({ length: selectedManagedBin.slotCount }, (_, index) => (
+                              <option key={index + 1} value={String(index + 1)}>
+                                {selectedManagedBin.code}-{index + 1}
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <p className="text-lg text-[var(--app-text)]">{item.binSlot ? `${item.storageBin?.code || ""}-${item.binSlot}` : "-"}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -918,7 +942,9 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   setTransferForm((prev) => ({
                     ...prev,
                     storageLocationId: e.target.value,
-                    storageArea: ""
+                    storageShelfId: "",
+                    storageBinId: "",
+                    binSlot: ""
                   }))
                 }
               >
@@ -935,34 +961,86 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
               <span className="text-sm font-medium">{tr("Ziel-Regal / Bereich", "Target shelf / area")}</span>
               <select
                 className="input"
-                value={transferForm.storageArea}
-                onChange={(e) => setTransferForm((prev) => ({ ...prev, storageArea: e.target.value }))}
+                value={transferForm.storageShelfId}
+                onChange={(e) =>
+                  setTransferForm((prev) => ({
+                    ...prev,
+                    storageShelfId: e.target.value,
+                    storageBinId: "",
+                    binSlot: ""
+                  }))
+                }
                 disabled={!transferForm.storageLocationId}
               >
                 <option value="">
                   {!transferForm.storageLocationId
                     ? tr("Erst Lagerort waehlen", "Choose storage location first")
                     : availableTransferShelves.length
-                      ? tr("Kein Regal", "No shelf")
+                      ? tr("Regal waehlen", "Choose shelf")
                       : tr("Keine Regale fuer Lagerort", "No shelves for location")}
                 </option>
                 {availableTransferShelves.map((shelf) => (
-                  <option key={shelf.id} value={shelf.name}>
-                    {shelf.name}
+                  <option key={shelf.id} value={shelf.id}>
+                    {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
                   </option>
                 ))}
               </select>
             </label>
 
-            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">{tr("Ziel-Fach / Bin", "Target bin")}</span>
-              <input
-                className="input"
-                value={transferForm.bin}
-                onChange={(e) => setTransferForm((prev) => ({ ...prev, bin: e.target.value }))}
-                placeholder={tr("Leer = Fach entfernen", "Empty = clear bin")}
-              />
-            </label>
+            {selectedTransferShelf?.mode === "DRAWER_HOST" && (
+              <>
+                <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                  <span className="text-sm font-medium">{tr("Ziel-Drawer", "Target drawer")}</span>
+                  <select
+                    className="input"
+                    value={transferForm.storageBinId}
+                    onChange={(e) => setTransferForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
+                    disabled={!transferForm.storageShelfId}
+                  >
+                    <option value="">
+                      {!transferForm.storageShelfId
+                        ? tr("Erst Regal waehlen", "Choose shelf first")
+                        : tr("Drawer waehlen", "Choose drawer")}
+                    </option>
+                    {availableTransferBins.map((bin) => (
+                      <option key={bin.id} value={bin.id}>
+                        {bin.code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                  <span className="text-sm font-medium">{tr("Unterfach", "Slot")}</span>
+                  <select
+                    className="input"
+                    value={transferForm.binSlot}
+                    onChange={(e) => setTransferForm((prev) => ({ ...prev, binSlot: e.target.value }))}
+                    disabled={!transferForm.storageBinId}
+                  >
+                    <option value="">
+                      {!transferForm.storageBinId
+                        ? tr("Erst Drawer waehlen", "Choose drawer first")
+                        : tr("Unterfach waehlen", "Choose slot")}
+                    </option>
+                    {(availableTransferBins.find((bin) => bin.id === transferForm.storageBinId)
+                      ? Array.from(
+                          {
+                            length:
+                              availableTransferBins.find((bin) => bin.id === transferForm.storageBinId)?.slotCount || 0
+                          },
+                          (_, index) => index + 1
+                        )
+                      : []
+                    ).map((slot) => (
+                      <option key={slot} value={String(slot)}>
+                        {slot}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
           </div>
 
           <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">

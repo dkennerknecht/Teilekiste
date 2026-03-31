@@ -3,25 +3,46 @@ import { canWrite, type AppRole } from "@/lib/permissions";
 
 export const placementStatuses = ["INCOMING", "UNPLACED", "PLACED"] as const;
 export type PlacementStatus = (typeof placementStatuses)[number];
+export const storageShelfModes = ["OPEN_AREA", "DRAWER_HOST"] as const;
+export type StorageShelfMode = (typeof storageShelfModes)[number];
 
 type PlacementDb =
   | Pick<PrismaClient, "storageLocation" | "storageShelf" | "storageBin" | "item">
   | Pick<Prisma.TransactionClient, "storageLocation" | "storageShelf" | "storageBin" | "item">;
 
+type StorageBinCodeLookupDb =
+  | Pick<PrismaClient, "storageBin">
+  | Pick<Prisma.TransactionClient, "storageBin">;
+
+type StorageShelfCodeLookupDb =
+  | Pick<PrismaClient, "storageShelf">
+  | Pick<Prisma.TransactionClient, "storageShelf">;
+
+type StorageShelfRecord = {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  mode: string;
+  storageLocationId: string;
+};
+
 type StorageBinRecord = {
   id: string;
   code: string;
   storageLocationId: string;
+  storageShelfId: string;
   storageArea: string | null;
   slotCount: number;
   isActive?: boolean;
+  storageShelf?: StorageShelfRecord | null;
 };
 
 type PlacementInput = {
   placementStatus?: string | null;
   storageLocationId?: string | null;
+  storageShelfId?: string | null;
   storageArea?: string | null;
-  bin?: string | null;
   storageBinId?: string | null;
   binSlot?: number | null;
   allowedLocationIds?: string[] | null;
@@ -32,20 +53,80 @@ function isPlacementStatus(value: string | null | undefined): value is Placement
   return placementStatuses.includes((value || "").toUpperCase() as PlacementStatus);
 }
 
+function isStorageShelfMode(value: string | null | undefined): value is StorageShelfMode {
+  return storageShelfModes.includes((value || "").toUpperCase() as StorageShelfMode);
+}
+
+function isUuidLike(value: string | null | undefined) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
 export function normalizeOptionalText(value: string | null | undefined) {
   const trimmed = String(value || "").trim();
   return trimmed ? trimmed : null;
 }
 
-export function normalizeStorageBinCode(value: string | null | undefined) {
+export function normalizeStorageShelfCode(value: string | null | undefined) {
   const normalized = normalizeOptionalText(value);
   return normalized ? normalized.toUpperCase() : null;
+}
+
+export function normalizeStorageBinCode(value: string | null | undefined) {
+  const normalized = normalizeOptionalText(value);
+  if (!normalized) return null;
+
+  const upperCased = normalized.toUpperCase();
+  const match = /^([A-Z]+)(\d+)$/.exec(upperCased);
+  if (!match) {
+    return upperCased;
+  }
+
+  const [, prefix, digits] = match;
+  const parsedNumber = Number.parseInt(digits, 10);
+  if (!Number.isFinite(parsedNumber)) {
+    return upperCased;
+  }
+
+  return `${prefix}${String(parsedNumber).padStart(2, "0")}`;
+}
+
+export function getStorageBinCodeVariants(value: string | null | undefined) {
+  const normalized = normalizeOptionalText(value);
+  if (!normalized) return [];
+
+  const upperCased = normalized.toUpperCase();
+  const match = /^([A-Z]+)(\d+)$/.exec(upperCased);
+  if (!match) {
+    return [upperCased];
+  }
+
+  const [, prefix, digits] = match;
+  const parsedNumber = Number.parseInt(digits, 10);
+  if (!Number.isFinite(parsedNumber)) {
+    return [upperCased];
+  }
+
+  const unpadded = `${prefix}${String(parsedNumber)}`;
+  const padded = `${prefix}${String(parsedNumber).padStart(2, "0")}`;
+
+  return Array.from(new Set([upperCased, unpadded, padded]));
+}
+
+export function isManagedStorageBinCode(value: string | null | undefined) {
+  const normalized = normalizeStorageBinCode(value);
+  return normalized ? /^[A-Z]+\d{2}$/.test(normalized) : false;
 }
 
 export function normalizePlacementStatus(value: string | null | undefined, fallback: PlacementStatus = "PLACED"): PlacementStatus {
   if (!value) return fallback;
   const normalized = value.trim().toUpperCase();
   return isPlacementStatus(normalized) ? normalized : fallback;
+}
+
+export function normalizeStorageShelfMode(value: string | null | undefined, fallback: StorageShelfMode = "OPEN_AREA"): StorageShelfMode {
+  if (!value) return fallback;
+  const normalized = value.trim().toUpperCase();
+  return isStorageShelfMode(normalized) ? normalized : fallback;
 }
 
 export function isPlacedStatus(value: string | null | undefined) {
@@ -58,12 +139,30 @@ export function formatDrawerPosition(code: string | null | undefined, slot: numb
   return slot ? `${normalizedCode}-${slot}` : normalizedCode;
 }
 
-export function formatItemPosition(input: {
+export function formatStoragePosition(input: {
+  storageLocation?: { name?: string | null } | null;
+  storageShelf?: { code?: string | null; name?: string | null } | null;
   storageBin?: { code?: string | null } | null;
-  bin?: string | null;
+  binSlot?: number | null;
+  storageArea?: string | null;
+}) {
+  const parts = [
+    normalizeOptionalText(input.storageLocation?.name),
+    normalizeStorageShelfCode(input.storageShelf?.code) || normalizeOptionalText(input.storageShelf?.name) || normalizeOptionalText(input.storageArea),
+    formatDrawerPosition(input.storageBin?.code || null, input.binSlot || null)
+  ].filter(Boolean);
+
+  return parts.join(" / ") || null;
+}
+
+export function formatItemPosition(input: {
+  storageLocation?: { name?: string | null } | null;
+  storageShelf?: { code?: string | null; name?: string | null } | null;
+  storageBin?: { code?: string | null } | null;
+  storageArea?: string | null;
   binSlot?: number | null;
 }) {
-  return formatDrawerPosition(input.storageBin?.code || input.bin || null, input.binSlot || null);
+  return formatStoragePosition(input);
 }
 
 export function buildPlacementAccessWhere(
@@ -93,7 +192,51 @@ async function ensureAllowedLocationId(storageLocationId: string, allowedLocatio
   }
 }
 
-async function resolveManualPlacement(
+async function findStorageShelfByIdOrArea(
+  db: PlacementDb,
+  input: {
+    storageLocationId: string | null;
+    storageShelfId?: string | null;
+    storageArea?: string | null;
+  }
+) {
+  const normalizedStorageArea = normalizeOptionalText(input.storageArea);
+
+  if (input.storageShelfId) {
+    return db.storageShelf.findUnique({
+      where: { id: input.storageShelfId },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        mode: true,
+        storageLocationId: true
+      }
+    }) as Promise<StorageShelfRecord | null>;
+  }
+
+  if (!input.storageLocationId || !normalizedStorageArea) {
+    return null;
+  }
+
+  return (await db.storageShelf.findFirst({
+    where: {
+      storageLocationId: input.storageLocationId,
+      OR: [{ id: normalizedStorageArea }, { name: normalizedStorageArea }, { code: normalizeStorageShelfCode(normalizedStorageArea) }]
+    },
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      description: true,
+      mode: true,
+      storageLocationId: true
+    }
+  })) as StorageShelfRecord | null;
+}
+
+async function resolveOpenShelfPlacement(
   db: PlacementDb,
   input: PlacementInput
 ) {
@@ -111,24 +254,29 @@ async function resolveManualPlacement(
     throw new Error("PLACEMENT_LOCATION_NOT_FOUND");
   }
 
-  const storageArea = normalizeOptionalText(input.storageArea);
-  if (storageArea) {
-    const shelf = await db.storageShelf.findFirst({
-      where: { storageLocationId, name: storageArea },
-      select: { id: true }
-    });
-    if (!shelf) {
-      throw new Error("PLACEMENT_SHELF_INVALID");
-    }
+  const storageShelf = await findStorageShelfByIdOrArea(db, {
+    storageLocationId,
+    storageShelfId: input.storageShelfId || null,
+    storageArea: input.storageArea || null
+  });
+  if (!storageShelf) {
+    throw new Error("PLACEMENT_SHELF_REQUIRED");
+  }
+  if (storageShelf.storageLocationId !== storageLocationId) {
+    throw new Error("PLACEMENT_SHELF_SCOPE_MISMATCH");
+  }
+  if (normalizeStorageShelfMode(storageShelf.mode) !== "OPEN_AREA") {
+    throw new Error("PLACEMENT_SHELF_REQUIRES_DRAWER");
   }
 
   return {
     placementStatus: "PLACED" as const,
     storageLocationId,
-    storageArea,
-    bin: normalizeStorageBinCode(input.bin),
+    storageShelfId: storageShelf.id,
+    storageArea: storageShelf.name,
     storageBinId: null,
     binSlot: null,
+    storageShelf,
     storageBin: null
   };
 }
@@ -147,9 +295,20 @@ async function resolveManagedDrawerPlacement(
       id: true,
       code: true,
       storageLocationId: true,
+      storageShelfId: true,
       storageArea: true,
       slotCount: true,
-      isActive: true
+      isActive: true,
+      storageShelf: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          description: true,
+          mode: true,
+          storageLocationId: true
+        }
+      }
     }
   })) as StorageBinRecord | null;
   if (!storageBin || storageBin.isActive === false) {
@@ -157,6 +316,21 @@ async function resolveManagedDrawerPlacement(
   }
 
   await ensureAllowedLocationId(storageBin.storageLocationId, input.allowedLocationIds);
+
+  if (input.storageLocationId && input.storageLocationId !== storageBin.storageLocationId) {
+    throw new Error("PLACEMENT_BIN_SCOPE_MISMATCH");
+  }
+  if (input.storageShelfId && input.storageShelfId !== storageBin.storageShelfId) {
+    throw new Error("PLACEMENT_BIN_SHELF_MISMATCH");
+  }
+
+  const storageShelf = storageBin.storageShelf || null;
+  if (!storageShelf) {
+    throw new Error("PLACEMENT_SHELF_INVALID");
+  }
+  if (normalizeStorageShelfMode(storageShelf.mode) !== "DRAWER_HOST") {
+    throw new Error("PLACEMENT_SHELF_OPEN_AREA_ONLY");
+  }
 
   const binSlot = input.binSlot ?? null;
   if (!binSlot) {
@@ -184,10 +358,11 @@ async function resolveManagedDrawerPlacement(
   return {
     placementStatus: "PLACED" as const,
     storageLocationId: storageBin.storageLocationId,
-    storageArea: storageBin.storageArea || null,
-    bin: storageBin.code,
+    storageShelfId: storageShelf.id,
+    storageArea: storageShelf.name,
     storageBinId: storageBin.id,
     binSlot,
+    storageShelf,
     storageBin
   };
 }
@@ -202,10 +377,11 @@ export async function resolveItemPlacement(
     return {
       placementStatus,
       storageLocationId: null,
+      storageShelfId: null,
       storageArea: null,
-      bin: null,
       storageBinId: null,
       binSlot: null,
+      storageShelf: null,
       storageBin: null
     };
   }
@@ -214,7 +390,71 @@ export async function resolveItemPlacement(
     return resolveManagedDrawerPlacement(db, input);
   }
 
-  return resolveManualPlacement(db, input);
+  return resolveOpenShelfPlacement(db, input);
+}
+
+export async function findStorageBinByCode(
+  db: StorageBinCodeLookupDb,
+  codeOrId: string | null | undefined
+) {
+  const normalized = normalizeOptionalText(codeOrId);
+  if (!normalized) {
+    return null;
+  }
+
+  if (isUuidLike(normalized)) {
+    return db.storageBin.findUnique({ where: { id: normalized } });
+  }
+
+  const variants = getStorageBinCodeVariants(normalized);
+  const matches = await db.storageBin.findMany({
+    where: { code: { in: variants } },
+    take: 2
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export async function findStorageShelfByCode(
+  db: StorageShelfCodeLookupDb,
+  codeOrId: string | null | undefined
+) {
+  const normalized = normalizeOptionalText(codeOrId);
+  if (!normalized) {
+    return null;
+  }
+
+  if (isUuidLike(normalized)) {
+    return db.storageShelf.findUnique({ where: { id: normalized } });
+  }
+
+  const matches = await db.storageShelf.findMany({
+    where: { code: normalizeStorageShelfCode(normalized) },
+    take: 2
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export async function findStorageBinCodeConflict(
+  db: StorageBinCodeLookupDb,
+  code: string | null | undefined,
+  storageShelfId?: string,
+  excludeId?: string
+) {
+  const variants = getStorageBinCodeVariants(code);
+  if (!variants.length) {
+    return null;
+  }
+
+  return db.storageBin.findFirst({
+    where: {
+      id: excludeId ? { not: excludeId } : undefined,
+      storageShelfId: storageShelfId || undefined,
+      code: { in: variants }
+    },
+    select: { id: true, code: true, storageShelfId: true }
+  });
 }
 
 export async function previewStorageBinSlotCountChange(
@@ -230,6 +470,7 @@ export async function previewStorageBinSlotCountChange(
       id: true,
       code: true,
       storageLocationId: true,
+      storageShelfId: true,
       storageArea: true,
       slotCount: true
     }
@@ -285,8 +526,8 @@ export async function applyStorageBinSlotCountChange(
       where: { id: item.id },
       data: {
         storageLocationId: null,
+        storageShelfId: null,
         storageArea: null,
-        bin: null,
         storageBinId: null,
         binSlot: null,
         placementStatus: nextPlacementStatus
@@ -310,6 +551,7 @@ export async function swapStorageBinContents(
       id: true,
       code: true,
       storageLocationId: true,
+      storageShelfId: true,
       storageArea: true
     }
   });
@@ -319,10 +561,7 @@ export async function swapStorageBinContents(
   if (!leftBin || !rightBin) {
     throw new Error("STORAGE_BIN_NOT_FOUND");
   }
-  if (
-    leftBin.storageLocationId !== rightBin.storageLocationId ||
-    normalizeOptionalText(leftBin.storageArea) !== normalizeOptionalText(rightBin.storageArea)
-  ) {
+  if (leftBin.storageShelfId !== rightBin.storageShelfId) {
     throw new Error("STORAGE_BIN_SWAP_SCOPE_MISMATCH");
   }
 
@@ -355,8 +594,8 @@ export async function swapStorageBinContents(
       where: { id: { in: resetIds } },
       data: {
         storageLocationId: null,
+        storageShelfId: null,
         storageArea: null,
-        bin: null,
         storageBinId: null,
         binSlot: null,
         placementStatus: "UNPLACED"
@@ -369,8 +608,8 @@ export async function swapStorageBinContents(
       where: { id: item.id },
       data: {
         storageLocationId: rightBin.storageLocationId,
+        storageShelfId: rightBin.storageShelfId,
         storageArea: rightBin.storageArea || null,
-        bin: rightBin.code,
         storageBinId: rightBin.id,
         binSlot: item.binSlot,
         placementStatus: "PLACED"
@@ -383,8 +622,8 @@ export async function swapStorageBinContents(
       where: { id: item.id },
       data: {
         storageLocationId: leftBin.storageLocationId,
+        storageShelfId: leftBin.storageShelfId,
         storageArea: leftBin.storageArea || null,
-        bin: leftBin.code,
         storageBinId: leftBin.id,
         binSlot: item.binSlot,
         placementStatus: "PLACED"
@@ -408,12 +647,23 @@ export function mapPlacementError(error: unknown) {
       return { status: 400, body: { error: "Lagerort ist fuer eingelagerten Bestand erforderlich" } };
     case "PLACEMENT_LOCATION_NOT_FOUND":
       return { status: 400, body: { error: "Lagerort nicht gefunden" } };
+    case "PLACEMENT_SHELF_REQUIRED":
+      return { status: 400, body: { error: "Regal/Bereich ist fuer eingelagerten Bestand erforderlich" } };
     case "PLACEMENT_SHELF_INVALID":
       return { status: 400, body: { error: "Regal/Bereich ist fuer den Lagerort ungueltig" } };
+    case "PLACEMENT_SHELF_SCOPE_MISMATCH":
+      return { status: 400, body: { error: "Regal/Bereich gehoert nicht zum gewaehlten Lagerort" } };
+    case "PLACEMENT_SHELF_REQUIRES_DRAWER":
+      return { status: 400, body: { error: "Dieses Regal erfordert einen Drawer" } };
+    case "PLACEMENT_SHELF_OPEN_AREA_ONLY":
+      return { status: 400, body: { error: "Dieses Regal erlaubt keine Drawer-Belegung" } };
     case "PLACEMENT_BIN_REQUIRED":
       return { status: 400, body: { error: "Drawer ist erforderlich" } };
     case "PLACEMENT_BIN_NOT_FOUND":
       return { status: 400, body: { error: "Drawer nicht gefunden" } };
+    case "PLACEMENT_BIN_SCOPE_MISMATCH":
+    case "PLACEMENT_BIN_SHELF_MISMATCH":
+      return { status: 400, body: { error: "Drawer passt nicht zum gewaehlten Lagerort oder Regal" } };
     case "PLACEMENT_BIN_SLOT_REQUIRED":
       return { status: 400, body: { error: "Unterfach ist erforderlich" } };
     case "PLACEMENT_BIN_SLOT_INVALID":
@@ -423,7 +673,7 @@ export function mapPlacementError(error: unknown) {
     case "STORAGE_BIN_NOT_FOUND":
       return { status: 404, body: { error: "Drawer nicht gefunden" } };
     case "STORAGE_BIN_SWAP_SCOPE_MISMATCH":
-      return { status: 400, body: { error: "Drawer-Tausch ist nur innerhalb desselben Lagerorts und Regals moeglich" } };
+      return { status: 400, body: { error: "Drawer-Tausch ist nur innerhalb desselben Regals moeglich" } };
     default:
       return null;
   }

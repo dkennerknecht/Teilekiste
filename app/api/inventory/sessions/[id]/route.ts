@@ -33,13 +33,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               unit: true,
               stock: true,
               storageArea: true,
-              bin: true,
+              storageShelf: {
+                select: { code: true }
+              },
+              storageBin: {
+                select: { code: true }
+              },
+              binSlot: true,
               deletedAt: true,
               isArchived: true
             }
           }
         },
-        orderBy: [{ storageArea: "asc" }, { bin: "asc" }, { labelCode: "asc" }]
+        orderBy: [{ storageArea: "asc" }, { storageBinCode: "asc" }, { binSlot: "asc" }, { labelCode: "asc" }]
       }
     }
   });

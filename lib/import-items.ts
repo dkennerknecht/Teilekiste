@@ -22,16 +22,19 @@ import {
   type ImportProfileRow
 } from "@/lib/import-profiles";
 import { QuantityValidationError, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
+import { resolveItemPlacement } from "@/lib/storage-bins";
 import { itemSchema } from "@/lib/validation";
 
 type ImportDb =
-  | Pick<PrismaClient, "customField" | "itemCustomFieldValue" | "category" | "labelType" | "storageLocation" | "item">
-  | Pick<Prisma.TransactionClient, "customField" | "itemCustomFieldValue" | "category" | "labelType" | "storageLocation" | "item">;
+  | Pick<PrismaClient, "customField" | "itemCustomFieldValue" | "category" | "labelType" | "storageLocation" | "storageShelf" | "storageBin" | "item">
+  | Pick<Prisma.TransactionClient, "customField" | "itemCustomFieldValue" | "category" | "labelType" | "storageLocation" | "storageShelf" | "storageBin" | "item">;
 
 type LookupRow = {
   id: string;
-  name: string;
+  name?: string | null;
   code?: string | null;
+  storageLocationId?: string | null;
+  storageShelfId?: string | null;
 };
 
 export type ImportStructuredMessage = {
@@ -119,6 +122,8 @@ type BuildPreviewInput = {
   categories: LookupRow[];
   types: LookupRow[];
   locations: LookupRow[];
+  shelves: LookupRow[];
+  bins: LookupRow[];
   customFields: CustomFieldRow[];
   duplicateItems: DuplicateItemRecord[];
   profiles?: ImportProfileRow[];
@@ -140,7 +145,7 @@ function resolveLookupMaps(rows: LookupRow[]) {
 
   for (const row of rows) {
     byId.set(row.id, row);
-    const normalizedName = normalizeImportLookup(row.name);
+    const normalizedName = normalizeImportLookup(row.name || "");
     if (normalizedName && !byLookup.has(normalizedName)) {
       byLookup.set(normalizedName, row);
     }
@@ -173,11 +178,30 @@ function getAssignmentValue(assignment: ImportProfileAssignment | undefined, row
 }
 
 function createResolvedPreview(itemInput: ReturnType<typeof itemSchema.parse>, categories: Map<string, LookupRow>, types: Map<string, LookupRow>, locations: Map<string, LookupRow>, customFields: CustomFieldRow[], normalizedCustomValues: Array<{ customFieldId: string; valueJson: string }>) {
+  const category = itemInput.categoryId
+    ? (() => {
+        const row = categories.get(itemInput.categoryId);
+        return row ? { id: row.id, name: row.name || "", code: row.code || null } : null;
+      })()
+    : null;
+  const type = itemInput.typeId
+    ? (() => {
+        const row = types.get(itemInput.typeId);
+        return row ? { id: row.id, name: row.name || "", code: row.code || null } : null;
+      })()
+    : null;
+  const storageLocation = itemInput.storageLocationId
+    ? (() => {
+        const row = locations.get(itemInput.storageLocationId);
+        return row ? { id: row.id, name: row.name || "", code: row.code || null } : null;
+      })()
+    : null;
+
   return {
     name: itemInput.name,
-    category: categories.get(itemInput.categoryId) || null,
-    type: types.get(itemInput.typeId) || null,
-    storageLocation: itemInput.storageLocationId ? locations.get(itemInput.storageLocationId) || null : null,
+    category,
+    type,
+    storageLocation,
     unit: itemInput.unit,
     stock: serializeStoredQuantity(itemInput.unit, itemInput.stock) || 0,
     minStock: serializeStoredQuantity(itemInput.unit, itemInput.minStock),
@@ -245,8 +269,18 @@ function pickProfileMatches(profiles: ImportProfileRow[], headerFingerprint: str
 export async function loadImportReferenceData(db: ImportDb) {
   const importProfileTable = (db as any).importProfile as {
     findMany: (args?: unknown) => Promise<ImportProfileRow[]>;
-  };
-  const [categories, types, locations, customFields, profiles, duplicateItems] = await Promise.all([
+  } | undefined;
+  const storageShelfTable = (db as any).storageShelf as
+    | {
+        findMany: (args?: unknown) => Promise<LookupRow[]>;
+      }
+    | undefined;
+  const storageBinTable = (db as any).storageBin as
+    | {
+        findMany: (args?: unknown) => Promise<LookupRow[]>;
+      }
+    | undefined;
+  const [categories, types, locations, shelves, bins, customFields, profiles, duplicateItems] = await Promise.all([
     db.category.findMany({
       select: { id: true, name: true, code: true },
       orderBy: { name: "asc" }
@@ -260,6 +294,18 @@ export async function loadImportReferenceData(db: ImportDb) {
       select: { id: true, name: true, code: true },
       orderBy: { name: "asc" }
     }),
+    storageShelfTable
+      ? storageShelfTable.findMany({
+          select: { id: true, name: true, code: true, storageLocationId: true },
+          orderBy: [{ storageLocationId: "asc" }, { code: "asc" }, { name: "asc" }]
+        })
+      : Promise.resolve([]),
+    storageBinTable
+      ? storageBinTable.findMany({
+          select: { id: true, code: true, storageShelfId: true, storageLocationId: true },
+          orderBy: [{ storageShelfId: "asc" }, { code: "asc" }]
+        })
+      : Promise.resolve([]),
     db.customField.findMany({
       where: { isActive: true },
       select: {
@@ -278,9 +324,11 @@ export async function loadImportReferenceData(db: ImportDb) {
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
     }),
-    importProfileTable.findMany({
-      orderBy: [{ name: "asc" }]
-    }),
+    importProfileTable
+      ? importProfileTable.findMany({
+          orderBy: [{ name: "asc" }]
+        })
+      : Promise.resolve([]),
     db.item.findMany({
       where: {
         deletedAt: null,
@@ -309,7 +357,7 @@ export async function loadImportReferenceData(db: ImportDb) {
     })
   ]);
 
-  return { categories, types, locations, customFields, profiles, duplicateItems };
+  return { categories, types, locations, shelves, bins, customFields, profiles, duplicateItems };
 }
 
 function buildHeaderPreview(headers: string[], mappingConfig: ImportProfileMappingConfig, suggestionConfig: ImportProfileMappingConfig) {
@@ -423,9 +471,34 @@ export async function buildImportPreview(input: BuildPreviewInput): Promise<Impo
     const rawCategory = getAssignmentValue(assignmentMap.get("category"), rawRow);
     const rawType = getAssignmentValue(assignmentMap.get("type"), rawRow);
     const rawLocation = getAssignmentValue(assignmentMap.get("storageLocation"), rawRow);
+    const rawShelf = getAssignmentValue(assignmentMap.get("shelfCode"), rawRow);
+    const rawDrawer = getAssignmentValue(assignmentMap.get("drawerCode"), rawRow);
+    const rawBinSlot = getAssignmentValue(assignmentMap.get("binSlot"), rawRow);
     const resolvedCategory = rawCategory ? categoryLookup.byLookup.get(normalizeImportLookup(rawCategory)) || null : null;
     const resolvedType = rawType ? typeLookup.byLookup.get(normalizeImportLookup(rawType)) || null : null;
     const resolvedLocation = rawLocation ? locationLookup.byLookup.get(normalizeImportLookup(rawLocation)) || null : null;
+    const normalizedShelfLookup = normalizeImportLookup(rawShelf || "");
+    const resolvedShelf =
+      normalizedShelfLookup && resolvedLocation
+        ? input.shelves.find(
+            (shelf) =>
+              shelf.storageLocationId === resolvedLocation.id &&
+              [shelf.id, shelf.name, shelf.code]
+                .map((value) => normalizeImportLookup(value || ""))
+                .includes(normalizedShelfLookup)
+          ) || null
+        : null;
+    const normalizedDrawerLookup = normalizeImportLookup(rawDrawer || "");
+    const resolvedBin =
+      normalizedDrawerLookup && resolvedShelf
+        ? input.bins.find(
+            (bin) =>
+              bin.storageShelfId === resolvedShelf.id &&
+              [bin.id, bin.code]
+                .map((value) => normalizeImportLookup(value || ""))
+                .includes(normalizedDrawerLookup)
+          ) || null
+        : null;
 
     if (!rawCategory) errors.push({ fieldKey: "category", message: "Kategorie ist nicht zugeordnet" });
     else if (!resolvedCategory) errors.push({ fieldKey: "category", message: `Kategorie unbekannt: ${rawCategory}` });
@@ -435,6 +508,8 @@ export async function buildImportPreview(input: BuildPreviewInput): Promise<Impo
 
     if (!rawLocation) errors.push({ fieldKey: "storageLocation", message: "Lagerort ist nicht zugeordnet" });
     else if (!resolvedLocation) errors.push({ fieldKey: "storageLocation", message: `Lagerort unbekannt: ${rawLocation}` });
+    if (rawShelf && !resolvedShelf) errors.push({ fieldKey: "shelfCode", message: `Regal unbekannt: ${rawShelf}` });
+    if (rawDrawer && !resolvedBin) errors.push({ fieldKey: "drawerCode", message: `Drawer unbekannt: ${rawDrawer}` });
 
     if (resolvedLocation && input.allowedLocationIds && !input.allowedLocationIds.includes(resolvedLocation.id)) {
       errors.push({ fieldKey: "storageLocation", message: "Lagerort nicht erlaubt" });
@@ -471,8 +546,14 @@ export async function buildImportPreview(input: BuildPreviewInput): Promise<Impo
       categoryId: resolvedCategory?.id || "",
       typeId: resolvedType?.id || "",
       storageLocationId: resolvedLocation?.id || "",
-      storageArea: getAssignmentValue(assignmentMap.get("storageArea"), rawRow),
-      bin: getAssignmentValue(assignmentMap.get("bin"), rawRow),
+      storageShelfId: resolvedShelf?.id || null,
+      storageArea: resolvedShelf?.name || null,
+      storageBinId: resolvedBin?.id || null,
+      binSlot: (() => {
+        if (!rawBinSlot) return null;
+        const parsed = Number(rawBinSlot);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
+      })(),
       unit: normalizeUnit(getAssignmentValue(assignmentMap.get("unit"), rawRow) || "STK"),
       stock: parseNumber(getAssignmentValue(assignmentMap.get("stock"), rawRow), 0),
       minStock: (() => {
@@ -499,8 +580,23 @@ export async function buildImportPreview(input: BuildPreviewInput): Promise<Impo
       }
     } else {
       try {
+        const resolvedPlacement = await resolveItemPlacement(input.db, {
+          placementStatus: baseParsed.data.placementStatus,
+          storageLocationId: baseParsed.data.storageLocationId || null,
+          storageShelfId: baseParsed.data.storageShelfId || null,
+          storageArea: baseParsed.data.storageArea || null,
+          storageBinId: baseParsed.data.storageBinId || null,
+          binSlot: baseParsed.data.binSlot ?? null,
+          allowedLocationIds: input.allowedLocationIds
+        });
         parsedItemInput = {
           ...baseParsed.data,
+          storageLocationId: resolvedPlacement.storageLocationId,
+          storageShelfId: resolvedPlacement.storageShelfId,
+          storageArea: resolvedPlacement.storageArea,
+          storageBinId: resolvedPlacement.storageBinId,
+          binSlot: resolvedPlacement.binSlot,
+          placementStatus: resolvedPlacement.placementStatus,
           stock: toStoredQuantity(baseParsed.data.unit, baseParsed.data.stock, {
             field: "Bestand",
             allowNegative: false

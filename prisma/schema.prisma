@@ -79,26 +79,36 @@ model StorageShelf {
   id                String          @id @default(uuid())
   storageLocationId String
   name              String
+  code              String?
+  description       String?
+  mode              String          @default("OPEN_AREA")
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+  items             Item[]
+  bins              StorageBin[]
 
   @@unique([storageLocationId, name])
+  @@unique([storageLocationId, code])
   @@index([storageLocationId])
 }
 
 model StorageBin {
   id                String          @id @default(uuid())
-  code              String          @unique
+  code              String
   storageLocationId String
+  storageShelfId    String
   storageArea       String?
   slotCount         Int             @default(1)
   isActive          Boolean         @default(true)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Cascade)
+  storageShelf      StorageShelf    @relation(fields: [storageShelfId], references: [id], onDelete: Cascade)
   items             Item[]
 
+  @@unique([storageShelfId, code])
+  @@index([storageShelfId])
   @@index([storageLocationId, storageArea])
 }
 
@@ -179,8 +189,8 @@ model Item {
   categoryId        String
   typeId            String?
   storageLocationId String?
+  storageShelfId    String?
   storageArea       String?
-  bin               String?
   storageBinId      String?
   binSlot           Int?
   placementStatus   String              @default("PLACED")
@@ -201,6 +211,7 @@ model Item {
   category          Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   labelType         LabelType?          @relation(fields: [typeId], references: [id], onDelete: SetNull)
   storageLocation   StorageLocation?    @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  storageShelf      StorageShelf?       @relation(fields: [storageShelfId], references: [id], onDelete: SetNull)
   storageBin        StorageBin?         @relation(fields: [storageBinId], references: [id], onDelete: SetNull)
   mergedIntoItem    Item?               @relation("MergedItems", fields: [mergedIntoItemId], references: [id], onDelete: SetNull)
   mergedSourceItems Item[]              @relation("MergedItems")
@@ -222,6 +233,7 @@ model Item {
   @@index([manufacturer])
   @@index([typeId])
   @@index([storageLocationId])
+  @@index([storageShelfId])
   @@index([storageBinId])
   @@index([placementStatus])
   @@index([storageBinId, binSlot])
@@ -403,7 +415,9 @@ model InventorySessionRow {
   name            String
   unit            String
   storageArea     String?
-  bin             String?
+  storageShelfCode String?
+  storageBinCode  String?
+  binSlot         Int?
   expectedStock   Int
   countedStock    Int?
   countedByUserId String?

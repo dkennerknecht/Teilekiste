@@ -9,41 +9,41 @@ import {
 import { parseJson } from "@/lib/http";
 import {
   applyStorageBinSlotCountChange,
+  findStorageBinCodeConflict,
+  isManagedStorageBinCode,
   mapPlacementError,
-  normalizeOptionalText,
   normalizeStorageBinCode
 } from "@/lib/storage-bins";
 
-async function validateStorageBinLocation(storageLocationId: string, storageArea?: string | null) {
-  const location = await prisma.storageLocation.findUnique({
-    where: { id: storageLocationId },
-    select: { id: true, name: true, code: true }
-  });
-  if (!location) {
-    throw new Error("PLACEMENT_LOCATION_NOT_FOUND");
-  }
-  const normalizedStorageArea = normalizeOptionalText(storageArea);
-  if (normalizedStorageArea) {
-    const shelf = await prisma.storageShelf.findFirst({
-      where: { storageLocationId, name: normalizedStorageArea },
-      select: { id: true }
-    });
-    if (!shelf) {
-      throw new Error("PLACEMENT_SHELF_INVALID");
+async function validateStorageBinShelf(storageShelfId: string) {
+  const shelf = await prisma.storageShelf.findUnique({
+    where: { id: storageShelfId },
+    include: {
+      storageLocation: {
+        select: { id: true, name: true, code: true }
+      }
     }
+  });
+  if (!shelf) {
+    throw new Error("PLACEMENT_SHELF_INVALID");
   }
-  return { location, storageArea: normalizedStorageArea };
+  if (shelf.mode !== "DRAWER_HOST") {
+    throw new Error("PLACEMENT_SHELF_OPEN_AREA_ONLY");
+  }
+  return shelf;
 }
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth.error) return auth.error;
 
-  return NextResponse.json(
-    await prisma.storageBin.findMany({
+  const bins = await prisma.storageBin.findMany({
       include: {
         storageLocation: {
           select: { id: true, name: true, code: true }
+        },
+        storageShelf: {
+          select: { id: true, name: true, code: true, mode: true }
         },
         _count: {
           select: {
@@ -58,7 +58,13 @@ export async function GET(req: NextRequest) {
         }
       },
       orderBy: [{ code: "asc" }]
-    })
+    });
+
+  return NextResponse.json(
+    bins.map((bin) => ({
+      ...bin,
+      code: normalizeStorageBinCode(bin.code) || bin.code
+    }))
   );
 }
 
@@ -71,18 +77,31 @@ export async function POST(req: NextRequest) {
   const body = parsed.data as ReturnType<typeof storageBinCreateSchema.parse>;
 
   try {
-    const validated = await validateStorageBinLocation(body.storageLocationId, body.storageArea);
+    const validatedShelf = await validateStorageBinShelf(body.storageShelfId);
+    const normalizedCode = normalizeStorageBinCode(body.code)!;
+    if (!isManagedStorageBinCode(normalizedCode)) {
+      return NextResponse.json({ error: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen" }, { status: 400 });
+    }
+    const conflictingBin = await findStorageBinCodeConflict(prisma, normalizedCode, validatedShelf.id);
+    if (conflictingBin) {
+      return NextResponse.json({ error: "Drawer-Code ist bereits vorhanden" }, { status: 409 });
+    }
+
     const storageBin = await prisma.storageBin.create({
       data: {
-        code: normalizeStorageBinCode(body.code)!,
-        storageLocationId: body.storageLocationId,
-        storageArea: validated.storageArea,
+        code: normalizedCode,
+        storageLocationId: validatedShelf.storageLocationId,
+        storageShelfId: validatedShelf.id,
+        storageArea: validatedShelf.name,
         slotCount: body.slotCount,
         isActive: body.isActive ?? true
       },
       include: {
         storageLocation: {
           select: { id: true, name: true, code: true }
+        },
+        storageShelf: {
+          select: { id: true, name: true, code: true, mode: true }
         }
       }
     });
@@ -109,10 +128,17 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    const nextStorageLocationId = body.storageLocationId || existing.storageLocationId;
-    const nextStorageArea =
-      body.storageArea !== undefined ? body.storageArea : existing.storageArea;
-    const validated = await validateStorageBinLocation(nextStorageLocationId, nextStorageArea);
+    const nextStorageShelfId = body.storageShelfId || existing.storageShelfId;
+    const validatedShelf = await validateStorageBinShelf(nextStorageShelfId);
+    const normalizedCode =
+      body.code !== undefined ? normalizeStorageBinCode(body.code)! : normalizeStorageBinCode(existing.code)!;
+    if (!isManagedStorageBinCode(normalizedCode)) {
+      return NextResponse.json({ error: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen" }, { status: 400 });
+    }
+    const conflictingBin = await findStorageBinCodeConflict(prisma, normalizedCode, validatedShelf.id, existing.id);
+    if (conflictingBin) {
+      return NextResponse.json({ error: "Drawer-Code ist bereits vorhanden" }, { status: 409 });
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       if (body.slotCount !== undefined && body.slotCount !== existing.slotCount) {
@@ -124,15 +150,19 @@ export async function PATCH(req: NextRequest) {
       return tx.storageBin.update({
         where: { id: existing.id },
         data: {
-          code: body.code !== undefined ? normalizeStorageBinCode(body.code)! : undefined,
-          storageLocationId: nextStorageLocationId,
-          storageArea: validated.storageArea,
+          code: body.code !== undefined ? normalizedCode : undefined,
+          storageLocationId: validatedShelf.storageLocationId,
+          storageShelfId: validatedShelf.id,
+          storageArea: validatedShelf.name,
           slotCount: body.slotCount,
           isActive: body.isActive
         },
         include: {
           storageLocation: {
             select: { id: true, name: true, code: true }
+          },
+          storageShelf: {
+            select: { id: true, name: true, code: true, mode: true }
           }
         }
       });

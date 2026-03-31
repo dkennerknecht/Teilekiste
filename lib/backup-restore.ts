@@ -31,12 +31,16 @@ type BackupShelf = {
   id: string;
   name: string;
   storageLocationId: string;
+  code?: string | null;
+  description?: string | null;
+  mode?: string | null;
 };
 
 type BackupStorageBin = {
   id: string;
   code: string;
   storageLocationId: string;
+  storageShelfId: string;
   storageArea?: string | null;
   slotCount?: number;
   isActive?: boolean;
@@ -172,8 +176,8 @@ type BackupItem = {
   categoryId: string;
   typeId?: string | null;
   storageLocationId?: string | null;
+  storageShelfId?: string | null;
   storageArea?: string | null;
-  bin?: string | null;
   storageBinId?: string | null;
   binSlot?: number | null;
   placementStatus?: string | null;
@@ -364,6 +368,7 @@ export async function restoreBackupData(input: {
   const { userIdMap, restoredUsers, placeholderUsers } = await resolveUserIds(payload.users, strategy);
   const categoryIdMap = new Map<string, string>();
   const locationIdMap = new Map<string, string>();
+  const shelfIdMap = new Map<string, string>();
   const storageBinIdMap = new Map<string, string>();
   const tagIdMap = new Map<string, string>();
   const customFieldIdMap = new Map<string, string>();
@@ -423,26 +428,42 @@ export async function restoreBackupData(input: {
     });
 
     if (existing) {
+      shelfIdMap.set(shelf.id, existing.id);
       if (strategy === "merge" && existing.id !== shelf.id) {
         conflicts.shelves.push(`${shelf.name} (${resolvedLocationId})`);
         continue;
       }
       await prisma.storageShelf.update({
         where: { id: existing.id },
-        data: { name: shelf.name, storageLocationId: resolvedLocationId }
+        data: {
+          name: shelf.name,
+          storageLocationId: resolvedLocationId,
+          code: shelf.code || null,
+          description: shelf.description || null,
+          mode: shelf.mode || "OPEN_AREA"
+        }
       });
       continue;
     }
 
     const created = await prisma.storageShelf.create({
-      data: { id: shelf.id, name: shelf.name, storageLocationId: resolvedLocationId }
+      data: {
+        id: shelf.id,
+        name: shelf.name,
+        storageLocationId: resolvedLocationId,
+        code: shelf.code || null,
+        description: shelf.description || null,
+        mode: shelf.mode || "OPEN_AREA"
+      }
     });
+    shelfIdMap.set(shelf.id, created.id);
   }
 
   for (const storageBin of payload.bins || []) {
     const resolvedLocationId = locationIdMap.get(storageBin.storageLocationId) || storageBin.storageLocationId;
+    const resolvedShelfId = shelfIdMap.get(storageBin.storageShelfId) || storageBin.storageShelfId;
     const existing = await prisma.storageBin.findFirst({
-      where: { OR: [{ id: storageBin.id }, { code: storageBin.code }] }
+      where: { OR: [{ id: storageBin.id }, { storageShelfId: resolvedShelfId, code: storageBin.code }] }
     });
 
     if (existing) {
@@ -452,6 +473,7 @@ export async function restoreBackupData(input: {
         data: {
           code: storageBin.code,
           storageLocationId: resolvedLocationId,
+          storageShelfId: resolvedShelfId,
           storageArea: storageBin.storageArea || null,
           slotCount: storageBin.slotCount ?? 1,
           isActive: storageBin.isActive !== false
@@ -465,6 +487,7 @@ export async function restoreBackupData(input: {
         id: storageBin.id,
         code: storageBin.code,
         storageLocationId: resolvedLocationId,
+        storageShelfId: resolvedShelfId,
         storageArea: storageBin.storageArea || null,
         slotCount: storageBin.slotCount ?? 1,
         isActive: storageBin.isActive !== false
@@ -727,6 +750,7 @@ export async function restoreBackupData(input: {
   for (const item of payload.items || []) {
     const resolvedCategoryId = categoryIdMap.get(item.categoryId) || item.categoryId;
     const resolvedLocationId = item.storageLocationId ? locationIdMap.get(item.storageLocationId) || item.storageLocationId : null;
+    const resolvedStorageShelfId = item.storageShelfId ? shelfIdMap.get(item.storageShelfId) || item.storageShelfId : null;
     const resolvedStorageBinId = item.storageBinId ? storageBinIdMap.get(item.storageBinId) || item.storageBinId : null;
     const byLabel = await prisma.item.findUnique({ where: { labelCode: item.labelCode } });
 
@@ -746,8 +770,8 @@ export async function restoreBackupData(input: {
           categoryId: resolvedCategoryId,
           typeId: item.typeId ? typeIdMap.get(item.typeId) || item.typeId : null,
           storageLocationId: resolvedLocationId,
+          storageShelfId: resolvedStorageShelfId,
           storageArea: item.storageArea || null,
-          bin: item.bin || null,
           storageBinId: resolvedStorageBinId,
           binSlot: item.binSlot ?? null,
           placementStatus: item.placementStatus || "PLACED",
@@ -772,8 +796,8 @@ export async function restoreBackupData(input: {
           categoryId: resolvedCategoryId,
           typeId: item.typeId ? typeIdMap.get(item.typeId) || item.typeId : null,
           storageLocationId: resolvedLocationId,
+          storageShelfId: resolvedStorageShelfId,
           storageArea: item.storageArea || null,
-          bin: item.bin || null,
           storageBinId: resolvedStorageBinId,
           binSlot: item.binSlot ?? null,
           placementStatus: item.placementStatus || "PLACED",

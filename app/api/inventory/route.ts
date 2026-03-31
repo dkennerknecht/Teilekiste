@@ -13,7 +13,6 @@ export async function GET(req: NextRequest) {
 
   const locationId = req.nextUrl.searchParams.get("storageLocationId") || undefined;
   const storageArea = req.nextUrl.searchParams.get("storageArea") || undefined;
-  const bin = req.nextUrl.searchParams.get("bin") || undefined;
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
   const where = {
@@ -22,11 +21,10 @@ export async function GET(req: NextRequest) {
     storageLocationId: allowedLocationIds
       ? { in: locationId ? [locationId].filter((id) => allowedLocationIds.includes(id)) : allowedLocationIds.length ? allowedLocationIds : ["__none__"] }
       : locationId,
-    storageArea: storageArea ? { contains: storageArea } : undefined,
-    bin: bin ? { contains: bin } : undefined
+    storageArea: storageArea ? { contains: storageArea } : undefined
   };
 
-  const items = await prisma.item.findMany({ where, orderBy: [{ storageArea: "asc" }, { bin: "asc" }, { labelCode: "asc" }] });
+  const items = await prisma.item.findMany({ where, orderBy: [{ storageArea: "asc" }, { binSlot: "asc" }, { labelCode: "asc" }] });
   return NextResponse.json(
     items.map((item) => ({
       ...item,

@@ -8,6 +8,9 @@ const auditLogMock = vi.fn();
 const transactionMock = vi.fn();
 const categoryFindManyMock = vi.fn();
 const storageLocationFindManyMock = vi.fn();
+const storageLocationFindUniqueMock = vi.fn();
+const storageShelfFindManyMock = vi.fn();
+const storageShelfFindUniqueMock = vi.fn();
 const customFieldFindManyMock = vi.fn();
 const importProfileFindManyMock = vi.fn();
 const labelTypeFindManyMock = vi.fn();
@@ -33,7 +36,8 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     category: { findMany: categoryFindManyMock },
-    storageLocation: { findMany: storageLocationFindManyMock },
+    storageLocation: { findMany: storageLocationFindManyMock, findUnique: storageLocationFindUniqueMock },
+    storageShelf: { findMany: storageShelfFindManyMock, findUnique: storageShelfFindUniqueMock },
     customField: { findMany: customFieldFindManyMock },
     importProfile: { findMany: importProfileFindManyMock },
     labelType: { findMany: labelTypeFindManyMock },
@@ -53,12 +57,23 @@ describe("admin import routes", () => {
     const categoryId = "11111111-1111-4111-8111-111111111111";
     const typeId = "22222222-2222-4222-8222-222222222222";
     const locationId = "33333333-3333-4333-8333-333333333333";
+    const shelfId = "44444444-1111-4111-8111-444444444444";
     requireAdminMock.mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN", email: "admin@example.com" }
     });
     resolveAllowedLocationIdsMock.mockResolvedValue([locationId]);
     categoryFindManyMock.mockResolvedValue([{ id: categoryId, name: "Kabel", code: "KB" }]);
     storageLocationFindManyMock.mockResolvedValue([{ id: locationId, name: "Werkstatt", code: "WERK" }]);
+    storageLocationFindUniqueMock.mockResolvedValue({ id: locationId, name: "Werkstatt", code: "WERK" });
+    storageShelfFindManyMock.mockResolvedValue([{ id: shelfId, name: "Regal A", code: "SB1", storageLocationId: locationId }]);
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: shelfId,
+      name: "Regal A",
+      code: "SB1",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: locationId
+    });
     labelTypeFindManyMock.mockResolvedValue([{ id: typeId, name: "Kleinbauteil", code: "KB" }]);
     customFieldFindManyMock.mockResolvedValue([]);
     importProfileFindManyMock.mockResolvedValue([
@@ -66,7 +81,7 @@ describe("admin import routes", () => {
         id: "profile-1",
         name: "Supplier CSV",
         description: "Semikolon-CSV",
-        headerFingerprint: "category|type|storagelocation|name|stock|unit",
+        headerFingerprint: "category|type|storagelocation|shelfcode|name|stock|unit",
         delimiterMode: "SEMICOLON",
         mappingConfig: JSON.stringify({ assignments: [] })
       }
@@ -74,7 +89,7 @@ describe("admin import routes", () => {
     itemFindManyMock.mockResolvedValue([]);
     itemCustomFieldValueFindManyMock.mockResolvedValue([]);
 
-    const csv = ["Category;Type;StorageLocation;Name;Stock;Unit", "KB;KB;WERK;Leitung 2m;2.5;M"].join("\n");
+    const csv = ["Category;Type;StorageLocation;ShelfCode;Name;Stock;Unit", "KB;KB;WERK;SB1;Leitung 2m;2.5;M"].join("\n");
     const form = new FormData();
     form.set("file", new File([csv], "supplier.csv", { type: "text/csv" }));
 
@@ -114,19 +129,30 @@ describe("admin import routes", () => {
 
   it("blocks apply when a required mapping resolves to an unknown scope value", async () => {
     const locationId = "33333333-3333-4333-8333-333333333333";
+    const shelfId = "44444444-1111-4111-8111-444444444444";
     requireAdminMock.mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN", email: "admin@example.com" }
     });
     resolveAllowedLocationIdsMock.mockResolvedValue([locationId]);
     categoryFindManyMock.mockResolvedValue([{ id: "11111111-1111-4111-8111-111111111111", name: "Kabel", code: "KB" }]);
     storageLocationFindManyMock.mockResolvedValue([{ id: locationId, name: "Werkstatt", code: "WERK" }]);
+    storageLocationFindUniqueMock.mockResolvedValue({ id: locationId, name: "Werkstatt", code: "WERK" });
+    storageShelfFindManyMock.mockResolvedValue([{ id: shelfId, name: "Regal A", code: "SB1", storageLocationId: locationId }]);
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: shelfId,
+      name: "Regal A",
+      code: "SB1",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: locationId
+    });
     labelTypeFindManyMock.mockResolvedValue([{ id: "22222222-2222-4222-8222-222222222222", name: "Kleinbauteil", code: "KB" }]);
     customFieldFindManyMock.mockResolvedValue([]);
     importProfileFindManyMock.mockResolvedValue([]);
     itemFindManyMock.mockResolvedValue([]);
     itemCustomFieldValueFindManyMock.mockResolvedValue([]);
 
-    const csv = ["Category,Type,StorageLocation,Name,Stock,Unit", "Unbekannt,KB,WERK,Leitung 2m,2.5,M"].join("\n");
+    const csv = ["Category,Type,StorageLocation,ShelfCode,Name,Stock,Unit", "Unbekannt,KB,WERK,SB1,Leitung 2m,2.5,M"].join("\n");
     const form = new FormData();
     form.set("file", new File([csv], "supplier.csv", { type: "text/csv" }));
 

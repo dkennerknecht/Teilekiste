@@ -26,8 +26,8 @@ export const itemSchema = z.object({
   description: z.string().max(8000).default(""),
   categoryId: z.string().uuid(),
   storageLocationId: z.string().uuid().optional().nullable(),
+  storageShelfId: z.string().uuid().optional().nullable(),
   storageArea: z.string().optional().nullable(),
-  bin: z.string().optional().nullable(),
   storageBinId: z.string().uuid().optional().nullable(),
   binSlot: z.number().int().positive().optional().nullable(),
   placementStatus: placementStatusSchema.default("PLACED"),
@@ -137,6 +137,9 @@ export const storageLocationUpdateSchema = z.object({
 
 export const storageShelfCreateSchema = z.object({
   name: nameSchema,
+  code: z.string().trim().max(40).optional().nullable(),
+  description: z.string().trim().max(300).optional().nullable(),
+  mode: z.enum(["OPEN_AREA", "DRAWER_HOST"]).default("OPEN_AREA"),
   storageLocationId: uuidSchema
 });
 
@@ -146,8 +149,7 @@ export const storageShelfUpdateSchema = storageShelfCreateSchema.extend({
 
 export const storageBinCreateSchema = z.object({
   code: z.string().trim().min(1).max(40),
-  storageLocationId: uuidSchema,
-  storageArea: z.string().trim().max(120).optional().nullable(),
+  storageShelfId: uuidSchema,
   slotCount: z.number().int().min(1).max(99).default(1),
   isActive: z.boolean().optional().default(true)
 });
@@ -157,11 +159,10 @@ export const storageBinUpdateSchema = storageBinCreateSchema.partial().extend({
 });
 
 export const storageBinRangeCreateSchema = z.object({
-  storageLocationId: uuidSchema,
-  storageArea: z.string().trim().max(120).optional().nullable(),
-  prefix: z.string().trim().min(1).max(20),
-  start: z.number().int().positive(),
-  end: z.number().int().positive(),
+  storageShelfId: uuidSchema,
+  prefix: z.string().trim().regex(/^[A-Za-z]+$/).min(1).max(20),
+  start: z.number().int().min(1).max(99),
+  end: z.number().int().min(1).max(99),
   slotCount: z.number().int().min(1).max(99).default(1)
 }).refine((value) => value.end >= value.start, {
   message: "end must be greater than or equal to start",
@@ -286,8 +287,9 @@ export const bulkItemSchema = z.object({
 
 export const itemTransferSchema = z.object({
   storageLocationId: uuidSchema,
-  storageArea: z.string().max(120).optional().nullable(),
-  bin: z.string().max(120).optional().nullable(),
+  storageShelfId: uuidSchema.optional().nullable(),
+  storageBinId: uuidSchema.optional().nullable(),
+  binSlot: z.number().int().positive().optional().nullable(),
   note: z.string().max(500).optional().nullable()
 });
 

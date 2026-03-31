@@ -5,15 +5,17 @@ import Link from "next/link";
 import { useAppLanguage } from "@/components/app-language-provider";
 
 type LocationRow = { id: string; name: string; code?: string | null };
-type ShelfRow = { id: string; name: string; storageLocationId: string };
+type ShelfRow = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
 type BinRow = {
   id: string;
   code: string;
   storageLocationId: string;
+  storageShelfId: string;
   storageArea?: string | null;
   slotCount: number;
   isActive: boolean;
   storageLocation?: LocationRow | null;
+  storageShelf?: ShelfRow | null;
   _count?: { items?: number };
 };
 
@@ -24,11 +26,17 @@ export default function AdminBinsPage() {
   const [shelves, setShelves] = useState<ShelfRow[]>([]);
   const [bins, setBins] = useState<BinRow[]>([]);
   const [feedback, setFeedback] = useState("");
-  const [newBin, setNewBin] = useState({ code: "", storageLocationId: "", storageArea: "", slotCount: 3 });
-  const [rangeForm, setRangeForm] = useState({ prefix: "A", start: 1, end: 30, storageLocationId: "", storageArea: "", slotCount: 3 });
+  const [newBin, setNewBin] = useState({ code: "", storageLocationId: "", storageShelfId: "", slotCount: 3 });
+  const [rangeForm, setRangeForm] = useState({ prefix: "A", start: 1, end: 30, storageLocationId: "", storageShelfId: "", slotCount: 3 });
   const [swapForm, setSwapForm] = useState({ leftBinId: "", rightBinId: "" });
   const [slotDrafts, setSlotDrafts] = useState<Record<string, string>>({});
   const [slotPreview, setSlotPreview] = useState<Record<string, string>>({});
+  const [binFilters, setBinFilters] = useState({
+    query: "",
+    storageLocationId: "",
+    storageShelfId: "",
+    status: "all"
+  });
 
   const load = useCallback(async () => {
     const [locationsData, shelvesData, binsData] = await Promise.all([
@@ -53,13 +61,54 @@ export default function AdminBinsPage() {
   }, [load]);
 
   const availableNewShelves = useMemo(
-    () => shelves.filter((entry) => entry.storageLocationId === newBin.storageLocationId),
+    () => shelves.filter((entry) => entry.storageLocationId === newBin.storageLocationId && entry.mode === "DRAWER_HOST"),
     [newBin.storageLocationId, shelves]
   );
   const availableRangeShelves = useMemo(
-    () => shelves.filter((entry) => entry.storageLocationId === rangeForm.storageLocationId),
+    () => shelves.filter((entry) => entry.storageLocationId === rangeForm.storageLocationId && entry.mode === "DRAWER_HOST"),
     [rangeForm.storageLocationId, shelves]
   );
+  const availableFilterShelves = useMemo(
+    () =>
+      binFilters.storageLocationId
+        ? shelves.filter((entry) => entry.storageLocationId === binFilters.storageLocationId && entry.mode === "DRAWER_HOST")
+        : shelves,
+    [binFilters.storageLocationId, shelves]
+  );
+  const filteredBins = useMemo(() => {
+    const query = binFilters.query.trim().toLowerCase();
+
+    return bins.filter((bin) => {
+      if (binFilters.storageLocationId && bin.storageLocationId !== binFilters.storageLocationId) {
+        return false;
+      }
+      if (binFilters.storageShelfId && bin.storageShelfId !== binFilters.storageShelfId) {
+        return false;
+      }
+      if (binFilters.status === "active" && !bin.isActive) {
+        return false;
+      }
+      if (binFilters.status === "inactive" && bin.isActive) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+
+      const haystack = [
+        bin.code,
+        bin.storageLocation?.name || "",
+        bin.storageLocation?.code || "",
+        bin.storageShelf?.code || "",
+        bin.storageShelf?.name || "",
+        bin.storageArea || ""
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [binFilters, bins]);
 
   async function postJson(url: string, payload: unknown, method = "POST") {
     const response = await fetch(url, {
@@ -93,19 +142,19 @@ export default function AdminBinsPage() {
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">{tr("Einzelnen Drawer anlegen", "Create single drawer")}</h2>
         <div className="grid gap-3 md:grid-cols-4">
-          <input className="input" placeholder="A12" value={newBin.code} onChange={(e) => setNewBin((prev) => ({ ...prev, code: e.target.value }))} />
-          <select className="input" value={newBin.storageLocationId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageLocationId: e.target.value, storageArea: "" }))}>
+          <input className="input" placeholder="A01" value={newBin.code} onChange={(e) => setNewBin((prev) => ({ ...prev, code: e.target.value }))} />
+          <select className="input" value={newBin.storageLocationId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
             {locations.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
               </option>
             ))}
           </select>
-          <select className="input" value={newBin.storageArea} onChange={(e) => setNewBin((prev) => ({ ...prev, storageArea: e.target.value }))}>
-            <option value="">{tr("Kein Regal", "No shelf")}</option>
+          <select className="input" value={newBin.storageShelfId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
+            <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
             {availableNewShelves.map((shelf) => (
-              <option key={shelf.id} value={shelf.name}>
-                {shelf.name}
+              <option key={shelf.id} value={shelf.id}>
+                {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
               </option>
             ))}
           </select>
@@ -134,18 +183,18 @@ export default function AdminBinsPage() {
           <input className="input" value={rangeForm.prefix} onChange={(e) => setRangeForm((prev) => ({ ...prev, prefix: e.target.value }))} />
           <input className="input" type="number" min={1} value={rangeForm.start} onChange={(e) => setRangeForm((prev) => ({ ...prev, start: Number(e.target.value) }))} />
           <input className="input" type="number" min={1} value={rangeForm.end} onChange={(e) => setRangeForm((prev) => ({ ...prev, end: Number(e.target.value) }))} />
-          <select className="input" value={rangeForm.storageLocationId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageLocationId: e.target.value, storageArea: "" }))}>
+          <select className="input" value={rangeForm.storageLocationId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
             {locations.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
               </option>
             ))}
           </select>
-          <select className="input" value={rangeForm.storageArea} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageArea: e.target.value }))}>
-            <option value="">{tr("Kein Regal", "No shelf")}</option>
+          <select className="input" value={rangeForm.storageShelfId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
+            <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
             {availableRangeShelves.map((shelf) => (
-              <option key={shelf.id} value={shelf.name}>
-                {shelf.name}
+              <option key={shelf.id} value={shelf.id}>
+                {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
               </option>
             ))}
           </select>
@@ -210,6 +259,61 @@ export default function AdminBinsPage() {
 
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">{tr("Vorhandene Drawer", "Existing drawers")}</h2>
+        <div className="grid gap-3 md:grid-cols-4">
+          <input
+            className="input"
+            placeholder={tr("Code, Ort oder Regal filtern", "Filter by code, location, or shelf")}
+            value={binFilters.query}
+            onChange={(e) => setBinFilters((prev) => ({ ...prev, query: e.target.value }))}
+          />
+          <select
+            className="input"
+            value={binFilters.storageLocationId}
+            onChange={(e) => setBinFilters((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}
+          >
+            <option value="">{tr("Alle Orte", "All locations")}</option>
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            value={binFilters.storageShelfId}
+            onChange={(e) => setBinFilters((prev) => ({ ...prev, storageShelfId: e.target.value }))}
+          >
+            <option value="">{tr("Alle Regale", "All shelves")}</option>
+            {availableFilterShelves.map((shelf) => (
+              <option key={shelf.id} value={shelf.id}>
+                {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            value={binFilters.status}
+            onChange={(e) => setBinFilters((prev) => ({ ...prev, status: e.target.value }))}
+          >
+            <option value="all">{tr("Alle Stati", "All statuses")}</option>
+            <option value="active">{tr("Nur aktiv", "Active only")}</option>
+            <option value="inactive">{tr("Nur inaktiv", "Inactive only")}</option>
+          </select>
+        </div>
+        <div className="flex items-center justify-between text-sm text-workshop-700">
+          <p>
+            {language === "en"
+              ? `${filteredBins.length} of ${bins.length} drawers shown`
+              : `${filteredBins.length} von ${bins.length} Drawern angezeigt`}
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setBinFilters({ query: "", storageLocationId: "", storageShelfId: "", status: "all" })}
+          >
+            {tr("Filter zuruecksetzen", "Reset filters")}
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-[900px] w-full text-sm">
             <thead>
@@ -224,15 +328,17 @@ export default function AdminBinsPage() {
               </tr>
             </thead>
             <tbody>
-              {bins.map((bin) => (
+              {filteredBins.map((bin) => (
                 <tr key={bin.id} className="border-b border-workshop-100">
                   <td className="px-2 py-2 font-mono">
-                    <Link className="hover:underline" href={`/bins/${encodeURIComponent(bin.code)}`}>
+                    <Link className="hover:underline" href={`/bins/${encodeURIComponent(bin.id)}`}>
                       {bin.code}
                     </Link>
                   </td>
                   <td className="px-2 py-2">{bin.storageLocation?.name || "-"}</td>
-                  <td className="px-2 py-2">{bin.storageArea || "-"}</td>
+                  <td className="px-2 py-2">
+                    {[bin.storageShelf?.code, bin.storageShelf?.name || bin.storageArea].filter(Boolean).join(" - ") || "-"}
+                  </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-2">
                       <input
@@ -313,6 +419,13 @@ export default function AdminBinsPage() {
                   </td>
                 </tr>
               ))}
+              {filteredBins.length === 0 && (
+                <tr>
+                  <td className="px-2 py-6 text-center text-workshop-700" colSpan={7}>
+                    {tr("Keine Drawer fuer den aktuellen Filter gefunden.", "No drawers found for the current filter.")}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

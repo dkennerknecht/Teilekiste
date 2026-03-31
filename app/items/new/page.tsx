@@ -9,8 +9,23 @@ import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
 
 type Option = { id: string; name: string; code?: string; codeLabel?: string };
-type ShelfOption = { id: string; name: string; storageLocationId: string };
-type StorageBinOption = { id: string; code: string; storageLocationId: string; storageArea?: string | null; slotCount: number; isActive?: boolean };
+type ShelfOption = {
+  id: string;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  mode?: string;
+  storageLocationId: string;
+};
+type StorageBinOption = {
+  id: string;
+  code: string;
+  storageLocationId: string;
+  storageShelfId: string;
+  storageArea?: string | null;
+  slotCount: number;
+  isActive?: boolean;
+};
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
@@ -49,8 +64,8 @@ export default function NewItemPage() {
     categoryId: "",
     placementStatus: "PLACED",
     storageLocationId: "",
+    storageShelfId: "",
     storageArea: "",
-    bin: "",
     storageBinId: "",
     binSlot: "",
     stock: 0,
@@ -83,11 +98,11 @@ export default function NewItemPage() {
 
   useEffect(() => {
     if (!form.storageLocationId) return;
-    const hasShelf = shelves.some((shelf) => shelf.storageLocationId === form.storageLocationId && shelf.name === form.storageArea);
-    if (form.storageArea && !hasShelf) {
-      setForm((prev) => ({ ...prev, storageArea: "" }));
+    const hasShelf = shelves.some((shelf) => shelf.id === form.storageShelfId && shelf.storageLocationId === form.storageLocationId);
+    if (form.storageShelfId && !hasShelf) {
+      setForm((prev) => ({ ...prev, storageShelfId: "", storageArea: "", storageBinId: "", binSlot: "" }));
     }
-  }, [form.storageArea, form.storageLocationId, shelves]);
+  }, [form.storageShelfId, form.storageLocationId, shelves]);
 
   useEffect(() => {
     if (!form.storageBinId) return;
@@ -96,24 +111,26 @@ export default function NewItemPage() {
       setForm((prev) => ({ ...prev, storageBinId: "", binSlot: "" }));
       return;
     }
-    if (form.storageLocationId !== selectedBin.storageLocationId || form.storageArea !== (selectedBin.storageArea || "")) {
+    const selectedShelf = shelves.find((shelf) => shelf.id === selectedBin.storageShelfId);
+    if (form.storageLocationId !== selectedBin.storageLocationId || form.storageShelfId !== selectedBin.storageShelfId) {
       setForm((prev) => ({
         ...prev,
         storageLocationId: selectedBin.storageLocationId,
-        storageArea: selectedBin.storageArea || "",
-        bin: selectedBin.code
+        storageShelfId: selectedBin.storageShelfId,
+        storageArea: selectedShelf?.name || selectedBin.storageArea || ""
       }));
     }
     if (form.binSlot && Number(form.binSlot) > selectedBin.slotCount) {
       setForm((prev) => ({ ...prev, binSlot: "" }));
     }
-  }, [bins, form.storageArea, form.storageBinId, form.storageLocationId, form.binSlot]);
+  }, [bins, shelves, form.storageBinId, form.storageLocationId, form.storageShelfId, form.binSlot]);
 
   const availableShelves = shelves.filter((shelf) => shelf.storageLocationId === form.storageLocationId);
-  const availableBins = bins.filter((entry) => !form.storageLocationId || entry.storageLocationId === form.storageLocationId);
+  const selectedShelf = shelves.find((shelf) => shelf.id === form.storageShelfId) || null;
+  const availableBins = bins.filter((entry) => entry.storageShelfId === form.storageShelfId);
   const selectedBin = bins.find((entry) => entry.id === form.storageBinId) || null;
   const isPlaced = form.placementStatus === "PLACED";
-  const usesManagedDrawer = isPlaced && !!form.storageBinId;
+  const usesManagedDrawer = isPlaced && selectedShelf?.mode === "DRAWER_HOST";
 
   useEffect(() => {
     if (!form.categoryId || !form.typeId) return;
@@ -221,8 +238,8 @@ export default function NewItemPage() {
               const payload = {
                 ...form,
                 storageLocationId: isPlaced ? form.storageLocationId || null : null,
-                storageArea: isPlaced ? form.storageArea || null : null,
-                bin: isPlaced ? form.bin || null : null,
+                storageShelfId: isPlaced ? form.storageShelfId || null : null,
+                storageArea: isPlaced ? selectedShelf?.name || form.storageArea || null : null,
                 storageBinId: usesManagedDrawer ? form.storageBinId || null : null,
                 binSlot: usesManagedDrawer && form.binSlot !== "" ? Number(form.binSlot) : null,
                 minStock: form.minStock === "" ? null : Number(form.minStock)
@@ -335,7 +352,7 @@ export default function NewItemPage() {
                     ...prev,
                     placementStatus: e.target.value,
                     ...(e.target.value !== "PLACED"
-                      ? { storageBinId: "", binSlot: "", storageLocationId: "", storageArea: "", bin: "" }
+                      ? { storageLocationId: "", storageShelfId: "", storageArea: "", storageBinId: "", binSlot: "" }
                       : {})
                   }))
                 }
@@ -352,8 +369,8 @@ export default function NewItemPage() {
               <select
                 className="input mt-1"
                 value={form.storageLocationId}
-                onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageArea: "", storageBinId: "", binSlot: "", bin: "" })}
-                disabled={!hasRequiredMeta || !isPlaced || usesManagedDrawer}
+                onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageShelfId: "", storageArea: "", storageBinId: "", binSlot: "" })}
+                disabled={!hasRequiredMeta || !isPlaced}
               >
                 <option value="">{tr("Kein Lagerort", "No storage location")}</option>
                 {locations.map((l) => (
@@ -368,22 +385,26 @@ export default function NewItemPage() {
               {tr("Regal / Bereich", "Shelf / area")}
               <select
                 className="input mt-1"
-                value={form.storageArea}
-                onChange={(e) => setForm({ ...form, storageArea: e.target.value })}
-                disabled={!hasRequiredMeta || !isPlaced || usesManagedDrawer || !form.storageLocationId || availableShelves.length === 0}
+                value={form.storageShelfId}
+                onChange={(e) => {
+                  const nextShelf = shelves.find((shelf) => shelf.id === e.target.value) || null;
+                  setForm((prev) => ({
+                    ...prev,
+                    storageShelfId: e.target.value,
+                    storageArea: nextShelf?.name || "",
+                    storageBinId: "",
+                    binSlot: ""
+                  }));
+                }}
+                disabled={!hasRequiredMeta || !isPlaced || !form.storageLocationId || availableShelves.length === 0}
               >
                 <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
                 {availableShelves.map((shelf) => (
-                  <option key={shelf.id} value={shelf.name}>
-                    {shelf.name}
+                  <option key={shelf.id} value={shelf.id}>
+                    {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
                   </option>
                 ))}
               </select>
-            </label>
-
-            <label className="text-sm">
-              {tr("Fach / Bin", "Bin")}
-              <input className="input mt-1" value={form.bin} onChange={(e) => setForm({ ...form, bin: e.target.value })} disabled={!hasRequiredMeta || !isPlaced || usesManagedDrawer} />
             </label>
           </div>
 
@@ -394,12 +415,12 @@ export default function NewItemPage() {
                 className="input mt-1"
                 value={form.storageBinId}
                 onChange={(e) => setForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
-                disabled={!hasRequiredMeta || !isPlaced}
+                disabled={!hasRequiredMeta || !isPlaced || !usesManagedDrawer}
               >
-                <option value="">{tr("Kein managed Drawer", "No managed drawer")}</option>
+                <option value="">{usesManagedDrawer ? tr("Drawer waehlen", "Choose drawer") : tr("Regal ohne Drawer", "Shelf without drawers")}</option>
                 {availableBins.map((entry) => (
                   <option key={entry.id} value={entry.id}>
-                    {entry.code} ({locations.find((location) => location.id === entry.storageLocationId)?.name || "--"})
+                    {entry.code}
                   </option>
                 ))}
               </select>
@@ -411,7 +432,7 @@ export default function NewItemPage() {
                 className="input mt-1"
                 value={form.binSlot}
                 onChange={(e) => setForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                disabled={!hasRequiredMeta || !selectedBin}
+                disabled={!hasRequiredMeta || !usesManagedDrawer || !selectedBin}
               >
                 <option value="">{selectedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
                 {selectedBin &&

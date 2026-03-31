@@ -58,7 +58,9 @@ export async function POST(req: NextRequest) {
   try {
     validatedTarget = await validateTransferTarget(prisma, {
       storageLocationId: body.storageLocationId,
-      storageArea: body.storageArea,
+      storageShelfId: body.storageShelfId || null,
+      storageBinId: body.storageBinId || null,
+      binSlot: body.binSlot ?? null,
       allowedLocationIds
     });
   } catch (error) {
@@ -87,14 +89,28 @@ export async function POST(req: NextRequest) {
       ? {
           storageLocationId: validatedTarget.location.id,
           storageLocationName: validatedTarget.location.name,
-          storageArea: validatedTarget.storageArea,
-          bin: body.bin?.trim() || null
+          storageShelfId: validatedTarget.storageShelf.id,
+          storageShelfCode: validatedTarget.storageShelf.code || null,
+          storageShelfName: validatedTarget.storageShelf.name,
+          storageBinId: validatedTarget.storageBin?.id || null,
+          storageBinCode: validatedTarget.storageBin?.code || null,
+          binSlot: validatedTarget.binSlot ?? null,
+          storageArea: validatedTarget.storageShelf.name,
+          bin: validatedTarget.storageBin?.code
+            ? `${validatedTarget.storageBin.code}${validatedTarget.binSlot ? `-${validatedTarget.binSlot}` : ""}`
+            : null
         }
       : {
           storageLocationId: body.storageLocationId,
           storageLocationName: null,
-          storageArea: body.storageArea?.trim() || null,
-          bin: body.bin?.trim() || null
+          storageShelfId: body.storageShelfId,
+          storageShelfCode: null,
+          storageShelfName: null,
+          storageBinId: body.storageBinId || null,
+          storageBinCode: null,
+          binSlot: body.binSlot ?? null,
+          storageArea: null,
+          bin: null
         },
     blockedItems,
     targetError
@@ -116,13 +132,16 @@ export async function POST(req: NextRequest) {
         item,
         target: {
           storageLocationId: validatedTarget.location.id,
-          storageArea: validatedTarget.storageArea,
-          bin: body.bin
+          storageShelfId: validatedTarget.storageShelf.id,
+          storageBinId: validatedTarget.storageBin?.id || null,
+          binSlot: validatedTarget.binSlot ?? null
         },
         userId: auth.user!.id,
         note: body.note,
         sourceLocation: item.storageLocation,
-        targetLocation: validatedTarget.location
+        targetLocation: validatedTarget.location,
+        targetShelf: validatedTarget.storageShelf,
+        targetBin: validatedTarget.storageBin
       });
 
       if (result.changed) {

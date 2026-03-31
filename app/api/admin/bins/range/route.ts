@@ -3,27 +3,20 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/api";
 import { storageBinRangeCreateSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
-import { mapPlacementError, normalizeOptionalText, normalizeStorageBinCode } from "@/lib/storage-bins";
+import { findStorageBinCodeConflict, isManagedStorageBinCode, mapPlacementError, normalizeStorageBinCode } from "@/lib/storage-bins";
 
-async function validateStorageBinLocation(storageLocationId: string, storageArea?: string | null) {
-  const location = await prisma.storageLocation.findUnique({
-    where: { id: storageLocationId },
-    select: { id: true }
+async function validateStorageBinShelf(storageShelfId: string) {
+  const shelf = await prisma.storageShelf.findUnique({
+    where: { id: storageShelfId },
+    select: { id: true, name: true, mode: true, storageLocationId: true }
   });
-  if (!location) {
-    throw new Error("PLACEMENT_LOCATION_NOT_FOUND");
+  if (!shelf) {
+    throw new Error("PLACEMENT_SHELF_INVALID");
   }
-  const normalizedStorageArea = normalizeOptionalText(storageArea);
-  if (normalizedStorageArea) {
-    const shelf = await prisma.storageShelf.findFirst({
-      where: { storageLocationId, name: normalizedStorageArea },
-      select: { id: true }
-    });
-    if (!shelf) {
-      throw new Error("PLACEMENT_SHELF_INVALID");
-    }
+  if (shelf.mode !== "DRAWER_HOST") {
+    throw new Error("PLACEMENT_SHELF_OPEN_AREA_ONLY");
   }
-  return normalizedStorageArea;
+  return shelf;
 }
 
 export async function POST(req: NextRequest) {
@@ -35,24 +28,38 @@ export async function POST(req: NextRequest) {
   const body = parsed.data as ReturnType<typeof storageBinRangeCreateSchema.parse>;
 
   try {
-    const storageArea = await validateStorageBinLocation(body.storageLocationId, body.storageArea);
-    const requestedCodes = Array.from({ length: body.end - body.start + 1 }, (_, index) =>
-      normalizeStorageBinCode(`${body.prefix}${body.start + index}`)!
-    );
+    const shelf = await validateStorageBinShelf(body.storageShelfId);
+    const requestedCodes = Array.from({ length: body.end - body.start + 1 }, (_, index) => {
+      const code = normalizeStorageBinCode(`${body.prefix}${body.start + index}`)!;
+      if (!isManagedStorageBinCode(code)) {
+        throw new Error("PLACEMENT_BIN_INVALID_CODE");
+      }
+      return code;
+    });
     const existing = await prisma.storageBin.findMany({
-      where: { code: { in: requestedCodes } },
+      where: { storageShelfId: shelf.id },
       select: { code: true }
     });
-    const existingCodeSet = new Set(existing.map((entry) => entry.code));
+    const existingCodeSet = new Set(existing.map((entry) => normalizeStorageBinCode(entry.code) || entry.code));
     const missingCodes = requestedCodes.filter((code) => !existingCodeSet.has(code));
+    const existingCodes = requestedCodes.filter((code) => existingCodeSet.has(code));
+
+    for (const code of missingCodes) {
+      const conflict = await findStorageBinCodeConflict(prisma, code, shelf.id);
+      if (conflict) {
+        existingCodes.push(code);
+      }
+    }
+    const finalMissingCodes = missingCodes.filter((code) => !existingCodes.includes(code));
 
     const created = await prisma.$transaction(
-      missingCodes.map((code) =>
+      finalMissingCodes.map((code) =>
         prisma.storageBin.create({
           data: {
             code,
-            storageLocationId: body.storageLocationId,
-            storageArea,
+            storageLocationId: shelf.storageLocationId,
+            storageShelfId: shelf.id,
+            storageArea: shelf.name,
             slotCount: body.slotCount
           }
         })
@@ -62,14 +69,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       requestedCount: requestedCodes.length,
       createdCount: created.length,
-      existingCount: existing.length,
+      existingCount: existingCodes.length,
       createdCodes: created.map((entry) => entry.code),
-      existingCodes: existing.map((entry) => entry.code)
+      existingCodes
     });
   } catch (error) {
     const placementError = mapPlacementError(error);
     if (placementError) {
       return NextResponse.json(placementError.body, { status: placementError.status });
+    }
+    if ((error as Error).message === "PLACEMENT_BIN_INVALID_CODE") {
+      return NextResponse.json({ error: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen" }, { status: 400 });
     }
     throw error;
   }

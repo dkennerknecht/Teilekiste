@@ -70,7 +70,11 @@ export default function ScannerPage() {
         <div className="card space-y-2">
           <p className="font-mono text-workshop-700">{item.labelCode}</p>
           <h2 className="text-xl font-semibold">{item.name}</h2>
-          {item.displayBin && <p className="font-mono text-sm text-workshop-700">{tr("Position", "Position")}: {item.displayBin}</p>}
+          {item.displayPosition && (
+            <p className="font-mono text-sm text-workshop-700">
+              {tr("Position", "Position")}: {item.displayPosition}
+            </p>
+          )}
           <p>{tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} | {tr("Verfuegbar", "Available")}: {formatDisplayQuantity(item.unit, item.availableStock)}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button

@@ -8,6 +8,9 @@ const auditLogMock = vi.fn();
 const transactionMock = vi.fn();
 const categoryFindManyMock = vi.fn();
 const storageLocationFindManyMock = vi.fn();
+const storageLocationFindUniqueMock = vi.fn();
+const storageShelfFindManyMock = vi.fn();
+const storageShelfFindUniqueMock = vi.fn();
 const customFieldFindManyMock = vi.fn();
 const importProfileFindManyMock = vi.fn();
 const labelTypeFindManyMock = vi.fn();
@@ -33,7 +36,8 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     category: { findMany: categoryFindManyMock },
-    storageLocation: { findMany: storageLocationFindManyMock },
+    storageLocation: { findMany: storageLocationFindManyMock, findUnique: storageLocationFindUniqueMock },
+    storageShelf: { findMany: storageShelfFindManyMock, findUnique: storageShelfFindUniqueMock },
     customField: { findMany: customFieldFindManyMock },
     importProfile: { findMany: importProfileFindManyMock },
     labelType: { findMany: labelTypeFindManyMock },
@@ -53,8 +57,24 @@ describe("import route custom fields", () => {
     const categoryId = "11111111-1111-4111-8111-111111111111";
     const typeId = "22222222-2222-4222-8222-222222222222";
     const locationId = "33333333-3333-4333-8333-333333333333";
+    const shelfId = "55555555-1111-4111-8111-555555555555";
     const customFieldId = "44444444-4444-4444-8444-444444444444";
     const tx = {
+      storageLocation: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: locationId
+        })
+      },
+      storageShelf: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: shelfId,
+          name: "Regal A",
+          code: "SB1",
+          description: null,
+          mode: "OPEN_AREA",
+          storageLocationId: locationId
+        })
+      },
       customField: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -102,6 +122,16 @@ describe("import route custom fields", () => {
     assignNextLabelCodeMock.mockResolvedValue("EL-KB-001");
     categoryFindManyMock.mockResolvedValue([{ id: categoryId, name: "Kabel", code: "KB" }]);
     storageLocationFindManyMock.mockResolvedValue([{ id: locationId, name: "Werkstatt", code: "WERK" }]);
+    storageLocationFindUniqueMock.mockResolvedValue({ id: locationId, name: "Werkstatt", code: "WERK" });
+    storageShelfFindManyMock.mockResolvedValue([{ id: shelfId, name: "Regal A", code: "SB1", storageLocationId: locationId }]);
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: shelfId,
+      name: "Regal A",
+      code: "SB1",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: locationId
+    });
     importProfileFindManyMock.mockResolvedValue([]);
     customFieldFindManyMock.mockResolvedValue([
       {
@@ -124,7 +154,7 @@ describe("import route custom fields", () => {
     itemFindManyMock.mockResolvedValue([]);
     transactionMock.mockImplementation(async (callback: (db: typeof tx) => Promise<unknown>) => callback(tx));
 
-    const csv = ["category,storageLocation,name,stock,unit,farbe", "Kabel,Werkstatt,Kabelrolle,12.5,M,red"].join("\n");
+    const csv = ["category,storageLocation,shelfCode,name,stock,unit,farbe", "Kabel,Werkstatt,SB1,Kabelrolle,12.5,M,red"].join("\n");
     const form = new FormData();
     form.set("file", new File([csv], "import.csv", { type: "text/csv" }));
     form.set("dryRun", "0");

@@ -2,67 +2,69 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
-import { serializeStoredQuantity } from "@/lib/quantity";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
-import { findStorageBinByCode, formatItemPosition } from "@/lib/storage-bins";
+import { serializeStoredQuantity } from "@/lib/quantity";
+import { formatItemPosition } from "@/lib/storage-bins";
 
-export async function GET(req: NextRequest, { params }: { params: { code: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireAuth(req);
   if (auth.error) return auth.error;
 
-  const matchedStorageBin = await findStorageBinByCode(prisma, params.code);
-  if (!matchedStorageBin) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const storageBin = await prisma.storageBin.findUnique({
-    where: { id: matchedStorageBin.id },
+  const shelf = await prisma.storageShelf.findUnique({
+    where: { id: params.id },
     include: {
       storageLocation: {
         select: { id: true, name: true, code: true }
       },
-      storageShelf: {
-        select: { id: true, name: true, code: true, description: true, mode: true }
+      bins: {
+        where: { isActive: true },
+        include: {
+          _count: {
+            select: {
+              items: {
+                where: {
+                  deletedAt: null,
+                  isArchived: false,
+                  mergedIntoItemId: null
+                }
+              }
+            }
+          }
+        },
+        orderBy: [{ code: "asc" }]
       },
       items: {
         where: {
           deletedAt: null,
           isArchived: false,
-          mergedIntoItemId: null
+          mergedIntoItemId: null,
+          storageBinId: null
         },
         include: {
-          category: true,
           storageLocation: {
             select: { id: true, name: true, code: true }
           },
           storageShelf: {
             select: { id: true, name: true, code: true }
           },
-          storageBin: {
-            select: { id: true, code: true }
-          },
           reservations: { select: { reservedQty: true } }
         },
-        orderBy: [{ binSlot: "asc" }, { labelCode: "asc" }]
+        orderBy: [{ labelCode: "asc" }]
       }
     }
   });
-  if (!storageBin) {
+  if (!shelf) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
-  if (allowedLocationIds && !allowedLocationIds.includes(storageBin.storageLocationId)) {
+  if (allowedLocationIds && !allowedLocationIds.includes(shelf.storageLocationId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const occupiedSlots = new Set(storageBin.items.map((item) => item.binSlot).filter((value): value is number => typeof value === "number"));
-  const freeSlots = Array.from({ length: storageBin.slotCount }, (_, index) => index + 1).filter((slot) => !occupiedSlots.has(slot));
-
   return NextResponse.json({
-    ...storageBin,
-    freeSlots,
-    items: storageBin.items.map((item) => {
+    ...shelf,
+    items: shelf.items.map((item) => {
       const reservedQty = getReservedQty(item.reservations);
       return {
         ...item,

@@ -12,7 +12,10 @@ type SessionDetailRow = {
   name: string;
   unit: string;
   storageArea: string | null;
-  bin: string | null;
+  storageShelfCode: string | null;
+  storageBinCode: string | null;
+  binSlot: number | null;
+  storagePlaceLabel: string;
   expectedStock: number | null;
   countedStock: number | null;
   currentStock: number | null;
@@ -20,7 +23,10 @@ type SessionDetailRow = {
   delta: number | null;
   liveDelta: number | null;
   currentStorageArea: string | null;
-  currentBin: string | null;
+  currentStorageShelfCode: string | null;
+  currentStorageBinCode: string | null;
+  currentBinSlot: number | null;
+  currentStoragePlaceLabel: string | null;
   itemDeleted: boolean;
   itemArchived: boolean;
   countedAt: string | null;
@@ -85,10 +91,6 @@ function statusLabel(status: string, tr: (de: string, en: string) => string) {
   if (status === "FINALIZED") return tr("Finalisiert", "Finalized");
   if (status === "CANCELLED") return tr("Abgebrochen", "Cancelled");
   return status;
-}
-
-function getStoragePlaceLabel(storageArea?: string | null, bin?: string | null) {
-  return [storageArea || null, bin || null].filter(Boolean).join(" / ") || "-";
 }
 
 export default function InventorySessionDetailPage({ params }: { params: { id: string } }) {
@@ -484,10 +486,10 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
                       ) : null}
                     </td>
                     <td className="px-2 py-2">
-                      <div>{getStoragePlaceLabel(row.storageArea, row.bin)}</div>
+                      <div>{row.storagePlaceLabel}</div>
                       {row.hasDrift ? (
                         <div className="text-xs text-amber-700">
-                          {tr("jetzt", "now")}: {getStoragePlaceLabel(row.currentStorageArea, row.currentBin)}
+                          {tr("jetzt", "now")}: {row.currentStoragePlaceLabel || "-"}
                         </div>
                       ) : null}
                     </td>
@@ -571,7 +573,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
               <div>
                 <p className="font-mono text-sm text-workshop-700">{row.labelCode}</p>
                 <p className="font-medium">{row.name}</p>
-                <p className="text-sm text-workshop-700">{getStoragePlaceLabel(row.storageArea, row.bin)}</p>
+                <p className="text-sm text-workshop-700">{row.storagePlaceLabel}</p>
               </div>
               <div className="grid gap-2 text-sm text-workshop-700">
                 <p>{tr("Soll", "Expected")}: {formatDisplayQuantity(row.unit, row.expectedStock)}</p>

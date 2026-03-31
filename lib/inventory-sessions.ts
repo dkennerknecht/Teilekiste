@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { auditLog } from "@/lib/audit";
 import { canSetStock } from "@/lib/stock";
 import { QuantityValidationError, formatDisplayQuantity, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
+import { formatDrawerPosition } from "@/lib/storage-bins";
 
 type InventorySessionDb =
   | Pick<
@@ -67,7 +68,9 @@ type SessionWithRows = {
     name: string;
     unit: string;
     storageArea: string | null;
-    bin: string | null;
+    storageShelfCode: string | null;
+    storageBinCode: string | null;
+    binSlot: number | null;
     expectedStock: number;
     countedStock: number | null;
     countedByUserId: string | null;
@@ -85,7 +88,9 @@ type SessionWithRows = {
       unit: string;
       stock: number;
       storageArea: string | null;
-      bin: string | null;
+      storageShelf: { code: string | null } | null;
+      storageBin: { code: string | null } | null;
+      binSlot: number | null;
       deletedAt: Date | null;
       isArchived: boolean;
     } | null;
@@ -118,6 +123,25 @@ function buildScopeLabel(input: {
   storageArea?: string | null;
 }) {
   return [input.storageLocationName || null, normalizeOptionalText(input.storageArea)].filter(Boolean).join(" / ") || "Unbekannt";
+}
+
+function compareOptionalNumber(left: number | null | undefined, right: number | null | undefined) {
+  return (left || 0) - (right || 0);
+}
+
+function buildStoragePlaceLabel(input: {
+  storageArea?: string | null;
+  storageShelfCode?: string | null;
+  storageBinCode?: string | null;
+  binSlot?: number | null;
+}) {
+  return [
+    normalizeOptionalText(input.storageArea),
+    normalizeOptionalText(input.storageShelfCode),
+    formatDrawerPosition(input.storageBinCode, input.binSlot)
+  ]
+    .filter(Boolean)
+    .join(" / ") || "-";
 }
 
 function buildCountProgress(rows: Array<{ expectedStock: number; countedStock: number | null }>) {
@@ -283,17 +307,31 @@ export async function createInventorySession(
       deletedAt: null,
       isArchived: false
     },
-    orderBy: [{ storageArea: "asc" }, { bin: "asc" }, { labelCode: "asc" }],
     select: {
       id: true,
       labelCode: true,
       name: true,
       unit: true,
       storageArea: true,
-      bin: true,
+      storageShelf: {
+        select: { code: true }
+      },
+      storageBin: {
+        select: { code: true }
+      },
+      binSlot: true,
       stock: true
     }
   });
+
+  rows.sort(
+    (left, right) =>
+      compareOptionalText(left.storageArea, right.storageArea) ||
+      compareOptionalText(left.storageShelf?.code, right.storageShelf?.code) ||
+      compareOptionalText(left.storageBin?.code, right.storageBin?.code) ||
+      compareOptionalNumber(left.binSlot, right.binSlot) ||
+      left.labelCode.localeCompare(right.labelCode, "de")
+  );
 
   const session = await db.inventorySession.create({
     data: {
@@ -327,7 +365,9 @@ export async function createInventorySession(
         name: row.name,
         unit: row.unit,
         storageArea: normalizeOptionalText(row.storageArea),
-        bin: normalizeOptionalText(row.bin),
+        storageShelfCode: normalizeOptionalText(row.storageShelf?.code),
+        storageBinCode: normalizeOptionalText(row.storageBin?.code),
+        binSlot: row.binSlot ?? null,
         expectedStock: row.stock
       }))
     });
@@ -436,7 +476,9 @@ export async function buildInventorySessionDetail(
       .sort(
         (left, right) =>
           compareOptionalText(left.storageArea, right.storageArea) ||
-          compareOptionalText(left.bin, right.bin) ||
+          compareOptionalText(left.storageShelfCode, right.storageShelfCode) ||
+          compareOptionalText(left.storageBinCode, right.storageBinCode) ||
+          compareOptionalNumber(left.binSlot, right.binSlot) ||
           left.labelCode.localeCompare(right.labelCode, "de")
       )
       .map((row) => {
@@ -449,7 +491,10 @@ export async function buildInventorySessionDetail(
           name: row.name,
           unit: row.unit,
           storageArea: row.storageArea,
-          bin: row.bin,
+          storageShelfCode: row.storageShelfCode,
+          storageBinCode: row.storageBinCode,
+          binSlot: row.binSlot,
+          storagePlaceLabel: buildStoragePlaceLabel(row),
           expectedStock: serializeStoredQuantity(row.unit, row.expectedStock),
           countedStock: serializeStoredQuantity(row.unit, row.countedStock),
           currentStock: currentItem ? serializeStoredQuantity(row.unit, currentItem.stock) : null,
@@ -461,7 +506,17 @@ export async function buildInventorySessionDetail(
               ? null
               : serializeStoredQuantity(row.unit, row.countedStock - currentItem.stock),
           currentStorageArea: currentItem?.storageArea || null,
-          currentBin: currentItem?.bin || null,
+          currentStorageShelfCode: currentItem?.storageShelf?.code || null,
+          currentStorageBinCode: currentItem?.storageBin?.code || null,
+          currentBinSlot: currentItem?.binSlot ?? null,
+          currentStoragePlaceLabel: currentItem
+            ? buildStoragePlaceLabel({
+                storageArea: currentItem.storageArea,
+                storageShelfCode: currentItem.storageShelf?.code || null,
+                storageBinCode: currentItem.storageBin?.code || null,
+                binSlot: currentItem.binSlot ?? null
+              })
+            : null,
           itemDeleted: !!currentItem?.deletedAt,
           itemArchived: !!currentItem?.isArchived,
           countedAt: row.countedAt,
@@ -582,7 +637,13 @@ export async function finalizeInventorySession(
               unit: true,
               stock: true,
               storageArea: true,
-              bin: true,
+              storageShelf: {
+                select: { code: true }
+              },
+              storageBin: {
+                select: { code: true }
+              },
+              binSlot: true,
               deletedAt: true,
               isArchived: true
             }

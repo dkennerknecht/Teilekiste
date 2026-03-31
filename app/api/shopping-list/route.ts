@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
       const available = getAvailableQty(item.stock, reserved, item.placementStatus);
       const min = item.minStock || 0;
       const needed = Math.max(0, min - available);
+      const position = formatItemPosition(item);
       return {
         id: item.id,
         labelCode: item.labelCode,
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
         needed: serializeStoredQuantity(item.unit, needed),
         unit: item.unit,
         storageLocation: item.storageLocation?.name || "-",
-        bin: formatItemPosition(item) || item.bin || null,
+        position,
         manufacturer: item.manufacturer,
         mpn: item.mpn
       };

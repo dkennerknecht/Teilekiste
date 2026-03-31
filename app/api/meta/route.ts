@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.storageShelf.findMany({
       where: allowedLocationIds ? { storageLocationId: { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } } : undefined,
-      orderBy: [{ storageLocation: { name: "asc" } }, { name: "asc" }],
+      orderBy: [{ storageLocation: { name: "asc" } }, { code: "asc" }, { name: "asc" }],
       include: {
         storageLocation: {
           select: { id: true, name: true, code: true }
@@ -31,9 +31,12 @@ export async function GET(req: NextRequest) {
       include: {
         storageLocation: {
           select: { id: true, name: true, code: true }
+        },
+        storageShelf: {
+          select: { id: true, name: true, code: true, description: true, mode: true }
         }
       },
-      orderBy: [{ code: "asc" }]
+      orderBy: [{ storageShelf: { code: "asc" } }, { code: "asc" }]
     }),
     prisma.labelType.findMany({ where: { active: true, areaId }, orderBy: { code: "asc" } }),
     prisma.tag.findMany({ orderBy: { name: "asc" } }),

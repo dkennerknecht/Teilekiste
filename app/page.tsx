@@ -21,9 +21,7 @@ type Item = {
   minStock: number | null;
   unit: string;
   placementStatus: string;
-  displayBin: string | null;
-  storageArea: string | null;
-  bin: string | null;
+  displayPosition: string | null;
   category: { name: string };
   storageLocation: { name: string } | null;
   primaryImage: {
@@ -40,7 +38,17 @@ type Option = {
 type ShelfOption = {
   id: string;
   name: string;
+  code?: string | null;
+  mode?: string;
   storageLocationId: string;
+};
+type StorageBinOption = {
+  id: string;
+  code: string;
+  storageLocationId: string;
+  storageShelfId: string;
+  slotCount: number;
+  isActive?: boolean;
 };
 
 type BulkForm = {
@@ -52,8 +60,9 @@ type BulkForm = {
 
 type BulkTransferForm = {
   storageLocationId: string;
-  storageArea: string;
-  bin: string;
+  storageShelfId: string;
+  storageBinId: string;
+  binSlot: string;
   note: string;
 };
 
@@ -66,8 +75,9 @@ const initialBulkForm: BulkForm = {
 
 const initialBulkTransferForm: BulkTransferForm = {
   storageLocationId: "",
-  storageArea: "",
-  bin: "",
+  storageShelfId: "",
+  storageBinId: "",
+  binSlot: "",
   note: ""
 };
 
@@ -81,6 +91,7 @@ export default function HomePage() {
   const [categories, setCategories] = useState<Option[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
   const [shelves, setShelves] = useState<ShelfOption[]>([]);
+  const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [tags, setTags] = useState<Option[]>([]);
   const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
   const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
@@ -106,10 +117,9 @@ export default function HomePage() {
   const hasImagesFilter = searchParams.get("hasImages") === "1";
 
   function formatPlacement(item: Item) {
-    const parts = [item.storageLocation?.name || null, item.storageArea || null, item.displayBin || item.bin || null].filter(Boolean);
     if (item.placementStatus === "INCOMING") return tr("Erwartet / noch nicht eingelagert", "Incoming / not stored yet");
     if (item.placementStatus === "UNPLACED") return tr("Braucht Lagerplatz", "Needs placement");
-    return parts.join(" / ") || "-";
+    return item.displayPosition || "-";
   }
 
   const load = useCallback(async () => {
@@ -273,8 +283,9 @@ export default function HomePage() {
       body: JSON.stringify({
         itemIds: selected,
         storageLocationId: bulkTransferForm.storageLocationId,
-        storageArea: bulkTransferForm.storageArea.trim() || null,
-        bin: bulkTransferForm.bin.trim() || null,
+        storageShelfId: bulkTransferForm.storageShelfId || null,
+        storageBinId: bulkTransferForm.storageBinId || null,
+        binSlot: bulkTransferForm.storageBinId && bulkTransferForm.binSlot ? Number(bulkTransferForm.binSlot) : null,
         note: bulkTransferForm.note.trim() || null,
         dryRun: true
       })
@@ -312,8 +323,9 @@ export default function HomePage() {
       body: JSON.stringify({
         itemIds: selected,
         storageLocationId: bulkTransferForm.storageLocationId,
-        storageArea: bulkTransferForm.storageArea.trim() || null,
-        bin: bulkTransferForm.bin.trim() || null,
+        storageShelfId: bulkTransferForm.storageShelfId || null,
+        storageBinId: bulkTransferForm.storageBinId || null,
+        binSlot: bulkTransferForm.storageBinId && bulkTransferForm.binSlot ? Number(bulkTransferForm.binSlot) : null,
         note: bulkTransferForm.note.trim() || null
       })
     });
@@ -403,6 +415,7 @@ export default function HomePage() {
         setCategories(m.categories || []);
         setLocations(m.locations || []);
         setShelves(m.shelves || []);
+        setBins((m.bins || []).filter((entry: StorageBinOption) => entry.isActive !== false));
         setTags(m.tags || []);
       });
   }, []);
@@ -431,6 +444,8 @@ export default function HomePage() {
   const selectedSet = new Set(selected);
   const allVisibleSelected = items.length > 0 && items.every((item) => selectedSet.has(item.id));
   const availableBulkTransferShelves = shelves.filter((shelf) => shelf.storageLocationId === bulkTransferForm.storageLocationId);
+  const selectedBulkTransferShelf = availableBulkTransferShelves.find((shelf) => shelf.id === bulkTransferForm.storageShelfId) || null;
+  const availableBulkTransferBins = bins.filter((bin) => bin.storageShelfId === bulkTransferForm.storageShelfId);
   const hasActiveFilters = Boolean(categoryFilter || locationFilter || tagFilter || lowStockFilter || hasImagesFilter);
   const activeFilterCount = [Boolean(categoryFilter), Boolean(locationFilter), Boolean(tagFilter), lowStockFilter, hasImagesFilter].filter(Boolean).length;
 
@@ -940,7 +955,9 @@ export default function HomePage() {
                       setBulkTransferForm((prev) => ({
                         ...prev,
                         storageLocationId: e.target.value,
-                        storageArea: ""
+                        storageShelfId: "",
+                        storageBinId: "",
+                        binSlot: ""
                       }))
                     }
                   >
@@ -957,8 +974,15 @@ export default function HomePage() {
                   <label className="text-sm font-medium">{tr("Ziel-Regal / Bereich", "Target shelf / area")}</label>
                   <select
                     className="input h-10 min-h-0"
-                    value={bulkTransferForm.storageArea}
-                    onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, storageArea: e.target.value }))}
+                    value={bulkTransferForm.storageShelfId}
+                    onChange={(e) =>
+                      setBulkTransferForm((prev) => ({
+                        ...prev,
+                        storageShelfId: e.target.value,
+                        storageBinId: "",
+                        binSlot: ""
+                      }))
+                    }
                     disabled={!bulkTransferForm.storageLocationId}
                   >
                     <option value="">
@@ -969,22 +993,67 @@ export default function HomePage() {
                         : tr("Keine Regale fuer Lagerort", "No shelves for location")}
                     </option>
                     {availableBulkTransferShelves.map((shelf) => (
-                      <option key={shelf.id} value={shelf.name}>
-                        {shelf.name}
+                      <option key={shelf.id} value={shelf.id}>
+                        {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="text-sm font-medium">{tr("Ziel-Fach / Bin", "Target bin")}</label>
-                  <input
-                    className="input h-10 min-h-0"
-                    value={bulkTransferForm.bin}
-                    onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, bin: e.target.value }))}
-                    placeholder={tr("Leer = Fach entfernen", "Empty = clear bin")}
-                  />
-                </div>
+                {selectedBulkTransferShelf?.mode === "DRAWER_HOST" && (
+                  <>
+                    <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                      <label className="text-sm font-medium">{tr("Ziel-Drawer", "Target drawer")}</label>
+                      <select
+                        className="input h-10 min-h-0"
+                        value={bulkTransferForm.storageBinId}
+                        onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
+                        disabled={!bulkTransferForm.storageShelfId}
+                      >
+                        <option value="">
+                          {!bulkTransferForm.storageShelfId
+                            ? tr("Erst Regal waehlen", "Choose shelf first")
+                            : tr("Drawer waehlen", "Choose drawer")}
+                        </option>
+                        {availableBulkTransferBins.map((bin) => (
+                          <option key={bin.id} value={bin.id}>
+                            {bin.code}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
+                      <label className="text-sm font-medium">{tr("Unterfach", "Slot")}</label>
+                      <select
+                        className="input h-10 min-h-0"
+                        value={bulkTransferForm.binSlot}
+                        onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, binSlot: e.target.value }))}
+                        disabled={!bulkTransferForm.storageBinId}
+                      >
+                        <option value="">
+                          {!bulkTransferForm.storageBinId
+                            ? tr("Erst Drawer waehlen", "Choose drawer first")
+                            : tr("Unterfach waehlen", "Choose slot")}
+                        </option>
+                        {(availableBulkTransferBins.find((bin) => bin.id === bulkTransferForm.storageBinId)
+                          ? Array.from(
+                              {
+                                length:
+                                  availableBulkTransferBins.find((bin) => bin.id === bulkTransferForm.storageBinId)?.slotCount || 0
+                              },
+                              (_, index) => index + 1
+                            )
+                          : []
+                        ).map((slot) => (
+                          <option key={slot} value={String(slot)}>
+                            {slot}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
@@ -1003,8 +1072,11 @@ export default function HomePage() {
                     <p>{tr("Items", "Items")}: {bulkTransferPreview.count} | {tr("uebertragbar", "transferable")}: {bulkTransferPreview.transferableCount}</p>
                     <p>
                       {tr("Ziel", "Target")}: {bulkTransferPreview.target.storageLocationName || "-"}
-                      {bulkTransferPreview.target.storageArea ? ` / ${bulkTransferPreview.target.storageArea}` : ""}
-                      {bulkTransferPreview.target.bin ? ` / ${bulkTransferPreview.target.bin}` : ""}
+                      {bulkTransferPreview.target.storageShelfCode || bulkTransferPreview.target.storageShelfName
+                        ? ` / ${[bulkTransferPreview.target.storageShelfCode, bulkTransferPreview.target.storageShelfName].filter(Boolean).join(" - ")}`
+                        : ""}
+                      {bulkTransferPreview.target.storageBinCode ? ` / ${bulkTransferPreview.target.storageBinCode}` : ""}
+                      {bulkTransferPreview.target.binSlot ? `-${bulkTransferPreview.target.binSlot}` : ""}
                     </p>
                     {bulkTransferPreview.targetError && <p className="text-red-700">{bulkTransferPreview.targetError}</p>}
                   </div>
@@ -1013,10 +1085,9 @@ export default function HomePage() {
                     <div className="space-y-1 text-sm">
                       <p className="font-medium">{tr("Quellplaetze", "Source locations")}</p>
                       {bulkTransferPreview.sourceGroups.map((group: any) => (
-                        <p key={`${group.storageLocationId}:${group.storageArea || ""}:${group.bin || ""}`}>
+                        <p key={`${group.storageLocationId}:${group.displayPosition || ""}`}>
                           {group.count}x {group.storageLocationName}
-                          {group.storageArea ? ` / ${group.storageArea}` : ""}
-                          {group.bin ? ` / ${group.bin}` : ""}
+                          {group.displayPosition ? ` / ${group.displayPosition}` : ""}
                         </p>
                       ))}
                     </div>

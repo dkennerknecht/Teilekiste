@@ -9,6 +9,7 @@ const assignNextLabelCodeMock = vi.fn();
 const itemFindUniqueMock = vi.fn();
 const itemFindManyMock = vi.fn();
 const storageLocationFindUniqueMock = vi.fn();
+const storageShelfFindUniqueMock = vi.fn();
 const storageShelfFindFirstMock = vi.fn();
 const reservationAggregateMock = vi.fn();
 const reservationCountMock = vi.fn();
@@ -43,7 +44,8 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn()
     },
     storageShelf: {
-      findFirst: storageShelfFindFirstMock
+      findFirst: storageShelfFindFirstMock,
+      findUnique: storageShelfFindUniqueMock
     },
     reservation: {
       aggregate: reservationAggregateMock,
@@ -68,13 +70,17 @@ describe("item transfer routes", () => {
   it("transfers a single item without creating stock movements", async () => {
     const sourceLocationId = "11111111-1111-4111-8111-111111111111";
     const targetLocationId = "22222222-2222-4222-8222-222222222222";
+    const sourceShelfId = "11111111-2222-4333-8444-555555555555";
+    const targetShelfId = "66666666-2222-4333-8444-555555555555";
     const txItemUpdateMock = vi.fn().mockResolvedValue({
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       labelCode: "EL-KB-001",
       name: "Steckerleiste",
       storageLocationId: targetLocationId,
+      storageShelfId: targetShelfId,
       storageArea: "Zielregal",
-      bin: "B-12",
+      storageBinId: null,
+      binSlot: null,
       stock: 5,
       minStock: 1,
       unit: "STK"
@@ -90,8 +96,10 @@ describe("item transfer routes", () => {
       labelCode: "EL-KB-001",
       name: "Steckerleiste",
       storageLocationId: sourceLocationId,
+      storageShelfId: sourceShelfId,
       storageArea: "A1",
-      bin: "1",
+      storageBinId: null,
+      binSlot: null,
       stock: 5,
       minStock: 1,
       unit: "STK",
@@ -99,6 +107,14 @@ describe("item transfer routes", () => {
         id: sourceLocationId,
         name: "Werkstatt",
         code: "WERK"
+      },
+      storageShelf: {
+        id: sourceShelfId,
+        name: "A1",
+        code: "SB1",
+        description: null,
+        mode: "OPEN_AREA",
+        storageLocationId: sourceLocationId
       }
     });
     storageLocationFindUniqueMock.mockResolvedValue({
@@ -106,11 +122,35 @@ describe("item transfer routes", () => {
       name: "Schrank 2",
       code: "SCH2"
     });
-    storageShelfFindFirstMock.mockResolvedValue({ id: "shelf-1" });
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: targetShelfId,
+      name: "Zielregal",
+      code: "SB2",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: targetLocationId
+    });
     transactionMock.mockImplementation(async (callback: (db: any) => Promise<unknown>) =>
       callback({
         item: {
           update: txItemUpdateMock
+        },
+        storageLocation: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: targetLocationId,
+            name: "Schrank 2",
+            code: "SCH2"
+          })
+        },
+        storageShelf: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: targetShelfId,
+            name: "Zielregal",
+            code: "SB2",
+            description: null,
+            mode: "OPEN_AREA",
+            storageLocationId: targetLocationId
+          })
         },
         stockMovement: {
           create: txStockMovementCreateMock
@@ -126,8 +166,7 @@ describe("item transfer routes", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             storageLocationId: targetLocationId,
-            storageArea: "Zielregal",
-            bin: "B-12",
+            storageShelfId: targetShelfId,
             note: "Von Werkbank umgelagert"
           })
         })
@@ -140,17 +179,20 @@ describe("item transfer routes", () => {
     await expect(response.json()).resolves.toEqual(
       expect.objectContaining({
         storageLocationId: targetLocationId,
-        storageArea: "Zielregal",
-        bin: "B-12",
+        storageShelfId: targetShelfId,
         transferred: true
       })
     );
     expect(txItemUpdateMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
         data: {
+          placementStatus: "PLACED",
           storageLocationId: targetLocationId,
+          storageShelfId: targetShelfId,
           storageArea: "Zielregal",
-          bin: "B-12"
+          storageBinId: null,
+          binSlot: null
         }
       })
     );
@@ -168,6 +210,7 @@ describe("item transfer routes", () => {
     const allowedSourceLocationId = "33333333-3333-4333-8333-333333333333";
     const blockedSourceLocationId = "44444444-4444-4444-8444-444444444444";
     const targetLocationId = "55555555-5555-4555-8555-555555555555";
+    const targetShelfId = "99999999-2222-4333-8444-555555555555";
 
     requireWriteAccessMock.mockResolvedValue({
       user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
@@ -206,6 +249,14 @@ describe("item transfer routes", () => {
       name: "Schrank 5",
       code: "SCH5"
     });
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: targetShelfId,
+      name: "Zielregal",
+      code: "SB5",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: targetLocationId
+    });
 
     const { POST } = await import("@/app/api/items/bulk-transfer/route");
     const response = await POST(
@@ -219,6 +270,7 @@ describe("item transfer routes", () => {
               "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
             ],
             storageLocationId: targetLocationId,
+            storageShelfId: targetShelfId,
             dryRun: true
           })
         })
@@ -235,7 +287,8 @@ describe("item transfer routes", () => {
         transferableCount: 0,
         target: expect.objectContaining({
           storageLocationId: targetLocationId,
-          storageLocationName: "Schrank 5"
+          storageLocationName: "Schrank 5",
+          storageShelfId: targetShelfId
         }),
         blockedItems: [
           expect.objectContaining({
@@ -261,6 +314,7 @@ describe("item transfer routes", () => {
     const sourceLocationA = "66666666-6666-4666-8666-666666666666";
     const sourceLocationB = "77777777-7777-4777-8777-777777777777";
     const targetLocationId = "88888888-8888-4888-8888-888888888888";
+    const targetShelfId = "aaaaaaaa-2222-4333-8444-555555555555";
     const txItemUpdateMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -268,8 +322,10 @@ describe("item transfer routes", () => {
         labelCode: "EL-KB-010",
         name: "Kabel 1",
         storageLocationId: targetLocationId,
+        storageShelfId: targetShelfId,
         storageArea: "T1",
-        bin: "B-1",
+        storageBinId: null,
+        binSlot: null,
         stock: 10,
         minStock: 1,
         unit: "M"
@@ -279,8 +335,10 @@ describe("item transfer routes", () => {
         labelCode: "EL-KB-011",
         name: "Kabel 2",
         storageLocationId: targetLocationId,
+        storageShelfId: targetShelfId,
         storageArea: "T1",
-        bin: "B-1",
+        storageBinId: null,
+        binSlot: null,
         stock: 8,
         minStock: 1,
         unit: "M"
@@ -323,11 +381,35 @@ describe("item transfer routes", () => {
       name: "Zentrallager",
       code: "ZL"
     });
-    storageShelfFindFirstMock.mockResolvedValue({ id: "shelf-2" });
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: targetShelfId,
+      name: "T1",
+      code: "SBT1",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: targetLocationId
+    });
     transactionMock.mockImplementation(async (callback: (db: any) => Promise<unknown>) =>
       callback({
         item: {
           update: txItemUpdateMock
+        },
+        storageLocation: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: targetLocationId,
+            name: "Zentrallager",
+            code: "ZL"
+          })
+        },
+        storageShelf: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: targetShelfId,
+            name: "T1",
+            code: "SBT1",
+            description: null,
+            mode: "OPEN_AREA",
+            storageLocationId: targetLocationId
+          })
         }
       })
     );
@@ -344,8 +426,7 @@ describe("item transfer routes", () => {
               "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
             ],
             storageLocationId: targetLocationId,
-            storageArea: "T1",
-            bin: "B-1",
+            storageShelfId: targetShelfId,
             note: "Neu sortiert"
           })
         })
@@ -380,16 +461,29 @@ describe("item transfer routes", () => {
   it("treats location-only PATCH requests as transfers", async () => {
     const sourceLocationId = "99999999-9999-4999-8999-999999999999";
     const targetLocationId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+    const sourceShelfId = "bbbbbbbb-2222-4333-8444-555555555555";
+    const targetShelfId = "cccccccc-2222-4333-8444-555555555555";
     const txItemUpdateMock = vi.fn().mockResolvedValue({
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       labelCode: "EL-KB-020",
       categoryId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       storageLocationId: targetLocationId,
+      storageShelfId: targetShelfId,
       storageArea: null,
-      bin: "Bin-7",
+      storageBinId: null,
+      binSlot: null,
       stock: 4,
       minStock: 1,
       unit: "STK"
+      ,
+      storageShelf: {
+        id: sourceShelfId,
+        name: "A1",
+        code: "SB1",
+        description: null,
+        mode: "OPEN_AREA",
+        storageLocationId: sourceLocationId
+      }
     });
     const txLocationFindUniqueMock = vi.fn().mockResolvedValue({
       id: targetLocationId,
@@ -408,16 +502,39 @@ describe("item transfer routes", () => {
       user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
     });
     resolveAllowedLocationIdsMock.mockResolvedValue(null);
+    storageLocationFindUniqueMock.mockResolvedValue({
+      id: targetLocationId,
+      name: "Schrank 9",
+      code: "SCH9"
+    });
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: targetShelfId,
+      name: "Schrank 9",
+      code: "SB9",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: targetLocationId
+    });
     itemFindUniqueMock.mockResolvedValue({
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       labelCode: "EL-KB-020",
       categoryId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       storageLocationId: sourceLocationId,
+      storageShelfId: sourceShelfId,
       storageArea: "A1",
-      bin: "Bin-7",
+      storageBinId: null,
+      binSlot: null,
       stock: 4,
       minStock: 1,
-      unit: "STK"
+      unit: "STK",
+      storageShelf: {
+        id: sourceShelfId,
+        name: "A1",
+        code: "SB1",
+        description: null,
+        mode: "OPEN_AREA",
+        storageLocationId: sourceLocationId
+      }
     });
     reservationAggregateMock.mockResolvedValue({ _sum: { reservedQty: 0 } });
     transactionMock.mockImplementation(async (callback: (db: any) => Promise<unknown>) =>
@@ -430,7 +547,14 @@ describe("item transfer routes", () => {
           findMany: txLocationFindManyMock
         },
         storageShelf: {
-          findFirst: vi.fn()
+          findUnique: vi.fn().mockResolvedValue({
+            id: targetShelfId,
+            name: "Schrank 9",
+            code: "SB9",
+            description: null,
+            mode: "OPEN_AREA",
+            storageLocationId: targetLocationId
+          })
         }
       })
     );
@@ -442,7 +566,8 @@ describe("item transfer routes", () => {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            storageLocationId: targetLocationId
+            storageLocationId: targetLocationId,
+            storageShelfId: targetShelfId
           })
         })
       ),
@@ -465,6 +590,8 @@ describe("item transfer routes", () => {
   it("writes separate transfer and update audit entries for mixed PATCH requests", async () => {
     const sourceLocationId = "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb";
     const targetLocationId = "cccccccc-1111-4111-8111-cccccccccccc";
+    const sourceShelfId = "dddddddd-2222-4333-8444-555555555555";
+    const targetShelfId = "eeeeeeee-2222-4333-8444-555555555555";
     const txItemUpdateMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -472,8 +599,10 @@ describe("item transfer routes", () => {
         labelCode: "EL-KB-021",
         categoryId: "eeeeeeee-1111-4111-8111-eeeeeeeeeeee",
         storageLocationId: targetLocationId,
+        storageShelfId: targetShelfId,
         storageArea: null,
-        bin: "B-9",
+        storageBinId: null,
+        binSlot: null,
         stock: 3,
         minStock: 1,
         unit: "STK",
@@ -484,8 +613,10 @@ describe("item transfer routes", () => {
         labelCode: "EL-KB-021",
         categoryId: "eeeeeeee-1111-4111-8111-eeeeeeeeeeee",
         storageLocationId: targetLocationId,
+        storageShelfId: targetShelfId,
         storageArea: null,
-        bin: "B-9",
+        storageBinId: null,
+        binSlot: null,
         stock: 3,
         minStock: 1,
         unit: "STK",
@@ -496,17 +627,41 @@ describe("item transfer routes", () => {
       user: { id: "user-1", role: "READ_WRITE", email: "rw@example.com" }
     });
     resolveAllowedLocationIdsMock.mockResolvedValue(null);
+    storageLocationFindUniqueMock.mockResolvedValue({
+      id: targetLocationId,
+      name: "Laborregal",
+      code: "LAB"
+    });
+    storageShelfFindUniqueMock.mockResolvedValue({
+      id: targetShelfId,
+      name: "Laborregal",
+      code: "SBL",
+      description: null,
+      mode: "OPEN_AREA",
+      storageLocationId: targetLocationId
+    });
     itemFindUniqueMock.mockResolvedValue({
       id: "dddddddd-1111-4111-8111-dddddddddddd",
       labelCode: "EL-KB-021",
       categoryId: "eeeeeeee-1111-4111-8111-eeeeeeeeeeee",
       storageLocationId: sourceLocationId,
+      storageShelfId: sourceShelfId,
       storageArea: "A2",
-      bin: "B-9",
+      storageBinId: null,
+      binSlot: null,
       stock: 3,
       minStock: 1,
       unit: "STK",
       manufacturer: "Alt"
+      ,
+      storageShelf: {
+        id: sourceShelfId,
+        name: "A2",
+        code: "SB2",
+        description: null,
+        mode: "OPEN_AREA",
+        storageLocationId: sourceLocationId
+      }
     });
     reservationAggregateMock.mockResolvedValue({ _sum: { reservedQty: 0 } });
     transactionMock.mockImplementation(async (callback: (db: any) => Promise<unknown>) =>
@@ -533,7 +688,14 @@ describe("item transfer routes", () => {
           ])
         },
         storageShelf: {
-          findFirst: vi.fn()
+          findUnique: vi.fn().mockResolvedValue({
+            id: targetShelfId,
+            name: "Laborregal",
+            code: "SBL",
+            description: null,
+            mode: "OPEN_AREA",
+            storageLocationId: targetLocationId
+          })
         }
       })
     );
@@ -546,6 +708,7 @@ describe("item transfer routes", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             storageLocationId: targetLocationId,
+            storageShelfId: targetShelfId,
             manufacturer: "Neu"
           })
         })

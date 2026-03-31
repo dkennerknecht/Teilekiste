@@ -26,7 +26,6 @@ type MergeCoreFieldKey =
   | "purchaseUrl"
   | "storageLocationId"
   | "storageArea"
-  | "bin"
   | "minStock";
 
 export class DuplicateMergeError extends Error {
@@ -65,7 +64,6 @@ function coreFieldMeta() {
     { key: "purchaseUrl", label: "Kauf-URL" },
     { key: "storageLocationId", label: "Lagerort" },
     { key: "storageArea", label: "Regal" },
-    { key: "bin", label: "Fach" },
     { key: "minStock", label: "Mindestbestand" }
   ] as const satisfies Array<{ key: MergeCoreFieldKey; label: string }>;
 }
@@ -498,7 +496,6 @@ export async function performDuplicateMerge(
       purchaseUrl: selectValue(source.purchaseUrl || null, target.purchaseUrl || null, coreSelections.purchaseUrl),
       storageLocationId: selectValue(source.storageLocationId, target.storageLocationId, coreSelections.storageLocationId),
       storageArea: selectValue(source.storageArea || null, target.storageArea || null, coreSelections.storageArea),
-      bin: selectValue(source.bin || null, target.bin || null, coreSelections.bin),
       minStock: selectValue(source.minStock ?? null, target.minStock ?? null, coreSelections.minStock),
       stock: target.stock + source.stock
     }

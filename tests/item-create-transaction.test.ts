@@ -44,6 +44,14 @@ describe("Item create transaction", () => {
         })
       },
       storageShelf: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "77777777-7777-4777-8777-777777777777",
+          name: "Regal A",
+          code: "SB1",
+          description: null,
+          mode: "OPEN_AREA",
+          storageLocationId: "11111111-1111-4111-8111-111111111111"
+        }),
         findFirst: vi.fn().mockResolvedValue(null)
       },
       storageBin: {
@@ -94,6 +102,7 @@ describe("Item create transaction", () => {
           description: "",
           categoryId: "22222222-2222-4222-8222-222222222222",
           storageLocationId: "11111111-1111-4111-8111-111111111111",
+          storageShelfId: "77777777-7777-4777-8777-777777777777",
           stock: 5,
           unit: "STK",
           minStock: 1,
@@ -140,6 +149,14 @@ describe("Item create transaction", () => {
         })
       },
       storageShelf: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "77777777-7777-4777-8777-777777777777",
+          name: "Kabelregal",
+          code: "SB2",
+          description: null,
+          mode: "OPEN_AREA",
+          storageLocationId: "11111111-1111-4111-8111-111111111111"
+        }),
         findFirst: vi.fn().mockResolvedValue(null)
       },
       storageBin: {
@@ -184,6 +201,7 @@ describe("Item create transaction", () => {
           description: "",
           categoryId: "22222222-2222-4222-8222-222222222222",
           storageLocationId: "11111111-1111-4111-8111-111111111111",
+          storageShelfId: "77777777-7777-4777-8777-777777777777",
           stock: 12.5,
           unit: "M",
           minStock: 0.25,
@@ -252,7 +270,7 @@ describe("Item create transaction", () => {
           placementStatus: "INCOMING",
           storageLocationId: null,
           storageArea: null,
-          bin: null,
+          storageShelfId: null,
           storageBinId: null,
           binSlot: null
         })

@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         typeName: item.labelType?.name || null,
         storageLocation: item.storageLocation?.name || null,
         storageArea: item.storageArea,
-        bin: formatItemPosition(item) || item.bin,
+        position: formatItemPosition(item),
         stock: serializeStoredQuantity(item.unit, item.stock),
         available: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reserved, item.placementStatus)),
         unit: item.unit,

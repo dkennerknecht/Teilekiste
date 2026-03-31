@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { previewStorageBinSlotCountChange, resolveItemPlacement } from "@/lib/storage-bins";
+import {
+  normalizeStorageBinCode,
+  previewStorageBinSlotCountChange,
+  resolveItemPlacement
+} from "@/lib/storage-bins";
 
 describe("storage bin helpers", () => {
+  it("normalizes single-digit drawer codes to two digits", () => {
+    expect(normalizeStorageBinCode("a1")).toBe("A01");
+    expect(normalizeStorageBinCode("A12")).toBe("A12");
+  });
+
   it("allows incoming items without any location assignment", async () => {
     const placement = await resolveItemPlacement(
       {
@@ -19,8 +28,8 @@ describe("storage bin helpers", () => {
       expect.objectContaining({
         placementStatus: "INCOMING",
         storageLocationId: null,
+        storageShelfId: null,
         storageArea: null,
-        bin: null,
         storageBinId: null,
         binSlot: null
       })
@@ -38,9 +47,18 @@ describe("storage bin helpers", () => {
             id: "bin-1",
             code: "A12",
             storageLocationId: "loc-1",
+            storageShelfId: "shelf-1",
             storageArea: "Magazin A",
             slotCount: 3,
-            isActive: true
+            isActive: true,
+            storageShelf: {
+              id: "shelf-1",
+              name: "Magazin A",
+              code: "SB1",
+              description: null,
+              mode: "DRAWER_HOST",
+              storageLocationId: "loc-1"
+            }
           })
         },
         item: { findFirst: itemFindFirstMock }
@@ -57,8 +75,8 @@ describe("storage bin helpers", () => {
       expect.objectContaining({
         placementStatus: "PLACED",
         storageLocationId: "loc-1",
+        storageShelfId: "shelf-1",
         storageArea: "Magazin A",
-        bin: "A12",
         storageBinId: "bin-1",
         binSlot: 2
       })

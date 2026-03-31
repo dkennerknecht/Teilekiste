@@ -24,8 +24,10 @@ function humanFieldName(field: string) {
     description: "Beschreibung",
     categoryId: "Kategorie",
     storageLocationId: "Lagerort",
+    storageShelfId: "Regal",
     storageArea: "Regal",
-    bin: "Fach",
+    storageBinId: "Drawer",
+    binSlot: "Unterfach",
     stock: "Bestand",
     minStock: "Mindestbestand",
     manufacturer: "Hersteller",
@@ -54,10 +56,15 @@ function summarizeDiff(before: Record<string, unknown> | null, after: Record<str
 
 function formatStoragePlace(payload: Record<string, unknown> | null) {
   if (!payload) return "Unbekannt";
+  const displayPosition = String(payload.displayPosition || "").trim();
+  if (displayPosition) return displayPosition;
   const location = String(payload.storageLocationName || payload.storageLocationId || "").trim() || "Unbekannt";
   const storageArea = String(payload.storageArea || "").trim();
-  const bin = String(payload.bin || "").trim();
-  return [location, storageArea || null, bin || null].filter(Boolean).join(" / ");
+  const shelf = String(payload.storageShelfCode || payload.storageShelfName || "").trim();
+  const drawer = String(payload.storageBinCode || "").trim();
+  const slot = typeof payload.binSlot === "number" ? String(payload.binSlot) : "";
+  const drawerWithSlot = drawer ? `${drawer}${slot ? `-${slot}` : ""}` : "";
+  return [location, storageArea || null, shelf || null, drawerWithSlot || null].filter(Boolean).join(" / ");
 }
 
 export function summarizeAuditEntry(entry: AuditLike) {
@@ -87,7 +94,7 @@ export function summarizeAuditEntry(entry: AuditLike) {
       const scope = formatStoragePlace({
         storageLocationName: String(after?.storageLocationName || after?.storageLocationId || "Unbekannt"),
         storageArea: String(after?.storageArea || ""),
-        bin: null
+        storageBinCode: null
       });
       return `Inventur-Session angelegt: ${scope}`;
     }

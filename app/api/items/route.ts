@@ -17,6 +17,7 @@ function serializeListItemQuantities<T extends { unit: string; stock: number; mi
   reservedQty: number,
   availableStock: number
 ) {
+  const displayPosition = formatItemPosition(item as never);
   return {
     ...item,
     stock: serializeStoredQuantity(item.unit, item.stock),
@@ -24,7 +25,7 @@ function serializeListItemQuantities<T extends { unit: string; stock: number; mi
     minStock: serializeStoredQuantity(item.unit, item.minStock),
     reservedQty: serializeStoredQuantity(item.unit, reservedQty),
     availableStock: serializeStoredQuantity(item.unit, availableStock),
-    displayBin: formatItemPosition(item as never)
+    displayPosition
   };
 }
 
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
     include: {
       category: true,
       storageLocation: true,
+      storageShelf: { select: { id: true, name: true, code: true, description: true, mode: true } },
       storageBin: { select: { id: true, code: true, slotCount: true } },
       tags: { include: { tag: true } },
       _count: { select: { images: true, attachments: true, reservations: true } },
@@ -125,8 +127,8 @@ export async function POST(req: NextRequest) {
         const placement = await resolveItemPlacement(tx, {
           placementStatus: parsed.data.placementStatus,
           storageLocationId: parsed.data.storageLocationId || null,
+          storageShelfId: parsed.data.storageShelfId || null,
           storageArea: parsed.data.storageArea || null,
-          bin: parsed.data.bin || null,
           storageBinId: parsed.data.storageBinId || null,
           binSlot: parsed.data.binSlot ?? null,
           allowedLocationIds
@@ -145,8 +147,8 @@ export async function POST(req: NextRequest) {
             categoryId: parsed.data.categoryId,
             typeId: parsed.data.typeId,
             storageLocationId: placement.storageLocationId,
+            storageShelfId: placement.storageShelfId,
             storageArea: placement.storageArea,
-            bin: placement.bin,
             storageBinId: placement.storageBinId,
             binSlot: placement.binSlot,
             placementStatus: placement.placementStatus,
@@ -206,7 +208,7 @@ export async function POST(req: NextRequest) {
           stock: serializeStoredQuantity(item.unit, item.stock),
           incomingQty: serializeStoredQuantity(item.unit, item.incomingQty),
           minStock: serializeStoredQuantity(item.unit, item.minStock),
-          displayBin: formatItemPosition(item as never)
+          displayPosition: formatItemPosition(item as never)
         },
         { status: 201 }
       );

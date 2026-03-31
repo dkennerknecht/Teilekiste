@@ -51,11 +51,21 @@ export async function GET(req: NextRequest) {
   });
 
   if (!mergedMatch?.mergedIntoItemId) {
-    return NextResponse.json(items.map((item) => ({ ...item, displayBin: formatItemPosition(item) })));
+    return NextResponse.json(
+      items.map((item) => {
+        const displayPosition = formatItemPosition(item);
+        return { ...item, displayPosition };
+      })
+    );
   }
 
   if (items.some((item) => item.id === mergedMatch.mergedIntoItemId)) {
-    return NextResponse.json(items.map((item) => ({ ...item, displayBin: formatItemPosition(item) })));
+    return NextResponse.json(
+      items.map((item) => {
+        const displayPosition = formatItemPosition(item);
+        return { ...item, displayPosition };
+      })
+    );
   }
 
   const mergedTarget = await prisma.item.findUnique({
@@ -68,7 +78,8 @@ export async function GET(req: NextRequest) {
       typeId: true,
       storageLocationId: true,
       storageArea: true,
-      bin: true,
+      storageShelfId: true,
+      storageBinId: true,
       binSlot: true,
       stock: true,
       unit: true,
@@ -83,6 +94,9 @@ export async function GET(req: NextRequest) {
       mergedAt: true,
       createdAt: true,
       updatedAt: true,
+      storageShelf: {
+        select: { id: true, name: true, code: true }
+      },
       storageBin: {
         select: { id: true, code: true }
       }
@@ -90,16 +104,29 @@ export async function GET(req: NextRequest) {
   });
 
   if (!mergedTarget || mergedTarget.deletedAt || mergedTarget.isArchived) {
-    return NextResponse.json(items.map((item) => ({ ...item, displayBin: formatItemPosition(item) })));
+    return NextResponse.json(
+      items.map((item) => {
+        const displayPosition = formatItemPosition(item);
+        return { ...item, displayPosition };
+      })
+    );
   }
 
   if (mergedTarget.storageLocationId && allowedLocationIds && !allowedLocationIds.includes(mergedTarget.storageLocationId)) {
-    return NextResponse.json(items.map((item) => ({ ...item, displayBin: formatItemPosition(item) })));
+    return NextResponse.json(
+      items.map((item) => {
+        const displayPosition = formatItemPosition(item);
+        return { ...item, displayPosition };
+      })
+    );
   }
 
   return NextResponse.json(
     [mergedTarget, ...items]
       .slice(0, limit)
-      .map((item) => ({ ...item, displayBin: formatItemPosition(item as never) }))
+      .map((item) => {
+        const displayPosition = formatItemPosition(item as never);
+        return { ...item, displayPosition };
+      })
   );
 }

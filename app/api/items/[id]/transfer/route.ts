@@ -15,6 +15,18 @@ function mapTransferError(error: unknown) {
       return { status: 400, body: { error: "Ziel-Lagerort nicht gefunden" } };
     case "TRANSFER_TARGET_SHELF_INVALID":
       return { status: 400, body: { error: "Regal/Bereich ist fuer den Ziel-Lagerort ungueltig" } };
+    case "TRANSFER_TARGET_SHELF_OPEN_AREA_ONLY":
+      return { status: 400, body: { error: "Dieses Regal erlaubt keine Drawer-Belegung" } };
+    case "TRANSFER_TARGET_BIN_REQUIRED":
+      return { status: 400, body: { error: "Drawer ist fuer dieses Regal erforderlich" } };
+    case "TRANSFER_TARGET_BIN_INVALID":
+      return { status: 400, body: { error: "Drawer ist fuer das Ziel ungueltig" } };
+    case "TRANSFER_TARGET_BIN_SLOT_REQUIRED":
+      return { status: 400, body: { error: "Unterfach ist erforderlich" } };
+    case "TRANSFER_TARGET_BIN_SLOT_INVALID":
+      return { status: 400, body: { error: "Unterfach liegt ausserhalb der Drawer-Kapazitaet" } };
+    case "TRANSFER_TARGET_BIN_SLOT_OCCUPIED":
+      return { status: 409, body: { error: "Dieses Unterfach ist bereits belegt" } };
     default:
       return null;
   }
@@ -66,7 +78,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const validatedTarget = await validateTransferTarget(prisma, {
       storageLocationId: body.storageLocationId,
-      storageArea: body.storageArea,
+      storageShelfId: body.storageShelfId || null,
+      storageBinId: body.storageBinId || null,
+      binSlot: body.binSlot ?? null,
       allowedLocationIds
     });
     const result = await prisma.$transaction(async (tx) =>
@@ -74,13 +88,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         item,
         target: {
           storageLocationId: body.storageLocationId,
-          storageArea: validatedTarget.storageArea,
-          bin: body.bin
+          storageShelfId: validatedTarget.storageShelf.id,
+          storageBinId: validatedTarget.storageBin?.id || null,
+          binSlot: validatedTarget.binSlot ?? null
         },
         userId: auth.user!.id,
         note: body.note,
         sourceLocation: item.storageLocation,
-        targetLocation: validatedTarget.location
+        targetLocation: validatedTarget.location,
+        targetShelf: validatedTarget.storageShelf,
+        targetBin: validatedTarget.storageBin
       })
     );
     const transferredItem = result.item as typeof item;

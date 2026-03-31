@@ -24,6 +24,7 @@ function safeParseAuditPayload(value?: string | null) {
 }
 
 function serializeItemDetailQuantities(item: any, reservedQty: number) {
+  const displayPosition = formatItemPosition(item);
   return {
     ...item,
     stock: serializeStoredQuantity(item.unit, item.stock),
@@ -39,7 +40,7 @@ function serializeItemDetailQuantities(item: any, reservedQty: number) {
     })),
     reservedQty: serializeStoredQuantity(item.unit, reservedQty),
     availableStock: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reservedQty, item.placementStatus)),
-    displayBin: formatItemPosition(item)
+    displayPosition
   };
 }
 
@@ -51,6 +52,18 @@ function mapTransferError(error: unknown) {
       return { status: 400, body: { error: "Ziel-Lagerort nicht gefunden" } };
     case "TRANSFER_TARGET_SHELF_INVALID":
       return { status: 400, body: { error: "Regal/Bereich ist fuer den Ziel-Lagerort ungueltig" } };
+    case "TRANSFER_TARGET_SHELF_OPEN_AREA_ONLY":
+      return { status: 400, body: { error: "Dieses Regal erlaubt keine Drawer-Belegung" } };
+    case "TRANSFER_TARGET_BIN_REQUIRED":
+      return { status: 400, body: { error: "Drawer ist fuer dieses Regal erforderlich" } };
+    case "TRANSFER_TARGET_BIN_INVALID":
+      return { status: 400, body: { error: "Drawer ist fuer das Ziel ungueltig" } };
+    case "TRANSFER_TARGET_BIN_SLOT_REQUIRED":
+      return { status: 400, body: { error: "Unterfach ist erforderlich" } };
+    case "TRANSFER_TARGET_BIN_SLOT_INVALID":
+      return { status: 400, body: { error: "Unterfach liegt ausserhalb der Drawer-Kapazitaet" } };
+    case "TRANSFER_TARGET_BIN_SLOT_OCCUPIED":
+      return { status: 409, body: { error: "Dieses Unterfach ist bereits belegt" } };
     default:
       return null;
   }
@@ -66,12 +79,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       category: true,
       labelType: true,
       storageLocation: true,
+      storageShelf: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          description: true,
+          mode: true
+        }
+      },
       storageBin: {
         select: {
           id: true,
           code: true,
           slotCount: true,
           storageLocationId: true,
+          storageShelfId: true,
           storageArea: true
         }
       },
@@ -270,11 +293,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     typeId: _typeId,
     categoryId,
     placementStatus: _placementStatus,
+    storageShelfId: _storageShelfId,
     storageBinId: _storageBinId,
     binSlot: _binSlot,
     storageLocationId: _storageLocationId,
     storageArea: _storageArea,
-    bin: _bin,
     stock: _stock,
     incomingQty: _incomingQty,
     unit: _unit,
@@ -303,40 +326,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const placementFieldKeys = ["placementStatus", "storageBinId", "binSlot", "storageLocationId", "storageArea", "bin"];
+  const placementFieldKeys = ["placementStatus", "storageLocationId", "storageShelfId", "storageArea", "storageBinId", "binSlot"];
   const hasRequestedPlacementChanges = placementFieldKeys.some((key) => key in body);
-  const targetStorageLocationId = body.storageLocationId !== undefined ? body.storageLocationId || null : existing.storageLocationId || null;
-  const targetStorageArea =
-    body.storageArea !== undefined
-      ? body.storageArea?.trim() || null
-      : body.storageLocationId && body.storageLocationId !== existing.storageLocationId
-        ? null
-        : existing.storageArea || null;
-  const targetBin = body.bin !== undefined ? body.bin?.trim() || null : existing.bin || null;
-  const locationChanged =
-    targetStorageLocationId !== existing.storageLocationId ||
-    targetStorageArea !== (existing.storageArea || null) ||
-    targetBin !== (existing.bin || null);
-  const usesLegacyTransferOnly =
-    locationChanged &&
-    !("placementStatus" in body) &&
-    !("storageBinId" in body) &&
-    !("binSlot" in body);
   let resolvedPlacement = {
     placementStatus: normalizePlacementStatus(existing.placementStatus, "PLACED"),
     storageLocationId: existing.storageLocationId || null,
+    storageShelfId: existing.storageShelfId || null,
     storageArea: existing.storageArea || null,
-    bin: existing.bin || null,
     storageBinId: existing.storageBinId || null,
     binSlot: existing.binSlot ?? null
   };
-  if (hasRequestedPlacementChanges && !usesLegacyTransferOnly) {
+  if (hasRequestedPlacementChanges) {
     try {
       resolvedPlacement = await resolveItemPlacement(prisma, {
         placementStatus: body.placementStatus ?? existing.placementStatus,
         storageLocationId: body.storageLocationId !== undefined ? body.storageLocationId || null : existing.storageLocationId || null,
+        storageShelfId:
+          body.storageShelfId !== undefined
+            ? body.storageShelfId || null
+            : body.storageArea !== undefined
+              ? null
+              : existing.storageShelfId || null,
         storageArea: body.storageArea !== undefined ? body.storageArea || null : existing.storageArea || null,
-        bin: body.bin !== undefined ? body.bin || null : existing.bin || null,
         storageBinId: body.storageBinId !== undefined ? body.storageBinId || null : existing.storageBinId || null,
         binSlot: body.binSlot !== undefined ? body.binSlot ?? null : existing.binSlot ?? null,
         allowedLocationIds,
@@ -353,29 +364,30 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const placementChanged =
     resolvedPlacement.placementStatus !== normalizePlacementStatus(existing.placementStatus, "PLACED") ||
     resolvedPlacement.storageLocationId !== (existing.storageLocationId || null) ||
+    resolvedPlacement.storageShelfId !== (existing.storageShelfId || null) ||
     resolvedPlacement.storageArea !== (existing.storageArea || null) ||
-    resolvedPlacement.bin !== (existing.bin || null) ||
     resolvedPlacement.storageBinId !== (existing.storageBinId || null) ||
     resolvedPlacement.binSlot !== (existing.binSlot ?? null);
   const hasRequestedNonTransferChanges = Object.keys(body).some(
-    (key) => !["storageLocationId", "storageArea", "bin"].includes(key)
+    (key) => !placementFieldKeys.includes(key)
   );
 
-  if (!locationChanged && !placementChanged && !hasRequestedNonTransferChanges) {
+  if (!placementChanged && !hasRequestedNonTransferChanges) {
     return NextResponse.json({
       ...existing,
       stock: serializeStoredQuantity(existing.unit, existing.stock),
       incomingQty: serializeStoredQuantity(existing.unit, existing.incomingQty),
       minStock: serializeStoredQuantity(existing.unit, existing.minStock),
-      displayBin: formatItemPosition(existing as never)
+      displayPosition: formatItemPosition(existing as never)
     });
   }
 
   try {
     const item = await prisma.$transaction(async (tx) => {
       let workingItem = existing;
+      let transferHandled = false;
 
-      if (locationChanged && usesLegacyTransferOnly) {
+      if (placementChanged && resolvedPlacement.placementStatus === "PLACED") {
         if (existing.storageBinId) {
           const siblingCount = await tx.item.count({
             where: {
@@ -391,22 +403,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           }
         }
         const validatedTarget = await validateTransferTarget(tx, {
-          storageLocationId: targetStorageLocationId!,
-          storageArea: targetStorageArea,
-          allowedLocationIds
+          storageLocationId: resolvedPlacement.storageLocationId!,
+          storageShelfId: resolvedPlacement.storageShelfId!,
+          storageBinId: resolvedPlacement.storageBinId,
+          binSlot: resolvedPlacement.binSlot,
+          allowedLocationIds,
+          existingItemId: existing.id
         });
         const transferResult = await applyItemTransfer(tx, {
           item: existing,
           target: {
             storageLocationId: validatedTarget.location.id,
-            storageArea: validatedTarget.storageArea,
-            bin: targetBin
+            storageShelfId: validatedTarget.storageShelf.id,
+            storageBinId: validatedTarget.storageBin?.id || null,
+            binSlot: validatedTarget.binSlot
           },
           userId: auth.user!.id,
           sourceLocation: null,
-          targetLocation: validatedTarget.location
+          targetLocation: validatedTarget.location,
+          targetShelf: validatedTarget.storageShelf,
+          targetBin: validatedTarget.storageBin
         });
         workingItem = transferResult.item as typeof existing;
+        transferHandled = transferResult.changed;
       }
 
       if (!hasRequestedNonTransferChanges) {
@@ -424,12 +443,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           ...(nextIncomingQty !== undefined ? { incomingQty: nextIncomingQty } : {}),
           ...(body.unit !== undefined ? { unit: nextUnit } : {}),
           ...(body.typeId !== undefined ? { typeId: nextTypeId } : {}),
-          ...(hasRequestedPlacementChanges && !usesLegacyTransferOnly
+          ...(placementChanged && !transferHandled
             ? {
                 placementStatus: resolvedPlacement.placementStatus,
                 storageLocationId: resolvedPlacement.storageLocationId,
+                storageShelfId: resolvedPlacement.storageShelfId,
                 storageArea: resolvedPlacement.storageArea,
-                bin: resolvedPlacement.bin,
                 storageBinId: resolvedPlacement.storageBinId,
                 binSlot: resolvedPlacement.binSlot
               }
@@ -468,21 +487,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         }
       }
 
-      const auditBefore = locationChanged
-        ? {
-            ...existing,
-            storageLocationId: targetStorageLocationId,
-            storageArea: targetStorageArea,
-            bin: targetBin
-          }
-        : existing;
       await auditLog(
         {
           userId: auth.user!.id,
           action: "ITEM_UPDATE",
           entity: "Item",
           entityId: updatedItem.id,
-          before: auditBefore,
+          before: workingItem,
           after: updatedItem
         },
         tx
@@ -496,7 +507,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       stock: serializeStoredQuantity(item.unit, item.stock),
       incomingQty: serializeStoredQuantity(item.unit, item.incomingQty),
       minStock: serializeStoredQuantity(item.unit, item.minStock),
-      displayBin: formatItemPosition(item as never)
+      displayPosition: formatItemPosition(item as never)
     });
   } catch (error) {
     if ((error as Error).message === "SHARED_DRAWER_SPLIT_BLOCKED") {
