@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 
 type LocationRow = { id: string; name: string; code?: string | null };
 type ShelfRow = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
@@ -118,7 +119,7 @@ export default function AdminBinsPage() {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(data?.error || tr("Anfrage fehlgeschlagen", "Request failed"));
+      throw new Error(translateApiErrorMessage(language, data?.error) || tr("Anfrage fehlgeschlagen", "Request failed"));
     }
     return data;
   }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 
 type LocationOption = {
   id: string;
@@ -158,7 +159,7 @@ export default function InventoryPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || tr("Inventur-Session konnte nicht angelegt werden.", "Inventory session could not be created."));
+        setError(translateApiErrorMessage(language, data?.error) || tr("Inventur-Session konnte nicht angelegt werden.", "Inventory session could not be created."));
         return;
       }
 

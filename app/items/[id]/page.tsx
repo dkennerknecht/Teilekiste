@@ -21,6 +21,7 @@ import {
   RotateCcw
 } from "lucide-react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { ItemImageGallery } from "@/components/item-image-gallery";
 import { ItemAuditSection } from "@/components/item-audit-section";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
@@ -345,7 +346,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setArchiveError(data?.error || tr("Der Archiv-Status konnte nicht aktualisiert werden.", "Archive status could not be updated."));
+      setArchiveError(translateApiErrorMessage(language, data?.error) || tr("Der Archiv-Status konnte nicht aktualisiert werden.", "Archive status could not be updated."));
       setArchiveBusy(false);
       return;
     }
@@ -372,7 +373,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        setDeleteError(data?.error || tr("Loeschen fehlgeschlagen.", "Delete failed."));
+        setDeleteError(translateApiErrorMessage(language, data?.error) || tr("Loeschen fehlgeschlagen.", "Delete failed."));
         setDeleteBusy(false);
         return;
       }
@@ -409,7 +410,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setTransferError(data?.error || tr("Umlagerung fehlgeschlagen.", "Transfer failed."));
+        setTransferError(translateApiErrorMessage(language, data?.error) || tr("Umlagerung fehlgeschlagen.", "Transfer failed."));
         return;
       }
 
@@ -509,7 +510,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                         return;
                       }
                       const data = await res.json().catch(() => null);
-                      setSaveError(data?.error || tr("Speichern fehlgeschlagen.", "Save failed."));
+                      setSaveError(translateApiErrorMessage(language, data?.error) || tr("Speichern fehlgeschlagen.", "Save failed."));
                     } catch {
                       setSaveError(tr("Speichern fehlgeschlagen.", "Save failed."));
                     } finally {

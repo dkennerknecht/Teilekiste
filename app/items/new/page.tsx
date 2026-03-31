@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
@@ -165,7 +166,7 @@ export default function NewItemPage() {
     setCreatingTag(false);
 
     if (!res.ok || !data?.id) {
-      alert(data?.error || tr("Tag anlegen fehlgeschlagen", "Failed to create tag"));
+      alert(translateApiErrorMessage(language, data?.error) || tr("Tag anlegen fehlgeschlagen", "Failed to create tag"));
       return;
     }
 
@@ -278,7 +279,7 @@ export default function NewItemPage() {
               }
 
               const error = await res.json().catch(() => null);
-              alert(error?.error || tr("Anlegen fehlgeschlagen", "Create failed"));
+              alert(translateApiErrorMessage(language, error?.error) || tr("Anlegen fehlgeschlagen", "Create failed"));
             } catch {
               alert(tr("Anlegen fehlgeschlagen", "Create failed"));
             } finally {

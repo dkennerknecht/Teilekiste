@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { TRASH_RETENTION_DAYS, getTrashDaysRemaining, getTrashExpiryDate } from "@/lib/trash-policy";
 
 export default function TrashPage() {
@@ -26,7 +27,7 @@ export default function TrashPage() {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      setFeedback(data?.error || tr("Wiederherstellen fehlgeschlagen.", "Restore failed."));
+      setFeedback(translateApiErrorMessage(language, data?.error) || tr("Wiederherstellen fehlgeschlagen.", "Restore failed."));
       return;
     }
     await load();

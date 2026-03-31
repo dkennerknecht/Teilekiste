@@ -15,6 +15,9 @@ export async function buildBackupPayload(input?: {
   const importProfileTable = (prisma as any).importProfile as {
     findMany: (args?: unknown) => Promise<any[]>;
   };
+  const technicalFieldPresetTable = (prisma as any).technicalFieldPreset as {
+    findMany?: (args?: unknown) => Promise<any[]>;
+  };
 
   const items = await prisma.item.findMany({
     where: locationFilter
@@ -36,7 +39,7 @@ export async function buildBackupPayload(input?: {
   });
 
   const itemIds = items.map((item) => item.id);
-  const [categories, tags, locations, shelves, bins, customFields, technicalFieldScopeAssignments, importProfiles, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
+  const [categories, tags, locations, shelves, bins, customFields, technicalFieldScopeAssignments, technicalFieldPresets, importProfiles, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
     await Promise.all([
       prisma.category.findMany(),
       prisma.tag.findMany(),
@@ -51,6 +54,7 @@ export async function buildBackupPayload(input?: {
       }),
       prisma.customField.findMany(),
       prisma.technicalFieldScopeAssignment.findMany(),
+      technicalFieldPresetTable?.findMany ? technicalFieldPresetTable.findMany() : Promise.resolve([]),
       importProfileTable.findMany(),
       prisma.area.findMany(),
       prisma.labelType.findMany(),
@@ -104,6 +108,7 @@ export async function buildBackupPayload(input?: {
     bins,
     customFields,
     technicalFieldScopeAssignments,
+    technicalFieldPresets,
     importProfiles,
     areas,
     types,

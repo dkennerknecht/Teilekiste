@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, CheckCheck, ChevronDown, ChevronUp, MapPin, PencilLine, Trash2, X } from "lucide-react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
@@ -254,7 +255,7 @@ export default function HomePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setBulkError(data?.error || tr("Die Sammelbearbeitung konnte nicht gespeichert werden.", "Bulk edit could not be saved."));
+      setBulkError(translateApiErrorMessage(language, data?.error) || tr("Die Sammelbearbeitung konnte nicht gespeichert werden.", "Bulk edit could not be saved."));
       setBulkSaving(false);
       return;
     }
@@ -298,9 +299,21 @@ export default function HomePage() {
       return;
     }
 
-    setBulkTransferPreview(data);
+    setBulkTransferPreview(
+      data
+        ? {
+            ...data,
+            error: translateApiErrorMessage(language, data?.error),
+            targetError: translateApiErrorMessage(language, data?.targetError)
+          }
+        : data
+    );
     if (!res.ok) {
-      setBulkTransferError(data?.targetError || data?.error || tr("Transfer-Vorschau hat Blocker.", "Transfer preview has blockers."));
+      setBulkTransferError(
+        translateApiErrorMessage(language, data?.targetError) ||
+          translateApiErrorMessage(language, data?.error) ||
+          tr("Transfer-Vorschau hat Blocker.", "Transfer preview has blockers.")
+      );
     }
   }
 
@@ -333,8 +346,20 @@ export default function HomePage() {
     setBulkTransferBusy(false);
 
     if (!res.ok) {
-      setBulkTransferPreview(data);
-      setBulkTransferError(data?.targetError || data?.error || tr("Die Sammelumlagerung konnte nicht gespeichert werden.", "Bulk transfer could not be saved."));
+      setBulkTransferPreview(
+        data
+          ? {
+              ...data,
+              error: translateApiErrorMessage(language, data?.error),
+              targetError: translateApiErrorMessage(language, data?.targetError)
+            }
+          : data
+      );
+      setBulkTransferError(
+        translateApiErrorMessage(language, data?.targetError) ||
+          translateApiErrorMessage(language, data?.error) ||
+          tr("Die Sammelumlagerung konnte nicht gespeichert werden.", "Bulk transfer could not be saved.")
+      );
       return;
     }
 
@@ -363,7 +388,10 @@ export default function HomePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setBulkActionError(data?.error || tr("Die markierten Items konnten nicht archiviert werden.", "The selected items could not be archived."));
+      setBulkActionError(
+        translateApiErrorMessage(language, data?.error) ||
+          tr("Die markierten Items konnten nicht archiviert werden.", "The selected items could not be archived.")
+      );
       setBulkArchiving(false);
       return;
     }
@@ -393,7 +421,10 @@ export default function HomePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setBulkDeleteError(data?.error || tr("Die markierten Items konnten nicht geloescht werden.", "The selected items could not be deleted."));
+      setBulkDeleteError(
+        translateApiErrorMessage(language, data?.error) ||
+          tr("Die markierten Items konnten nicht geloescht werden.", "The selected items could not be deleted.")
+      );
       setBulkDeleting(false);
       return;
     }
@@ -1098,7 +1129,7 @@ export default function HomePage() {
                       <p className="font-medium">{tr("Blockierte Items", "Blocked items")}</p>
                       {bulkTransferPreview.blockedItems.map((entry: any) => (
                         <p key={`${entry.itemId}:${entry.reason}`}>
-                          {(entry.labelCode || entry.itemId) + (entry.name ? ` (${entry.name})` : "")}: {entry.reason}
+                          {(entry.labelCode || entry.itemId) + (entry.name ? ` (${entry.name})` : "")}: {translateApiErrorMessage(language, entry.reason) || entry.reason}
                         </p>
                       ))}
                     </div>

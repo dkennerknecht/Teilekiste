@@ -1,5 +1,5 @@
-import type { Prisma, PrismaClient, TechnicalFieldScopeAssignment } from "@prisma/client";
-import { getCustomFieldPreset } from "@/lib/custom-field-presets";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { getStoredTechnicalFieldPreset, listTechnicalFieldPresets } from "@/lib/custom-field-presets";
 import {
   createUniqueCustomFieldKey,
   findConflictingCustomField,
@@ -7,8 +7,10 @@ import {
 } from "@/lib/custom-fields";
 
 type TechnicalFieldAssignmentDb =
-  | Pick<PrismaClient, "technicalFieldScopeAssignment" | "customField">
-  | Pick<Prisma.TransactionClient, "technicalFieldScopeAssignment" | "customField">;
+  | Pick<PrismaClient, "technicalFieldScopeAssignment" | "customField" | "technicalFieldPreset">
+  | Pick<Prisma.TransactionClient, "technicalFieldScopeAssignment" | "customField" | "technicalFieldPreset">
+  | (Pick<PrismaClient, "technicalFieldScopeAssignment" | "customField"> & { technicalFieldPreset?: undefined })
+  | (Pick<Prisma.TransactionClient, "technicalFieldScopeAssignment" | "customField"> & { technicalFieldPreset?: undefined });
 
 export class TechnicalFieldAssignmentError extends Error {}
 
@@ -30,7 +32,7 @@ export async function syncTechnicalFieldScopeAssignment(
   db: TechnicalFieldAssignmentDb,
   input: { categoryId: string; typeId: string; presetKey: string }
 ) {
-  const preset = getCustomFieldPreset(input.presetKey);
+  const preset = await getStoredTechnicalFieldPreset(db, input.presetKey);
   if (!preset) {
     throw new TechnicalFieldAssignmentError("Technischer Feldsatz nicht gefunden");
   }
@@ -196,6 +198,8 @@ export async function removeTechnicalFieldScopeAssignment(
 }
 
 export async function listTechnicalFieldScopeAssignments(db: TechnicalFieldAssignmentDb) {
+  const presets = await listTechnicalFieldPresets(db);
+  const presetMap = new Map(presets.map((preset) => [preset.key, preset]));
   const assignments = await db.technicalFieldScopeAssignment.findMany({
     include: {
       category: true,
@@ -208,10 +212,10 @@ export async function listTechnicalFieldScopeAssignments(db: TechnicalFieldAssig
 
   const scopes = assignments.map((assignment) => ({
     ...assignment,
-    preset: getCustomFieldPreset(assignment.presetKey)
+    preset: presetMap.get(assignment.presetKey)
       ? {
           key: assignment.presetKey,
-          name: getCustomFieldPreset(assignment.presetKey)!.name
+          name: presetMap.get(assignment.presetKey)!.name
         }
       : {
           key: assignment.presetKey,

@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { PencilLine, Trash2 } from "lucide-react";
 import { CustomFieldCatalogEditor } from "@/components/custom-field-catalog-editor";
-import { customFieldPresets } from "@/lib/custom-field-presets";
+import { TechnicalFieldPresetFieldsEditor } from "@/components/technical-field-preset-fields-editor";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import {
   isManagedCustomField,
   parseCustomFieldValueCatalog,
   type CustomFieldCatalogEntry,
   type CustomFieldRow
 } from "@/lib/custom-fields";
+import type { CustomFieldPresetField } from "@/lib/custom-field-presets";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { appLanguageOptions, type AppLanguage } from "@/lib/app-language";
 
@@ -45,6 +47,24 @@ type TechnicalFieldAssignmentRow = {
   activeManagedFieldCount: number;
 };
 
+type TechnicalFieldPresetRow = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  fields: CustomFieldPresetField[];
+  assignmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type TechnicalFieldPresetFormState = {
+  key: string;
+  name: string;
+  description: string;
+  fields: CustomFieldPresetField[];
+};
+
 function createEmptyCustomFieldFormState(): CustomFieldFormState {
   return {
     name: "",
@@ -55,6 +75,25 @@ function createEmptyCustomFieldFormState(): CustomFieldFormState {
     categoryId: "",
     typeId: "",
     required: false
+  };
+}
+
+function createEmptyTechnicalFieldPresetFormState(): TechnicalFieldPresetFormState {
+  return {
+    key: "",
+    name: "",
+    description: "",
+    fields: [
+      {
+        key: "",
+        name: "",
+        type: "TEXT",
+        unit: "",
+        required: false,
+        sortOrder: 0,
+        valueCatalog: []
+      }
+    ]
   };
 }
 
@@ -121,6 +160,7 @@ export default function AdminPage() {
   const [locations, setLocations] = useState<any[]>([]);
   const [shelves, setShelves] = useState<ShelfRow[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
+  const [technicalFieldPresets, setTechnicalFieldPresets] = useState<TechnicalFieldPresetRow[]>([]);
   const [technicalFieldAssignments, setTechnicalFieldAssignments] = useState<TechnicalFieldAssignmentRow[]>([]);
   const [feedback, setFeedback] = useState<string>("");
   const [restoreResult, setRestoreResult] = useState<any>(null);
@@ -129,6 +169,7 @@ export default function AdminPage() {
   const [appLanguageDraft, setAppLanguageDraft] = useState<AppLanguage>(language);
   const tr = (de: string, en: string) => (language === "en" ? en : de);
   const unknownError = tr("Unbekannt", "Unknown");
+  const apiError = (data: any) => translateApiErrorMessage(language, data?.error) || data?.error || unknownError;
   const catalogEditorLabels = {
     value: tr("Wert", "Value"),
     aliases: tr("Aliase", "Aliases"),
@@ -137,6 +178,21 @@ export default function AdminPage() {
     remove: tr("Entfernen", "Remove"),
     empty: tr("Noch keine Katalogwerte definiert.", "No catalog values defined yet."),
     aliasesPlaceholder: tr("Alias 1, Alias 2", "Alias 1, Alias 2")
+  };
+  const technicalPresetFieldLabels = {
+    key: tr("Feld-Key", "Field key"),
+    name: tr("Feldname", "Field name"),
+    type: tr("Typ", "Type"),
+    unit: tr("Einheit", "Unit"),
+    required: tr("Pflichtfeld", "Required field"),
+    order: tr("Reihenfolge", "Order"),
+    addField: tr("Feld hinzufuegen", "Add field"),
+    removeField: tr("Feld entfernen", "Remove field"),
+    empty: tr("Noch keine Felder definiert.", "No fields defined yet."),
+    keyPlaceholder: tr("stabiler-key", "stable-key"),
+    namePlaceholder: tr("Anzeigename", "Display name"),
+    unitPlaceholder: tr("optional", "optional"),
+    catalog: tr("Wertekatalog", "Value catalog")
   };
 
   const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
@@ -156,18 +212,21 @@ export default function AdminPage() {
   const [editCustomId, setEditCustomId] = useState<string | null>(null);
   const [editCustom, setEditCustom] = useState<CustomFieldFormState>(createEmptyCustomFieldFormState);
   const [newCustom, setNewCustom] = useState<CustomFieldFormState>(createEmptyCustomFieldFormState);
+  const [editTechnicalPresetId, setEditTechnicalPresetId] = useState<string | null>(null);
+  const [editTechnicalPreset, setEditTechnicalPreset] = useState<TechnicalFieldPresetFormState>(createEmptyTechnicalFieldPresetFormState);
+  const [newTechnicalPreset, setNewTechnicalPreset] = useState<TechnicalFieldPresetFormState>(createEmptyTechnicalFieldPresetFormState);
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUser, setEditUser] = useState({ name: "", email: "", role: "READ", isActive: true, password: "" });
   const [newShelfLocationId, setNewShelfLocationId] = useState("");
   const [newTechnicalAssignment, setNewTechnicalAssignment] = useState({
     categoryId: "",
     typeId: "",
-    presetKey: customFieldPresets[0]?.key || ""
+    presetKey: ""
   });
   const [technicalAssignmentPresetDrafts, setTechnicalAssignmentPresetDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [d, c, t, ty, l, sh, f, assignments, u, tokens] = await Promise.all([
+    const [d, c, t, ty, l, sh, f, presets, assignments, u, tokens] = await Promise.all([
       fetch("/api/admin/dash", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/categories", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/tags", { cache: "no-store" }).then((r) => r.json()),
@@ -175,6 +234,7 @@ export default function AdminPage() {
       fetch("/api/admin/locations", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/shelves", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/custom-fields", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/admin/technical-field-presets", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/technical-field-assignments", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/admin/api-tokens", { cache: "no-store" }).then((r) => r.json())
@@ -186,6 +246,13 @@ export default function AdminPage() {
     setLocations(l);
     setShelves(sh);
     setCustomFields(sortCustomFields(f));
+    setTechnicalFieldPresets(
+      [...(presets || [])].sort(
+        (left: TechnicalFieldPresetRow, right: TechnicalFieldPresetRow) =>
+          String(left.name || "").localeCompare(String(right.name || ""), "de") ||
+          String(left.key || "").localeCompare(String(right.key || ""), "de")
+      )
+    );
     setTechnicalFieldAssignments(assignments);
     setTechnicalAssignmentPresetDrafts(
       Object.fromEntries((assignments as TechnicalFieldAssignmentRow[]).map((assignment) => [assignment.id, assignment.presetKey]))
@@ -213,6 +280,18 @@ export default function AdminPage() {
       setNewTechnicalAssignment((current) => ({ ...current, typeId: types[0].id }));
     }
   }, [types, newTechnicalAssignment.typeId]);
+
+  useEffect(() => {
+    if (!technicalFieldPresets.length) {
+      if (newTechnicalAssignment.presetKey) {
+        setNewTechnicalAssignment((current) => ({ ...current, presetKey: "" }));
+      }
+      return;
+    }
+    if (!newTechnicalAssignment.presetKey || !technicalFieldPresets.some((preset) => preset.key === newTechnicalAssignment.presetKey)) {
+      setNewTechnicalAssignment((current) => ({ ...current, presetKey: technicalFieldPresets[0].key }));
+    }
+  }, [newTechnicalAssignment.presetKey, technicalFieldPresets]);
 
   async function apiJson(url: string, init: RequestInit) {
     try {
@@ -246,6 +325,14 @@ export default function AdminPage() {
     );
   }
 
+  function sortTechnicalFieldPresets<T extends TechnicalFieldPresetRow>(rows: T[]) {
+    return [...rows].sort(
+      (a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""), "de") ||
+        String(a.key || "").localeCompare(String(b.key || ""), "de")
+    );
+  }
+
   function describeCustomFieldScope(field: CustomFieldRow) {
     if (field.category && field.labelType) {
       return `${field.category.name} / ${field.labelType.code} - ${field.labelType.name}`;
@@ -261,7 +348,7 @@ export default function AdminPage() {
 
   function getPresetName(presetKey: string | null | undefined) {
     if (!presetKey) return tr("Unbekannt", "Unknown");
-    return customFieldPresets.find((preset) => preset.key === presetKey)?.name || presetKey;
+    return technicalFieldPresets.find((preset) => preset.key === presetKey)?.name || presetKey;
   }
 
   function getTechnicalFieldSyncCounts(data: {
@@ -1053,7 +1140,194 @@ export default function AdminPage() {
         </section>
 
         <section className="card space-y-3 xl:col-span-2">
-          <h2 className="font-semibold">{tr("Technische Feldsaetze", "Technical field sets")}</h2>
+          <h2 className="font-semibold">{tr("Technische Presets", "Technical presets")}</h2>
+          <p className="theme-muted text-sm">
+            {tr(
+              "Definiert die verwalteten technischen Feldsaetze selbst. Diese Presets stehen danach unten fuer Kategorie-Type-Zuweisungen zur Verfuegung.",
+              "Define the managed technical field sets themselves. These presets are then available below for category-type assignments."
+            )}
+          </p>
+
+          <div className="space-y-3 rounded border border-workshop-200 p-3">
+            <h3 className="font-medium">{tr("Neues technisches Preset", "New technical preset")}</h3>
+            <div className="grid gap-2 md:grid-cols-[14rem_minmax(0,1fr)]">
+              <input
+                className="input min-w-0"
+                value={newTechnicalPreset.key}
+                placeholder={tr("preset-key", "preset-key")}
+                onChange={(e) => setNewTechnicalPreset((current) => ({ ...current, key: e.target.value }))}
+              />
+              <input
+                className="input min-w-0"
+                value={newTechnicalPreset.name}
+                placeholder={tr("Preset-Name", "Preset name")}
+                onChange={(e) => setNewTechnicalPreset((current) => ({ ...current, name: e.target.value }))}
+              />
+            </div>
+            <textarea
+              className="input min-h-24"
+              value={newTechnicalPreset.description}
+              placeholder={tr("Beschreibung", "Description")}
+              onChange={(e) => setNewTechnicalPreset((current) => ({ ...current, description: e.target.value }))}
+            />
+            <TechnicalFieldPresetFieldsEditor
+              fields={newTechnicalPreset.fields}
+              onChange={(fields) => setNewTechnicalPreset((current) => ({ ...current, fields }))}
+              labels={technicalPresetFieldLabels}
+              catalogLabels={catalogEditorLabels}
+            />
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={async () => {
+                const { res, data } = await apiJson("/api/admin/technical-field-presets", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify(newTechnicalPreset)
+                });
+                setFeedback(
+                  res.ok
+                    ? tr("Technisches Preset angelegt", "Technical preset created")
+                    : tr(`Technisches Preset anlegen fehlgeschlagen: ${apiError(data)}`, `Technical preset creation failed: ${apiError(data)}`)
+                );
+                if (res.ok) {
+                  setTechnicalFieldPresets((current) => sortTechnicalFieldPresets([...(current as TechnicalFieldPresetRow[]), data as TechnicalFieldPresetRow]));
+                  setNewTechnicalPreset(createEmptyTechnicalFieldPresetFormState());
+                }
+              }}
+            >
+              {tr("Preset anlegen", "Create preset")}
+            </button>
+          </div>
+
+          <ul className="space-y-2 text-sm">
+            {technicalFieldPresets.map((preset) => (
+              <li key={preset.id} className="rounded border border-workshop-200 p-3">
+                {editTechnicalPresetId === preset.id ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2 md:grid-cols-[14rem_minmax(0,1fr)]">
+                      <input className="input min-w-0" value={preset.key} disabled />
+                      <input
+                        className="input min-w-0"
+                        value={editTechnicalPreset.name}
+                        onChange={(e) => setEditTechnicalPreset((current) => ({ ...current, name: e.target.value }))}
+                      />
+                    </div>
+                    <textarea
+                      className="input min-h-24"
+                      value={editTechnicalPreset.description}
+                      onChange={(e) => setEditTechnicalPreset((current) => ({ ...current, description: e.target.value }))}
+                    />
+                    <TechnicalFieldPresetFieldsEditor
+                      fields={editTechnicalPreset.fields}
+                      onChange={(fields) => setEditTechnicalPreset((current) => ({ ...current, fields }))}
+                      labels={technicalPresetFieldLabels}
+                      catalogLabels={catalogEditorLabels}
+                    />
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={async () => {
+                          const { res, data } = await apiJson("/api/admin/technical-field-presets", {
+                            method: "PATCH",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({
+                              id: preset.id,
+                              name: editTechnicalPreset.name,
+                              description: editTechnicalPreset.description,
+                              fields: editTechnicalPreset.fields
+                            })
+                          });
+                          setFeedback(
+                            res.ok
+                              ? tr("Technisches Preset aktualisiert", "Technical preset updated")
+                              : tr(`Technisches Preset Update fehlgeschlagen: ${apiError(data)}`, `Technical preset update failed: ${apiError(data)}`)
+                          );
+                          if (res.ok) {
+                            setTechnicalFieldPresets((current) => sortTechnicalFieldPresets(current.map((row) => (row.id === preset.id ? data : row))));
+                            setEditTechnicalPresetId(null);
+                            setEditTechnicalPreset(createEmptyTechnicalFieldPresetFormState());
+                          }
+                        }}
+                      >
+                        {tr("Speichern", "Save")}
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => {
+                          setEditTechnicalPresetId(null);
+                          setEditTechnicalPreset(createEmptyTechnicalFieldPresetFormState());
+                        }}
+                      >
+                        {tr("Abbrechen", "Cancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">
+                        {preset.name} <span className="theme-muted font-mono text-xs">({preset.key})</span>
+                      </p>
+                      <p className="theme-muted text-xs">
+                        {preset.fields.length} {tr("Felder", "fields")}
+                        {` • ${preset.assignmentCount} ${tr("Zuweisungen", "assignments")}`}
+                      </p>
+                      {preset.description ? <p className="mt-1 text-sm text-workshop-800">{preset.description}</p> : null}
+                      <p className="mt-1 text-xs text-workshop-700">
+                        {preset.fields.map((field) => `${field.name} [${field.type}]`).join(" • ")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => {
+                          setEditTechnicalPresetId(preset.id);
+                          setEditTechnicalPreset({
+                            key: preset.key,
+                            name: preset.name,
+                            description: preset.description || "",
+                            fields: preset.fields
+                          });
+                        }}
+                      >
+                        {tr("Bearbeiten", "Edit")}
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={preset.assignmentCount > 0}
+                        onClick={async () => {
+                          const { res, data } = await apiJson("/api/admin/technical-field-presets", {
+                            method: "DELETE",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ id: preset.id })
+                          });
+                          setFeedback(
+                            res.ok
+                              ? tr("Technisches Preset geloescht", "Technical preset deleted")
+                              : tr(`Technisches Preset Loeschen fehlgeschlagen: ${apiError(data)}`, `Technical preset delete failed: ${apiError(data)}`)
+                          );
+                          if (res.ok) {
+                            setTechnicalFieldPresets((current) => current.filter((row) => row.id !== preset.id));
+                          }
+                        }}
+                      >
+                        {tr("Loeschen", "Delete")}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card space-y-3 xl:col-span-2">
+          <h2 className="font-semibold">{tr("Technische Feldsaetze zuweisen", "Assign technical field sets")}</h2>
           <p className="theme-muted text-sm">
             {tr(
               "Weist einer festen Kategorie-Type-Kombination genau einen verwalteten technischen Feldsatz zu. Beim Wechsel werden neue Felder synchronisiert und alte technische Felder nur deaktiviert.",
@@ -1077,8 +1351,8 @@ export default function AdminPage() {
                       `Technical field set synchronized: ${syncCounts.created} created, ${syncCounts.reactivated} reactivated, ${syncCounts.deactivated} deactivated`
                     )
                   : tr(
-                      `Technischer Feldsatz fehlgeschlagen: ${data.error || unknownError}`,
-                      `Technical field set failed: ${data.error || unknownError}`
+                      `Technischer Feldsatz fehlgeschlagen: ${apiError(data)}`,
+                      `Technical field set failed: ${apiError(data)}`
                     )
               );
               if (res.ok) await load();
@@ -1122,13 +1396,18 @@ export default function AdminPage() {
               className="input"
               value={newTechnicalAssignment.presetKey}
               onChange={(e) => setNewTechnicalAssignment((current) => ({ ...current, presetKey: e.target.value }))}
+              disabled={!technicalFieldPresets.length}
               required
             >
-              {customFieldPresets.map((preset) => (
-                <option key={preset.key} value={preset.key}>
-                  {preset.name}
-                </option>
-              ))}
+              {technicalFieldPresets.length === 0 ? (
+                <option value="">{tr("Erst technisches Preset anlegen", "Create a technical preset first")}</option>
+              ) : (
+                technicalFieldPresets.map((preset) => (
+                  <option key={preset.key} value={preset.key}>
+                    {preset.name}
+                  </option>
+                ))
+              )}
             </select>
             <button
               className="btn-secondary"
@@ -1145,7 +1424,7 @@ export default function AdminPage() {
                   <div className="min-w-0">
                     <p className="truncate font-medium">{describeTechnicalFieldAssignmentScope(assignment)}</p>
                     <p className="theme-muted text-xs">
-                      {tr("Aktueller Feldsatz", "Current field set")}: {assignment.preset.name}
+                      {tr("Aktueller Feldsatz", "Current field set")}: {getPresetName(assignment.presetKey)}
                       {` • ${assignment.activeManagedFieldCount}/${assignment.managedFieldCount} ${tr("aktive technische Felder", "active technical fields")}`}
                     </p>
                   </div>
@@ -1160,7 +1439,7 @@ export default function AdminPage() {
                         }))
                       }
                     >
-                      {customFieldPresets.map((preset) => (
+                      {technicalFieldPresets.map((preset) => (
                         <option key={preset.key} value={preset.key}>
                           {preset.name}
                         </option>
@@ -1188,8 +1467,8 @@ export default function AdminPage() {
                                 `Technical field set updated: ${syncCounts.created} created, ${syncCounts.reactivated} reactivated, ${syncCounts.deactivated} deactivated`
                               )
                             : tr(
-                                `Technischer Feldsatz Update fehlgeschlagen: ${data.error || unknownError}`,
-                                `Technical field set update failed: ${data.error || unknownError}`
+                                `Technischer Feldsatz Update fehlgeschlagen: ${apiError(data)}`,
+                                `Technical field set update failed: ${apiError(data)}`
                               )
                         );
                         if (res.ok) await load();
@@ -1210,8 +1489,8 @@ export default function AdminPage() {
                           res.ok
                             ? tr("Technischer Feldsatz entfernt", "Technical field set removed")
                             : tr(
-                                `Technischer Feldsatz Entfernen fehlgeschlagen: ${data.error || unknownError}`,
-                                `Technical field set delete failed: ${data.error || unknownError}`
+                                `Technischer Feldsatz Entfernen fehlgeschlagen: ${apiError(data)}`,
+                                `Technical field set delete failed: ${apiError(data)}`
                               )
                         );
                         if (res.ok) await load();

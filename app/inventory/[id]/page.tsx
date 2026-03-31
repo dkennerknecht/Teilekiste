@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { formatDisplayQuantity, getQuantityStep } from "@/lib/quantity";
 
 type SessionDetailRow = {
@@ -119,7 +120,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const res = await fetch(`/api/inventory/sessions/${params.id}`, { cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || tr("Inventur-Session konnte nicht geladen werden.", "Inventory session could not be loaded."));
+        throw new Error(translateApiErrorMessage(language, data?.error) || tr("Inventur-Session konnte nicht geladen werden.", "Inventory session could not be loaded."));
       }
       setDetail(data);
       setDraftCounts(
@@ -134,7 +135,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
     } finally {
       setLoading(false);
     }
-  }, [params.id, tr]);
+  }, [language, params.id, tr]);
 
   useEffect(() => {
     load();
@@ -192,7 +193,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || tr("Zaehlstaende konnten nicht gespeichert werden.", "Counts could not be saved."));
+        setError(translateApiErrorMessage(language, data?.error) || tr("Zaehlstaende konnten nicht gespeichert werden.", "Counts could not be saved."));
         return false;
       }
 
@@ -229,7 +230,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || tr("Inventur-Session konnte nicht finalisiert werden.", "Inventory session could not be finalized."));
+        setError(translateApiErrorMessage(language, data?.error) || tr("Inventur-Session konnte nicht finalisiert werden.", "Inventory session could not be finalized."));
         return;
       }
 
@@ -257,7 +258,7 @@ export default function InventorySessionDetailPage({ params }: { params: { id: s
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.error || tr("Inventur-Session konnte nicht abgebrochen werden.", "Inventory session could not be cancelled."));
+        setError(translateApiErrorMessage(language, data?.error) || tr("Inventur-Session konnte nicht abgebrochen werden.", "Inventory session could not be cancelled."));
         return;
       }
 

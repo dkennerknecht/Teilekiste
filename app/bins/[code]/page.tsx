@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { formatDisplayQuantity } from "@/lib/quantity";
 
 export default function StorageBinPage({ params }: { params: { code: string } }) {
@@ -16,14 +17,14 @@ export default function StorageBinPage({ params }: { params: { code: string } })
       const response = await fetch(`/api/bins/${encodeURIComponent(params.code)}`, { cache: "no-store" });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || tr("Drawer konnte nicht geladen werden", "Failed to load drawer"));
+        throw new Error(translateApiErrorMessage(language, data?.error) || tr("Drawer konnte nicht geladen werden", "Failed to load drawer"));
       }
       setDrawer(data);
       setError("");
     } catch (loadError) {
       setError((loadError as Error).message);
     }
-  }, [params.code, tr]);
+  }, [language, params.code, tr]);
 
   useEffect(() => {
     loadDrawer();

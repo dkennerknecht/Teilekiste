@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { importCoreTargets, type ImportProfileMappingConfig } from "@/lib/import-profiles";
 
 type LookupRow = {
@@ -200,7 +201,7 @@ export default function AdminImportPage() {
 
     if (!res.ok) {
       setPreview(null);
-      setError(data?.error || tr("Preview konnte nicht geladen werden.", "Preview could not be loaded."));
+      setError(translateApiErrorMessage(language, data?.error) || tr("Preview konnte nicht geladen werden.", "Preview could not be loaded."));
       return;
     }
 
@@ -229,7 +230,7 @@ export default function AdminImportPage() {
 
     if (!res.ok) {
       setPreview(data);
-      setError(data?.error || tr("Import fehlgeschlagen.", "Import failed."));
+      setError(translateApiErrorMessage(language, data?.error) || tr("Import fehlgeschlagen.", "Import failed."));
       return;
     }
 
@@ -265,7 +266,7 @@ export default function AdminImportPage() {
     setProfileBusy(false);
 
     if (!res.ok) {
-      setError(data?.error || tr("Profil konnte nicht gespeichert werden.", "Profile could not be saved."));
+      setError(translateApiErrorMessage(language, data?.error) || tr("Profil konnte nicht gespeichert werden.", "Profile could not be saved."));
       return;
     }
 
@@ -289,7 +290,7 @@ export default function AdminImportPage() {
     setProfileBusy(false);
 
     if (!res.ok) {
-      setError(data?.error || tr("Profil konnte nicht geloescht werden.", "Profile could not be deleted."));
+      setError(translateApiErrorMessage(language, data?.error) || tr("Profil konnte nicht geloescht werden.", "Profile could not be deleted."));
       return;
     }
 
@@ -560,7 +561,7 @@ export default function AdminImportPage() {
               <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
                 {preview.mappingIssues.map((issue) => (
                   <p key={`${issue.fieldKey}:${issue.message}`}>
-                    {targetLabel(issue.fieldKey, customFields)}: {issue.message}
+                    {targetLabel(issue.fieldKey, customFields)}: {translateApiErrorMessage(language, issue.message) || issue.message}
                   </p>
                 ))}
               </div>
@@ -695,7 +696,7 @@ export default function AdminImportPage() {
                     <div className="mt-2 text-sm text-red-700">
                       {row.errors.map((entry) => (
                         <p key={`${row.lineNumber}:${entry.fieldKey}:${entry.message}`}>
-                          {targetLabel(entry.fieldKey, customFields)}: {entry.message}
+                          {targetLabel(entry.fieldKey, customFields)}: {translateApiErrorMessage(language, entry.message) || entry.message}
                         </p>
                       ))}
                     </div>
@@ -705,7 +706,7 @@ export default function AdminImportPage() {
                     <div className="mt-2 text-sm text-amber-700">
                       {row.warnings.map((entry) => (
                         <p key={`${row.lineNumber}:${entry.fieldKey}:${entry.message}`}>
-                          {targetLabel(entry.fieldKey, customFields)}: {entry.message}
+                          {targetLabel(entry.fieldKey, customFields)}: {translateApiErrorMessage(language, entry.message) || entry.message}
                         </p>
                       ))}
                     </div>

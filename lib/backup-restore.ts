@@ -76,6 +76,15 @@ type BackupTechnicalFieldScopeAssignment = {
   presetKey: string;
 };
 
+type BackupTechnicalFieldPreset = {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  fieldsJson?: unknown;
+  fields?: unknown;
+};
+
 type BackupImportProfile = {
   id: string;
   name: string;
@@ -227,6 +236,7 @@ export type BackupPayload = {
   tags?: BackupTag[];
   customFields?: BackupCustomField[];
   technicalFieldScopeAssignments?: BackupTechnicalFieldScopeAssignment[];
+  technicalFieldPresets?: BackupTechnicalFieldPreset[];
   importProfiles?: BackupImportProfile[];
   areas?: BackupArea[];
   types?: BackupLabelType[];
@@ -354,6 +364,9 @@ export async function restoreBackupData(input: {
   const { payload, strategy, fallbackUserId } = input;
   const importProfileTable = (prisma as any).importProfile as {
     upsert: (args: unknown) => Promise<any>;
+  };
+  const technicalFieldPresetTable = (prisma as any).technicalFieldPreset as {
+    upsert?: (args: unknown) => Promise<any>;
   };
   const conflicts = {
     categories: [] as string[],
@@ -614,6 +627,31 @@ export async function restoreBackupData(input: {
         delimiter: payload.labelConfig.delimiter || ",",
         allowCodeEdit: payload.labelConfig.allowCodeEdit ?? true,
         regenerateOnType: payload.labelConfig.regenerateOnType ?? true
+      }
+    });
+  }
+
+  for (const preset of payload.technicalFieldPresets || []) {
+    if (!technicalFieldPresetTable?.upsert) break;
+    await technicalFieldPresetTable.upsert({
+      where: { key: preset.key },
+      update: {
+        name: preset.name,
+        description: preset.description ?? "",
+        fieldsJson:
+          typeof preset.fieldsJson === "string"
+            ? preset.fieldsJson
+            : serializeJsonValue(preset.fields) || "[]"
+      },
+      create: {
+        id: preset.id,
+        key: preset.key,
+        name: preset.name,
+        description: preset.description ?? "",
+        fieldsJson:
+          typeof preset.fieldsJson === "string"
+            ? preset.fieldsJson
+            : serializeJsonValue(preset.fields) || "[]"
       }
     });
   }

@@ -9,6 +9,15 @@ const customFieldCatalogEntrySchema = z.object({
   aliases: z.array(z.string().trim().min(1).max(120)).default([]),
   sortOrder: z.number().int().min(0).optional()
 });
+const technicalFieldPresetFieldSchema = z.object({
+  key: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
+  type: z.enum(["TEXT", "NUMBER", "BOOLEAN", "SELECT", "MULTI_SELECT", "DATE"]),
+  unit: z.string().trim().max(40).optional().nullable(),
+  required: z.boolean().optional().default(false),
+  sortOrder: z.number().int().min(0),
+  valueCatalog: z.array(customFieldCatalogEntrySchema).optional()
+});
 const importProfileAssignmentSchema = z.object({
   targetKey: z.string().trim().min(1).max(160),
   sourceType: z.enum(["column", "fixed", "ignore"]),
@@ -214,6 +223,24 @@ export const technicalFieldScopeAssignmentUpdateSchema = technicalFieldScopeAssi
 });
 
 export const technicalFieldScopeAssignmentDeleteSchema = z.object({
+  id: uuidSchema
+});
+
+export const technicalFieldPresetCreateSchema = z.object({
+  key: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).min(1).max(80),
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).default(""),
+  fields: z.array(technicalFieldPresetFieldSchema).min(1)
+});
+
+export const technicalFieldPresetUpdateSchema = z.object({
+  id: uuidSchema,
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).default(""),
+  fields: z.array(technicalFieldPresetFieldSchema).min(1)
+});
+
+export const technicalFieldPresetDeleteSchema = z.object({
   id: uuidSchema
 });
 

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { fileHref } from "@/lib/file-href";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
 
@@ -70,7 +71,7 @@ export default function ArchivePage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setFeedback(data?.error || tr("Die Aktion konnte nicht ausgefuehrt werden.", "The action could not be completed."));
+      setFeedback(translateApiErrorMessage(language, data?.error) || tr("Die Aktion konnte nicht ausgefuehrt werden.", "The action could not be completed."));
       setWorking("");
       return;
     }

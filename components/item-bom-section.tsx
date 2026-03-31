@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 
 type BomChild = {
   childItemId: string;
@@ -87,7 +88,7 @@ export function ItemBomSection(props: {
 
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      alert(data?.error || tr("Stueckliste konnte nicht gespeichert werden", "Bill of materials could not be saved"));
+      alert(translateApiErrorMessage(language, data?.error) || tr("Stueckliste konnte nicht gespeichert werden", "Bill of materials could not be saved"));
       return;
     }
 
@@ -104,7 +105,7 @@ export function ItemBomSection(props: {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => null);
-      alert(data?.error || tr("Stueckliste konnte nicht geloescht werden", "Bill of materials could not be deleted"));
+      alert(translateApiErrorMessage(language, data?.error) || tr("Stueckliste konnte nicht geloescht werden", "Bill of materials could not be deleted"));
       return;
     }
     await props.onChanged();

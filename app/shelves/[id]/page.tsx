@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 import { formatDisplayQuantity } from "@/lib/quantity";
 
 export default function StorageShelfPage({ params }: { params: { id: string } }) {
@@ -16,14 +17,14 @@ export default function StorageShelfPage({ params }: { params: { id: string } })
       const response = await fetch(`/api/shelves/${encodeURIComponent(params.id)}`, { cache: "no-store" });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || tr("Bereich konnte nicht geladen werden", "Failed to load shelf"));
+        throw new Error(translateApiErrorMessage(language, data?.error) || tr("Bereich konnte nicht geladen werden", "Failed to load shelf"));
       }
       setShelf(data);
       setError("");
     } catch (loadError) {
       setError((loadError as Error).message);
     }
-  }, [params.id, tr]);
+  }, [language, params.id, tr]);
 
   useEffect(() => {
     loadShelf();

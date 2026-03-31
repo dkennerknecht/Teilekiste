@@ -370,6 +370,16 @@ model TechnicalFieldScopeAssignment {
   @@index([typeId])
 }
 
+model TechnicalFieldPreset {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String
+  fieldsJson  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model ImportProfile {
   id               String   @id @default(uuid())
   name             String   @unique

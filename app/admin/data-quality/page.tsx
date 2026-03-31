@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { translateApiErrorMessage } from "@/lib/app-language";
 
 type DuplicatePair = {
   leftItem: {
@@ -101,7 +102,7 @@ export default function DataQualityPage() {
         setPreview(null);
         setFieldSelections({});
         setCustomFieldSelections({});
-        setPreviewError(data?.error || tr("Preview konnte nicht geladen werden.", "Preview could not be loaded."));
+        setPreviewError(translateApiErrorMessage(language, data?.error) || tr("Preview konnte nicht geladen werden.", "Preview could not be loaded."));
         return;
       }
 
@@ -128,7 +129,7 @@ export default function DataQualityPage() {
     setMergeBusy(false);
 
     if (!res.ok) {
-      setFeedback(data?.error || tr("Merge fehlgeschlagen.", "Merge failed."));
+      setFeedback(translateApiErrorMessage(language, data?.error) || tr("Merge fehlgeschlagen.", "Merge failed."));
       return;
     }
 
