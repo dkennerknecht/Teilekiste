@@ -46,6 +46,7 @@ export default defineConfig({
           APP_BASE_URL: baseURL,
           NEXTAUTH_URL: baseURL,
           NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "playwright-secret",
+          E2E_AUTH_BYPASS: "1",
           DATABASE_URL: databaseURL,
           RUN_SEED_ON_STARTUP: "0"
         }

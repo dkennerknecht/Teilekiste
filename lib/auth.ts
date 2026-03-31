@@ -1,7 +1,9 @@
+import { cookies } from "next/headers";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { E2E_EMAIL_COOKIE, E2E_ROLE_COOKIE, isE2eAuthBypassEnabled, parseE2eAuthRole } from "@/lib/e2e-auth";
 import { prisma } from "@/lib/prisma";
 import type { AppRole } from "@/lib/permissions";
 
@@ -46,7 +48,47 @@ export const authOptions = {
   }
 };
 
+async function resolveE2eBypassUser(roleValue?: string | null, emailValue?: string | null) {
+  if (!isE2eAuthBypassEnabled()) return null;
+
+  const role = parseE2eAuthRole(roleValue);
+  if (!role) return null;
+
+  const email = emailValue?.trim() || "admin@local";
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      isActive: true
+    }
+  });
+
+  if (user?.isActive) {
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role as AppRole
+    };
+  }
+
+  return {
+    id: `e2e-${email}`,
+    email,
+    role
+  };
+}
+
+export async function getE2eBypassUserFromRequestCookies(cookiesLike: { get(name: string): { value: string } | undefined }) {
+  return resolveE2eBypassUser(cookiesLike.get(E2E_ROLE_COOKIE)?.value, cookiesLike.get(E2E_EMAIL_COOKIE)?.value);
+}
+
 export async function getSessionUser() {
+  const cookieStore = cookies();
+  const bypassUser = await getE2eBypassUserFromRequestCookies(cookieStore);
+  if (bypassUser) return bypassUser;
+
   const session = await getServerSession(authOptions);
   if (!session?.user?.id || !session.user.email) return null;
 
