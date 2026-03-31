@@ -35,6 +35,22 @@ export type CustomFieldCatalogEntry = {
   sortOrder: number;
 };
 
+export function reorderCustomFieldCatalogEntries(entries: CustomFieldCatalogEntry[], fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex) return entries;
+  if (fromIndex < 0 || fromIndex >= entries.length || toIndex < 0 || toIndex >= entries.length) return entries;
+
+  const next = [...entries];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return entries;
+  next.splice(toIndex, 0, moved);
+
+  return next.map((entry, index) => ({
+    value: entry.value,
+    aliases: entry.aliases,
+    sortOrder: index
+  }));
+}
+
 export function isManagedCustomField(field: Pick<CustomFieldRow, "managedPresetFieldKey">) {
   return Boolean(field.managedPresetFieldKey);
 }
@@ -99,7 +115,7 @@ function extractStringSuggestions(value: unknown): string[] {
   return [];
 }
 
-export function parseCustomFieldOptions(input: CatalogSource) {
+function parseLegacyCustomFieldOptions(input: CatalogSource) {
   const { options } = resolveCatalogSource(input);
   if (!options) return [];
 
@@ -118,6 +134,12 @@ export function parseCustomFieldOptions(input: CatalogSource) {
   }
 
   return [];
+}
+
+export function parseCustomFieldOptions(input: CatalogSource) {
+  const catalogValues = parseCustomFieldValueCatalog(input).map((entry) => entry.value);
+  if (catalogValues.length) return catalogValues;
+  return parseLegacyCustomFieldOptions(input);
 }
 
 function sanitizeCatalogEntry(entry: unknown, fallbackSortOrder = 0): CustomFieldCatalogEntry | null {
@@ -164,7 +186,7 @@ export function parseCustomFieldValueCatalog(input: CatalogSource) {
   }
 
   if (!rawEntries.length) {
-    parseCustomFieldOptions(options).forEach((option, index) => {
+    parseLegacyCustomFieldOptions(options).forEach((option, index) => {
       rawEntries.push({ value: option, aliases: [], sortOrder: index });
     });
   }

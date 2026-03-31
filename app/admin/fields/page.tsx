@@ -166,8 +166,10 @@ export default function AdminFieldsPage() {
     typeId: "",
     presetKey: ""
   });
+  const editableCustomFields = customFields.filter((field) => !isManagedCustomField(field));
 
   const catalogEditorLabels = {
+    move: tr("Ziehen", "Drag"),
     value: tr("Wert", "Value"),
     aliases: tr("Aliase", "Aliases"),
     order: tr("Reihenfolge", "Order"),
@@ -702,7 +704,7 @@ export default function AdminFieldsPage() {
       <section className="card space-y-2">
         <h2 className="font-semibold">{tr("Custom Fields", "Custom fields")}</h2>
         <ul className="space-y-2 text-sm">
-          {customFields.map((f) => (
+          {editableCustomFields.map((f) => (
             <li key={f.id} className="rounded border border-workshop-200 p-3">
               {editCustomId === f.id ? (
                 <div className="space-y-2">
@@ -860,7 +862,11 @@ export default function AdminFieldsPage() {
               )}
             </li>
           ))}
-          {customFields.length === 0 && <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">{tr("Noch keine Custom Fields angelegt.", "No custom fields created yet.")}</li>}
+          {editableCustomFields.length === 0 && (
+            <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">
+              {tr("Noch keine frei bearbeitbaren Custom Fields angelegt.", "No editable custom fields created yet.")}
+            </li>
+          )}
         </ul>
         <form
           className="space-y-2"

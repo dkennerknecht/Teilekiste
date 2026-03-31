@@ -5,6 +5,7 @@ import type { CustomFieldCatalogEntry } from "@/lib/custom-fields";
 import type { CustomFieldPresetField } from "@/lib/custom-field-presets";
 
 type CatalogLabels = {
+  move: string;
   value: string;
   aliases: string;
   order: string;

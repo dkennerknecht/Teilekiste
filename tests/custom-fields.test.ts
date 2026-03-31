@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CustomFieldValidationError, normalizeCustomFieldValue, parseCustomFieldValueCatalog } from "@/lib/custom-fields";
+import {
+  CustomFieldValidationError,
+  normalizeCustomFieldValue,
+  parseCustomFieldOptions,
+  parseCustomFieldValueCatalog,
+  reorderCustomFieldCatalogEntries
+} from "@/lib/custom-fields";
 
 describe("custom field catalogs", () => {
   it("parses structured catalogs and falls back to legacy options", () => {
@@ -20,6 +26,16 @@ describe("custom field catalogs", () => {
       { value: "1%", aliases: [], sortOrder: 0 },
       { value: "5%", aliases: [], sortOrder: 1 }
     ]);
+
+    expect(
+      parseCustomFieldOptions({
+        options: JSON.stringify(["1%", "5%"]),
+        valueCatalog: JSON.stringify([
+          { value: "5%", aliases: [], sortOrder: 1 },
+          { value: "1%", aliases: [], sortOrder: 0 }
+        ])
+      })
+    ).toEqual(["1%", "5%"]);
   });
 
   it("canonicalizes alias input for text fields", () => {
@@ -50,5 +66,23 @@ describe("custom field catalogs", () => {
         "2%"
       )
     ).toThrow(CustomFieldValidationError);
+  });
+
+  it("reorders catalog entries and rewrites sortOrder sequentially", () => {
+    expect(
+      reorderCustomFieldCatalogEntries(
+        [
+          { value: "Rot", aliases: [], sortOrder: 10 },
+          { value: "Blau", aliases: [], sortOrder: 20 },
+          { value: "Gruen", aliases: [], sortOrder: 30 }
+        ],
+        2,
+        0
+      )
+    ).toEqual([
+      { value: "Gruen", aliases: [], sortOrder: 0 },
+      { value: "Rot", aliases: [], sortOrder: 1 },
+      { value: "Blau", aliases: [], sortOrder: 2 }
+    ]);
   });
 });
