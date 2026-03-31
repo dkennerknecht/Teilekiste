@@ -44,6 +44,12 @@ describe("seedDatabase", () => {
           .mockResolvedValueOnce({ id: "loc-2" })
           .mockResolvedValueOnce({ id: "loc-3" })
       },
+      storageShelf: {
+        upsert: vi
+          .fn()
+          .mockResolvedValueOnce({ id: "shelf-1", name: "Regal 1" })
+          .mockResolvedValueOnce({ id: "shelf-2", name: "Schrank Netz" })
+      },
       tag: { upsert: vi.fn().mockResolvedValue({}) },
       area: {
         upsert: vi
@@ -100,6 +106,26 @@ describe("seedDatabase", () => {
           delta: -2,
           reason: "CONSUMPTION",
           note: "Prototyp A"
+        })
+      })
+    );
+    expect(prisma.item.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        create: expect.objectContaining({
+          storageShelfId: "shelf-1",
+          storageArea: "Regal 1",
+          placementStatus: "PLACED"
+        })
+      })
+    );
+    expect(prisma.item.upsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        create: expect.objectContaining({
+          storageShelfId: "shelf-2",
+          storageArea: "Schrank Netz",
+          placementStatus: "PLACED"
         })
       })
     );
