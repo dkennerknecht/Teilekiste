@@ -418,8 +418,7 @@ export async function ensureTechnicalFieldPresets(db: TechnicalFieldPresetDb | n
 
   if (presetTable.createMany) {
     await presetTable.createMany({
-      data: rows,
-      skipDuplicates: true
+      data: rows
     });
   } else if (presetTable.upsert) {
     for (const row of rows) {
