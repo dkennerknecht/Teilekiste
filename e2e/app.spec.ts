@@ -9,6 +9,7 @@ test("admin can create an item and inspect audit history", async ({ page }) => {
   await page.getByLabel("Name").fill(itemName);
   await page.getByLabel(/^(Hersteller|Manufacturer)$/).fill("OpenAI Labs");
   await page.getByLabel("MPN").fill(`E2E-${Date.now()}`);
+  await page.getByLabel(/^(Regal \/ Bereich|Shelf \/ area)$/).selectOption({ index: 1 });
   await page.getByRole("spinbutton", { name: /^(Bestand|Stock)\b/ }).fill("4");
   await page.getByRole("button", { name: /^(Speichern|Save)$/ }).click();
 

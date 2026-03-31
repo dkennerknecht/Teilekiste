@@ -5,6 +5,7 @@ type SeedPrisma = {
   userLocation: { upsert(args: any): Promise<unknown> };
   category: { upsert(args: any): Promise<{ id: string }> };
   storageLocation: { upsert(args: any): Promise<{ id: string }> };
+  storageShelf: { upsert(args: any): Promise<{ id: string; name: string }> };
   tag: { upsert(args: any): Promise<unknown> };
   area: { upsert(args: any): Promise<{ id: string }> };
   labelType: { upsert(args: any): Promise<{ id: string }> };
@@ -124,6 +125,41 @@ export async function seedDatabase(prisma: SeedPrisma) {
     )
   );
 
+  const shelves = await Promise.all([
+    prisma.storageShelf.upsert({
+      where: {
+        storageLocationId_name: {
+          storageLocationId: locations[0].id,
+          name: "Regal 1"
+        }
+      },
+      update: {},
+      create: {
+        storageLocationId: locations[0].id,
+        name: "Regal 1",
+        code: "R1",
+        description: "Seed shelf for workshop stock",
+        mode: "OPEN_AREA"
+      }
+    }),
+    prisma.storageShelf.upsert({
+      where: {
+        storageLocationId_name: {
+          storageLocationId: locations[2].id,
+          name: "Schrank Netz"
+        }
+      },
+      update: {},
+      create: {
+        storageLocationId: locations[2].id,
+        name: "Schrank Netz",
+        code: "SN",
+        description: "Seed shelf for office network gear",
+        mode: "OPEN_AREA"
+      }
+    })
+  ]);
+
   await prisma.userLocation.upsert({
     where: {
       userId_storageLocationId: {
@@ -229,8 +265,9 @@ export async function seedDatabase(prisma: SeedPrisma) {
       description: "WLAN/Bluetooth Board",
       categoryId: categories[0].id,
       storageLocationId: locations[0].id,
-      storageArea: "Regal 1",
-      bin: "A12",
+      storageShelfId: shelves[0].id,
+      storageArea: shelves[0].name,
+      placementStatus: "PLACED",
       stock: 18,
       unit: "STK",
       minStock: 5,
@@ -250,8 +287,9 @@ export async function seedDatabase(prisma: SeedPrisma) {
       description: "Unmanaged",
       categoryId: categories[4].id,
       storageLocationId: locations[2].id,
-      storageArea: "Schrank Netz",
-      bin: "B02",
+      storageShelfId: shelves[1].id,
+      storageArea: shelves[1].name,
+      placementStatus: "PLACED",
       stock: 4,
       unit: "STK",
       minStock: 2,
