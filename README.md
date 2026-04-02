@@ -157,6 +157,45 @@ docker exec teilekiste npm run bootstrap:system
 - `admin@local`
 - `admin123`
 
+## GitHub Container Registry
+
+Dieses Repository publisht automatisch ein Docker-Image nach `ghcr.io`.
+
+- Push auf `main` aktualisiert `ghcr.io/<owner>/teilekiste:latest`
+- Git-Tag wie `v2.3.0` publisht zusaetzlich `ghcr.io/<owner>/teilekiste:v2.3.0`
+- der Workflow ist in `.github/workflows/publish-container.yml`
+
+Typischer Ablauf:
+
+1. Image ziehen:
+
+```bash
+docker pull ghcr.io/<owner>/teilekiste:latest
+```
+
+2. Container starten:
+
+```bash
+docker run -d \
+  --name teilekiste \
+  -p 3000:3000 \
+  -e NEXTAUTH_SECRET=change-me-super-secret \
+  -v teilekiste_data:/data \
+  ghcr.io/<owner>/teilekiste:latest
+```
+
+3. Alternativ versioniertes Release-Image verwenden:
+
+```bash
+docker pull ghcr.io/<owner>/teilekiste:v2.3.0
+```
+
+Hinweise:
+
+- `ghcr.io` nutzt den GitHub-Benutzer oder die GitHub-Organisation als `<owner>`.
+- Wenn du eine Release-Seite in GitHub willst, erstelle das Release auf Basis desselben `v*`-Tags.
+- Falls das Package privat bleibt, musst du vor `docker pull` ein `docker login ghcr.io` mit einem GitHub Token durchfuehren.
+
 ## Demo-Daten statt leerem System
 
 Wenn du mit Beispieldaten starten willst:
