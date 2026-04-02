@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/api";
 import { storageBinRangeCreateSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
-import { findStorageBinCodeConflict, isManagedStorageBinCode, mapPlacementError, normalizeStorageBinCode } from "@/lib/storage-bins";
+import { findStorageBinCodeConflict, formatStorageBinLabel, isManagedStorageBinCode, mapPlacementError, normalizeStorageBinCode } from "@/lib/storage-bins";
 
 async function validateStorageBinShelf(storageShelfId: string) {
   const shelf = await prisma.storageShelf.findUnique({
     where: { id: storageShelfId },
-    select: { id: true, name: true, mode: true, storageLocationId: true }
+    select: { id: true, name: true, code: true, mode: true, storageLocationId: true }
   });
   if (!shelf) {
     throw new Error("PLACEMENT_SHELF_INVALID");
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   try {
     const shelf = await validateStorageBinShelf(body.storageShelfId);
     const requestedCodes = Array.from({ length: body.end - body.start + 1 }, (_, index) => {
-      const code = normalizeStorageBinCode(`${body.prefix}${body.start + index}`)!;
+      const code = normalizeStorageBinCode(String(body.start + index))!;
       if (!isManagedStorageBinCode(code)) {
         throw new Error("PLACEMENT_BIN_INVALID_CODE");
       }
@@ -70,8 +70,8 @@ export async function POST(req: NextRequest) {
       requestedCount: requestedCodes.length,
       createdCount: created.length,
       existingCount: existingCodes.length,
-      createdCodes: created.map((entry) => entry.code),
-      existingCodes
+      createdCodes: created.map((entry) => formatStorageBinLabel({ shelfCode: shelf.code || null, binCode: entry.code }) || entry.code),
+      existingCodes: existingCodes.map((code) => formatStorageBinLabel({ shelfCode: shelf.code || null, binCode: code }) || code)
     });
   } catch (error) {
     const placementError = mapPlacementError(error);
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(placementError.body, { status: placementError.status });
     }
     if ((error as Error).message === "PLACEMENT_BIN_INVALID_CODE") {
-      return NextResponse.json({ error: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen" }, { status: 400 });
+      return NextResponse.json({ error: "Drawer-Code muss aus zwei Ziffern von 01 bis 99 bestehen" }, { status: 400 });
     }
     throw error;
   }

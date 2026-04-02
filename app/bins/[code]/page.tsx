@@ -40,7 +40,7 @@ export default function StorageBinPage({ params }: { params: { code: string } })
   return (
     <div className="space-y-4">
       <div className="card">
-        <p className="font-mono text-workshop-700">{drawer.code}</p>
+        <p className="font-mono text-workshop-700">{drawer.fullCode || drawer.code}</p>
         <h1 className="text-2xl font-semibold">{tr("Drawer-Inhalt", "Drawer contents")}</h1>
         <p className="text-sm text-workshop-700">
           {[drawer.storageLocation?.name || null, drawer.storageArea || null].filter(Boolean).join(" / ") || "-"}
@@ -60,10 +60,10 @@ export default function StorageBinPage({ params }: { params: { code: string } })
 
         <div className="space-y-3">
           {Array.from({ length: drawer.slotCount }, (_, index) => index + 1).map((slot) => {
-            const item = drawer.items.find((entry: any) => entry.binSlot === slot);
+            const item = drawer.items.find((entry: any) => entry.binSlot === slot || (drawer.slotCount <= 1 && entry.binSlot == null && slot === 1));
             return (
               <div key={slot} className="rounded-xl border border-workshop-200 p-3">
-                <p className="font-mono text-sm text-workshop-700">{drawer.code}-{slot}</p>
+                <p className="font-mono text-sm text-workshop-700">{drawer.slotCount <= 1 ? drawer.fullCode || drawer.code : `${drawer.fullCode || drawer.code}-${slot}`}</p>
                 {item ? (
                   <div className="mt-1 space-y-1">
                     <Link className="font-medium hover:underline" href={`/items/${item.id}`}>

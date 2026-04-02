@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { syncLabelCatalog, SYSTEM_LABEL_AREA } from "@/lib/label-catalog";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
+import { formatStorageBinLabel } from "@/lib/storage-labels";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -58,7 +59,14 @@ export async function GET(req: NextRequest) {
     categories,
     locations,
     shelves,
-    bins,
+    bins: bins.map((bin) => ({
+      ...bin,
+      fullCode:
+        formatStorageBinLabel({
+          shelfCode: bin.storageShelf?.code || null,
+          binCode: bin.code
+        }) || bin.code
+    })),
     areas: [],
     systemAreaCode: SYSTEM_LABEL_AREA.code,
     types,

@@ -211,6 +211,18 @@ const apiErrorMessages: Record<string, { de: string; en: string }> = {
     de: "Drawer-Tausch ist nur innerhalb desselben Regals moeglich",
     en: "Drawer swap is only possible within the same shelf"
   },
+  "Drawer-Move oder -Tausch ist nur innerhalb desselben Lagerorts moeglich": {
+    de: "Drawer-Move oder -Tausch ist nur innerhalb desselben Lagerorts moeglich",
+    en: "Drawer moves or swaps are only possible within the same storage location"
+  },
+  "Ziel-Drawer ist bereits belegt": {
+    de: "Ziel-Drawer ist bereits belegt",
+    en: "Target drawer is already occupied"
+  },
+  "Die Zielposition hat nicht genug Unterfaecher fuer die aktuelle Belegung": {
+    de: "Die Zielposition hat nicht genug Unterfaecher fuer die aktuelle Belegung",
+    en: "The target position does not have enough slots for the current contents"
+  },
   "Bestand darf nicht unter die reservierte Menge fallen": {
     de: "Bestand darf nicht unter die reservierte Menge fallen",
     en: "Stock cannot fall below the reserved quantity"
@@ -346,6 +358,10 @@ const apiErrorMessages: Record<string, { de: string; en: string }> = {
   "Drawer-Code muss dem Muster A01 bis Z99 entsprechen": {
     de: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen",
     en: "Drawer code must match the pattern A01 to Z99"
+  },
+  "Drawer-Code muss aus zwei Ziffern von 01 bis 99 bestehen": {
+    de: "Drawer-Code muss aus zwei Ziffern von 01 bis 99 bestehen",
+    en: "Drawer code must consist of two digits from 01 to 99"
   },
   "Drawer-Code ist bereits vorhanden": {
     de: "Drawer-Code ist bereits vorhanden",

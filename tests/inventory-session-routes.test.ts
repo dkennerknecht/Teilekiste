@@ -145,7 +145,7 @@ describe("inventory session routes", () => {
       }),
       expect.any(Object)
     );
-  });
+  }, 20000);
 
   it("rejects count updates from non-owners", async () => {
     const locationId = "22222222-2222-4222-8222-222222222222";

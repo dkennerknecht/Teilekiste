@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { parsePagination } from "@/lib/http";
 import { buildPlacementAccessWhere, formatItemPosition } from "@/lib/storage-bins";
+import { parseManagedDrawerLabel, parseManagedStorageShelfLabel } from "@/lib/storage-labels";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -12,6 +13,8 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim();
   if (!q) return NextResponse.json([]);
   const { limit } = parsePagination(req.nextUrl.searchParams, 50);
+  const managedDrawerLabel = parseManagedDrawerLabel(q);
+  const managedShelfLabel = parseManagedStorageShelfLabel(q);
 
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
 
@@ -26,14 +29,54 @@ export async function GET(req: NextRequest) {
         { name: { contains: q } },
         { mpn: { contains: q } },
         { manufacturer: { contains: q } }
+        ,
+        ...(managedShelfLabel
+          ? [
+              {
+                storageShelf: {
+                  is: {
+                    code: managedShelfLabel
+                  }
+                }
+              }
+            ]
+          : []),
+        ...(managedDrawerLabel
+          ? [
+              {
+                AND: [
+                  {
+                    storageShelf: {
+                      is: {
+                        code: managedDrawerLabel.shelfCode
+                      }
+                    }
+                  },
+                  {
+                    storageBin: {
+                      is: {
+                        code: managedDrawerLabel.binCode
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          : [])
       ],
       AND: buildPlacementAccessWhere(allowedLocationIds, auth.user!.role)
         ? [buildPlacementAccessWhere(allowedLocationIds, auth.user!.role)!]
         : undefined
     },
     include: {
+      storageLocation: {
+        select: { id: true, name: true, code: true }
+      },
+      storageShelf: {
+        select: { id: true, name: true, code: true }
+      },
       storageBin: {
-        select: { id: true, code: true }
+        select: { id: true, code: true, slotCount: true }
       }
     },
     take: limit,
@@ -98,7 +141,7 @@ export async function GET(req: NextRequest) {
         select: { id: true, name: true, code: true }
       },
       storageBin: {
-        select: { id: true, code: true }
+        select: { id: true, code: true, slotCount: true }
       }
     }
   });

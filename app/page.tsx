@@ -10,6 +10,7 @@ import { useAppLanguage } from "@/components/app-language-provider";
 import { translateApiErrorMessage } from "@/lib/app-language";
 import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
+import { formatStorageBinLabel } from "@/lib/storage-labels";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
 
 type Item = {
@@ -46,6 +47,7 @@ type ShelfOption = {
 type StorageBinOption = {
   id: string;
   code: string;
+  fullCode?: string | null;
   storageLocationId: string;
   storageShelfId: string;
   slotCount: number;
@@ -477,6 +479,8 @@ export default function HomePage() {
   const availableBulkTransferShelves = shelves.filter((shelf) => shelf.storageLocationId === bulkTransferForm.storageLocationId);
   const selectedBulkTransferShelf = availableBulkTransferShelves.find((shelf) => shelf.id === bulkTransferForm.storageShelfId) || null;
   const availableBulkTransferBins = bins.filter((bin) => bin.storageShelfId === bulkTransferForm.storageShelfId);
+  const selectedBulkTransferBin = availableBulkTransferBins.find((bin) => bin.id === bulkTransferForm.storageBinId) || null;
+  const selectedBulkTransferBinRequiresSlot = !!selectedBulkTransferBin && selectedBulkTransferBin.slotCount > 1;
   const hasActiveFilters = Boolean(categoryFilter || locationFilter || tagFilter || lowStockFilter || hasImagesFilter);
   const activeFilterCount = [Boolean(categoryFilter), Boolean(locationFilter), Boolean(tagFilter), lowStockFilter, hasImagesFilter].filter(Boolean).length;
 
@@ -485,6 +489,18 @@ export default function HomePage() {
       setMobileFiltersOpen(true);
     }
   }, [hasActiveFilters]);
+
+  function getBulkTransferBinLabel(bin: StorageBinOption | null | undefined) {
+    if (!bin) return "";
+    return (
+      bin.fullCode ||
+      formatStorageBinLabel({
+        shelfCode: selectedBulkTransferShelf?.code || shelves.find((entry) => entry.id === bin.storageShelfId)?.code || null,
+        binCode: bin.code
+      }) ||
+      bin.code
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1048,7 +1064,7 @@ export default function HomePage() {
                         </option>
                         {availableBulkTransferBins.map((bin) => (
                           <option key={bin.id} value={bin.id}>
-                            {bin.code}
+                            {getBulkTransferBinLabel(bin)}
                           </option>
                         ))}
                       </select>
@@ -1060,21 +1076,17 @@ export default function HomePage() {
                         className="input h-10 min-h-0"
                         value={bulkTransferForm.binSlot}
                         onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                        disabled={!bulkTransferForm.storageBinId}
+                        disabled={!bulkTransferForm.storageBinId || !selectedBulkTransferBinRequiresSlot}
                       >
                         <option value="">
                           {!bulkTransferForm.storageBinId
                             ? tr("Erst Drawer waehlen", "Choose drawer first")
-                            : tr("Unterfach waehlen", "Choose slot")}
+                            : selectedBulkTransferBinRequiresSlot
+                              ? tr("Unterfach waehlen", "Choose slot")
+                              : tr("Kein Unterfach erforderlich", "No slot required")}
                         </option>
-                        {(availableBulkTransferBins.find((bin) => bin.id === bulkTransferForm.storageBinId)
-                          ? Array.from(
-                              {
-                                length:
-                                  availableBulkTransferBins.find((bin) => bin.id === bulkTransferForm.storageBinId)?.slotCount || 0
-                              },
-                              (_, index) => index + 1
-                            )
+                        {(selectedBulkTransferBinRequiresSlot && selectedBulkTransferBin
+                          ? Array.from({ length: selectedBulkTransferBin.slotCount }, (_, index) => index + 1)
                           : []
                         ).map((slot) => (
                           <option key={slot} value={String(slot)}>

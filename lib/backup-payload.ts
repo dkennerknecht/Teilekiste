@@ -39,7 +39,15 @@ export async function buildBackupPayload(input?: {
   });
 
   const itemIds = items.map((item) => item.id);
-  const [categories, tags, locations, shelves, bins, customFields, technicalFieldScopeAssignments, technicalFieldPresets, importProfiles, areas, types, labelConfig, sequenceCounters, boms, users, auditLogs] =
+  const inventorySessions = await prisma.inventorySession.findMany({
+    where: locationFilter ? { storageLocationId: locationFilter } : undefined,
+    include: {
+      rows: true
+    }
+  });
+  const inventorySessionIds = inventorySessions.map((session) => session.id);
+
+  const [categories, tags, locations, shelves, bins, customFields, technicalFieldScopeAssignments, technicalFieldPresets, importProfiles, areas, types, labelConfig, sequenceCounters, categoryTypeCounters, boms, users, auditLogs, favorites, recentViews, apiTokens, accounts, sessions, verificationTokens] =
     await Promise.all([
       prisma.category.findMany(),
       prisma.tag.findMany(),
@@ -60,6 +68,7 @@ export async function buildBackupPayload(input?: {
       prisma.labelType.findMany(),
       prisma.labelConfig.findUnique({ where: { id: "default" } }),
       prisma.sequenceCounter.findMany(),
+      prisma.categoryTypeCounter.findMany(),
       itemIds.length
         ? prisma.billOfMaterial.findMany({
             where: {
@@ -94,7 +103,25 @@ export async function buildBackupPayload(input?: {
                 }
               : undefined
           })
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      itemIds.length
+        ? prisma.favorite.findMany({
+            where: {
+              itemId: { in: itemIds }
+            }
+          })
+        : Promise.resolve([]),
+      itemIds.length
+        ? prisma.recentView.findMany({
+            where: {
+              itemId: { in: itemIds }
+            }
+          })
+        : Promise.resolve([]),
+      input?.includeUsers ? prisma.apiToken.findMany() : Promise.resolve([]),
+      input?.includeUsers ? prisma.account.findMany() : Promise.resolve([]),
+      input?.includeUsers ? prisma.session.findMany() : Promise.resolve([]),
+      input?.includeUsers ? prisma.verificationToken.findMany() : Promise.resolve([])
     ]);
 
   return {
@@ -110,10 +137,19 @@ export async function buildBackupPayload(input?: {
     technicalFieldScopeAssignments,
     technicalFieldPresets,
     importProfiles,
+    inventorySessions: inventorySessions.map(({ rows, ...session }) => session),
+    inventorySessionRows: inventorySessions.flatMap((session) => session.rows),
+    favorites,
+    recentViews,
+    apiTokens,
+    accounts,
+    sessions,
+    verificationTokens,
     areas,
     types,
     labelConfig,
     sequenceCounters,
+    categoryTypeCounters,
     ...(input?.includeUsers
       ? {
           users: users.map((user: any) => ({

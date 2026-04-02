@@ -11,6 +11,8 @@ type LocationRow = { id: string; name: string; code?: string | null };
 type ShelfRow = {
   id: string;
   name: string;
+  code?: string | null;
+  mode?: string;
   storageLocationId: string;
   storageLocation?: LocationRow | null;
 };
@@ -84,10 +86,14 @@ export default function AdminPage() {
   const [editLocationCode, setEditLocationCode] = useState("");
   const [editShelfId, setEditShelfId] = useState<string | null>(null);
   const [editShelfName, setEditShelfName] = useState("");
+  const [editShelfCode, setEditShelfCode] = useState("");
   const [editShelfLocationId, setEditShelfLocationId] = useState("");
+  const [editShelfMode, setEditShelfMode] = useState("OPEN_AREA");
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUser, setEditUser] = useState({ name: "", email: "", role: "READ", isActive: true, password: "" });
   const [newShelfLocationId, setNewShelfLocationId] = useState("");
+  const [newShelfMode, setNewShelfMode] = useState("OPEN_AREA");
+  const [newShelfCode, setNewShelfCode] = useState("");
 
   const load = useCallback(async () => {
     const [d, c, t, ty, l, sh, u, tokens] = await Promise.all([
@@ -146,8 +152,13 @@ export default function AdminPage() {
     return [...rows].sort(
       (a, b) =>
         String(a.storageLocation?.name || "").localeCompare(String(b.storageLocation?.name || "")) ||
+        String(a.code || "").localeCompare(String(b.code || "")) ||
         String(a.name || "").localeCompare(String(b.name || ""))
     );
+  }
+
+  function describeShelfMode(mode?: string | null) {
+    return mode === "DRAWER_HOST" ? tr("Drawer-Host", "Drawer host") : tr("Offener Bereich", "Open area");
   }
 
   function replaceById<T extends IdObj>(rows: T[], nextRow: T) {
@@ -181,7 +192,9 @@ export default function AdminPage() {
     if (kind === "shelf") {
       setEditShelfId(row.id);
       setEditShelfName((row as any).name || "");
+      setEditShelfCode((row as any).code || "");
       setEditShelfLocationId((row as any).storageLocationId || "");
+      setEditShelfMode((row as any).mode || "OPEN_AREA");
     }
     if (kind === "user") {
       setEditUserId(row.id);
@@ -784,7 +797,7 @@ export default function AdminPage() {
             {shelves.map((shelf) => (
               <li key={shelf.id} className="rounded border border-workshop-200 p-2">
                 {editShelfId === shelf.id ? (
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem_minmax(0,1fr)_auto_auto]">
                     <select className="input min-w-0" value={editShelfLocationId} onChange={(e) => setEditShelfLocationId(e.target.value)}>
                       {locations.map((location) => (
                         <option key={location.id} value={location.id}>
@@ -792,6 +805,17 @@ export default function AdminPage() {
                         </option>
                       ))}
                     </select>
+                    <select className="input min-w-0" value={editShelfMode} onChange={(e) => setEditShelfMode(e.target.value)}>
+                      <option value="OPEN_AREA">{tr("Offener Bereich", "Open area")}</option>
+                      <option value="DRAWER_HOST">{tr("Drawer-Host", "Drawer host")}</option>
+                    </select>
+                    <input
+                      className="input min-w-0"
+                      value={editShelfCode}
+                      onChange={(e) => setEditShelfCode(e.target.value.toUpperCase())}
+                      placeholder={tr("Code (z. B. AB)", "Code (e.g. AB)")}
+                      maxLength={2}
+                    />
                     <input className="input min-w-0" value={editShelfName} onChange={(e) => setEditShelfName(e.target.value)} />
                     <button
                       className="btn-secondary px-2"
@@ -799,14 +823,22 @@ export default function AdminPage() {
                         const { res, data } = await apiJson("/api/admin/shelves", {
                           method: "PATCH",
                           headers: { "content-type": "application/json" },
-                          body: JSON.stringify({ id: shelf.id, name: editShelfName, storageLocationId: editShelfLocationId })
+                          body: JSON.stringify({
+                            id: shelf.id,
+                            name: editShelfName,
+                            code: editShelfCode || null,
+                            storageLocationId: editShelfLocationId,
+                            mode: editShelfMode
+                          })
                         });
                         setFeedback(res.ok ? tr("Regal aktualisiert", "Shelf updated") : tr(`Regal-Update fehlgeschlagen: ${data.error || unknownError}`, `Shelf update failed: ${data.error || unknownError}`));
                         if (res.ok) {
                           setShelves((prev) => sortShelves(replaceById(prev, data as ShelfRow)));
                           setEditShelfId(null);
                           setEditShelfName("");
+                          setEditShelfCode("");
                           setEditShelfLocationId("");
+                          setEditShelfMode("OPEN_AREA");
                         }
                       }}
                     >
@@ -817,7 +849,9 @@ export default function AdminPage() {
                       onClick={() => {
                         setEditShelfId(null);
                         setEditShelfName("");
+                        setEditShelfCode("");
                         setEditShelfLocationId("");
+                        setEditShelfMode("OPEN_AREA");
                       }}
                     >
                       {tr("Abbrechen", "Cancel")}
@@ -825,8 +859,11 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate whitespace-nowrap" title={`${shelf.storageLocation?.name || "-"} · ${shelf.name}`}>
-                      {shelf.name} · {shelf.storageLocation?.name || "-"}
+                    <span
+                      className="min-w-0 truncate whitespace-nowrap"
+                      title={`${[shelf.code, shelf.name, shelf.storageLocation?.name || "-", describeShelfMode(shelf.mode)].filter(Boolean).join(" · ")}`}
+                    >
+                      {[shelf.code, shelf.name, shelf.storageLocation?.name || "-", describeShelfMode(shelf.mode)].filter(Boolean).join(" · ")}
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
                       <IconActionButton label={tr("Regal bearbeiten", "Edit shelf")} onClick={() => startEdit(shelf, "shelf")}>
@@ -856,7 +893,7 @@ export default function AdminPage() {
             {shelves.length === 0 && <li className="rounded border border-dashed border-workshop-200 p-3 text-workshop-700">{tr("Noch keine Regale angelegt.", "No shelves created yet.")}</li>}
           </ul>
           <form
-            className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+            className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem_minmax(0,1fr)_auto]"
             onSubmit={async (e) => {
               e.preventDefault();
               const formEl = e.currentTarget;
@@ -864,13 +901,20 @@ export default function AdminPage() {
               const { res, data } = await apiJson("/api/admin/shelves", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ name: fd.get("name"), storageLocationId: fd.get("storageLocationId") })
+                body: JSON.stringify({
+                  name: fd.get("name"),
+                  code: fd.get("code") || null,
+                  storageLocationId: fd.get("storageLocationId"),
+                  mode: fd.get("mode")
+                })
               });
               setFeedback(res.ok ? tr("Regal angelegt", "Shelf created") : tr(`Regal anlegen fehlgeschlagen: ${data.error || unknownError}`, `Shelf creation failed: ${data.error || unknownError}`));
               if (res.ok) {
                 setShelves((prev) => sortShelves([...(prev as ShelfRow[]), data as ShelfRow]));
                 formEl.reset();
                 setNewShelfLocationId(String(fd.get("storageLocationId") || newShelfLocationId));
+                setNewShelfMode("OPEN_AREA");
+                setNewShelfCode("");
               }
             }}
           >
@@ -892,6 +936,19 @@ export default function AdminPage() {
                 ))
               )}
             </select>
+            <select className="input min-w-0" name="mode" value={newShelfMode} onChange={(e) => setNewShelfMode(e.target.value)} required disabled={!locations.length}>
+              <option value="OPEN_AREA">{tr("Offener Bereich", "Open area")}</option>
+              <option value="DRAWER_HOST">{tr("Drawer-Host", "Drawer host")}</option>
+            </select>
+            <input
+              className="input min-w-0"
+              name="code"
+              value={newShelfCode}
+              onChange={(e) => setNewShelfCode(e.target.value.toUpperCase())}
+              placeholder={tr("Code (z. B. AB)", "Code (e.g. AB)")}
+              maxLength={2}
+              disabled={!locations.length}
+            />
             <input className="input min-w-0" name="name" placeholder={tr("Neues Regal", "New shelf")} required disabled={!locations.length} />
             <button className="btn-secondary" type="submit" disabled={!locations.length}>
               {tr("Anlegen", "Create")}

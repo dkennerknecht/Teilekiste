@@ -1,5 +1,8 @@
 export const env = {
   APP_BASE_URL: process.env.APP_BASE_URL || "http://localhost:3000",
+  NEXTAUTH_URL: process.env.NEXTAUTH_URL || "http://localhost:3000",
+  NEXTAUTH_URL_INTERNAL: process.env.NEXTAUTH_URL_INTERNAL || "http://127.0.0.1:3000",
+  AUTH_TRUST_HOST: process.env.AUTH_TRUST_HOST || "true",
   NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "change-me",
   DATABASE_URL: process.env.DATABASE_URL || "file:/data/sqlite/app.db",
   UPLOAD_DIR: process.env.UPLOAD_DIR || "/data/uploads",

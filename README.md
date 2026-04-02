@@ -1,12 +1,14 @@
 # Teilekiste
 
-Self-hosted Inventar-Webapp fuer kleine Werkstaetten und Materiallager mit Next.js, Prisma und SQLite.
+Self-hosted Inventar-Webapp fuer kleine Werkstaetten, Elektroniklabore und Materiallager auf Basis von Next.js, Prisma und SQLite.
 
 Der aktuelle Schwerpunkt liegt auf:
-- einfacher Bestandsfuehrung
-- sauberer Lagerstruktur
+
 - schneller mobiler Nutzung
-- Bilder, Labels und Auditierbarkeit
+- sauberer Lagerstruktur mit Shelf- und Drawer-Logik
+- nachvollziehbarer Bestandsfuehrung
+- technischen Materialdaten
+- robustem Import, Backup und Restore
 - einfacher Selbsthostbarkeit per Docker Compose
 
 ## Stack
@@ -20,79 +22,111 @@ Der aktuelle Schwerpunkt liegt auf:
 
 ## Aktueller Funktionsumfang
 
-### Inventar
+### Inventar und Items
 
 - Items anlegen, bearbeiten, archivieren und in den Papierkorb verschieben
-- automatische Label-Vergabe im Format `KATEGORIE-TYPE-NNN`
-- fortlaufende Nummern pro Kategorie/Type-Kombination, ohne Wiederverwendung geloeschter Nummern
-- Bilder direkt beim Anlegen und Bearbeiten, inklusive Mehrfach-Upload
+- automatische Label-Vergabe im Format `KATEGORIE-TYPE-NNN`, z. B. `EL-WI-024`
+- fortlaufende Nummern pro Kategorie/Type-Kombination ohne Wiederverwendung geloeschter Nummern
+- Bilder und Attachments direkt beim Anlegen und Bearbeiten
 - Tags direkt beim Anlegen und Bearbeiten
-- Custom Fields mit Scope auf Kategorie, Type oder deren Kombination
-- Duplikatwarnung bei Name/MPN
+- Dublettenwarnung bei Name/MPN
+- Admin-Workflow fuer Dubletten mit Merge-Preview und sicherem Vollmerge
 
 ### Lagerstruktur
 
-- Kategorien mit 2-stelligen Codes
-- Types mit 2-stelligen Codes
 - Lagerorte
-- Regale pro Lagerort
-- Fach/Bin pro Item
+- Shelfs pro Lagerort
+- Shelf-Code als feste Positionskennung mit genau zwei Buchstaben pro Lagerort, z. B. `AB`
+- Shelf-Modi `OPEN_AREA` und `DRAWER_HOST`
+- Drawer unter Shelfs mit zweistelliger Nummer `01..99`
+- sichtbare Drawer-Labels als Kombination aus Shelf + Drawer, z. B. `AB01`
+- optionale Unterfaecher pro Drawer fuer Items, ohne dass das Unterfach auf dem physischen Drawer-Label erscheinen muss
+- eigene Lagerplatzuebersicht unter `Locations`
 
-### Bestand und Historie
+### Platzierung, Bestand und Historie
 
-- Bestandsbuchungen
-- Reservierungen
-- verfuegbarer Bestand als `Bestand - Reservierungen`
-- verfuegbarer Bestand wird nie negativ angezeigt
-- Mindestbestand pro Item
+- Placement-Status `PLACED`, `UNPLACED`, `INCOMING`
+- eigene Ansicht fuer unplatzierte und erwartete Items
+- explizite Einzeltransfers und Bulk-Transfers
+- Bestandsbewegungen, Reservierungen und verfuegbarer Bestand
 - Einkaufsliste fuer Items unter Mindestbestand
-- Audit-Historie fuer Item-Aenderungen und Reservierungen
+- Inventur-Sessions mit Draft, Review und Finalize
+- Audit-Historie fuer Updates, Transfers und weitere Admin-Aktionen
 
-### Organisation
+### Mengenlogik
 
-- Startseite mit Suche, Filtern und Bulk-Aktionen
-- Bulk-Bearbeitung fuer Kategorie, Lagerort, Regal, Fach und Tags
-- Bulk-Archivieren und Bulk-Loeschen
-- Archiv als Parkbereich fuer inaktive Items
-- Papierkorb mit 14 Tagen Wiederherstellungsfrist
+- klassische Einheiten wie `STK`, `SET`, `PACK`
+- Meterware `M` mit interner Speicherung in `mm`
+- Dezimalmengen fuer Bestand, Mindestbestand, Bewegungen und Reservierungen
+- Anzeige und API-Ausgabe fuer Meterware in `m`
 
-### Admin
+### Datenqualitaet und Felder
+
+- freie `Custom Fields`
+- verwaltete `Technical Field Sets` pro `Kategorie + Type`
+- technische Presets sind im Admin bearbeitbar und neu anlegbar
+- Listenwerte mit Katalog, Reihenfolge und Drag-and-drop-Sortierung
+- Wert-Normalisierung, Aliase und Vorschlaege fuer bessere Datenqualitaet
+
+### Import, Export, Labels und Backup
+
+- Admin-Import mit Profilen, Header-Fingerprint und Preview/Apply
+- CSV- und JSON-Export
+- P-touch-CSV-Export fuer Shelfs, Drawers oder beide zusammen
+- freie Wahl des CSV-Delimiters fuer den P-touch-Export: `;`, `,` oder `Tab`
+- ZIP-Backup mit Exportdaten, Uploads und Attachments
+- Restore mit Preview sowie `merge` oder `overwrite`
+- Restore deckt den heutigen App-Zustand inklusive Shelfs, Drawers, Placement-Daten, Inventur-Sessions und relevanter Nutzerdaten ab
+
+### Admin und Zugriff
 
 - Benutzerverwaltung mit Rollen
-- Kategorien, Types, Tags, Lagerorte und Regale verwalten
-- Custom Fields verwalten
+- Kategorien, Types, Tags, Lagerorte und Shelfs verwalten
+- Drawer-Management mit Einzelanlage, Range-Anlage, Move und Swap
+- Custom Fields und Technical Field Sets verwalten
 - App-Sprache zwischen Deutsch und Englisch umschalten
 - Read-only API Tokens
-- CSV Import und Export
-- Backup / Restore
 
-### Mobile Nutzung
+### Mobile Nutzung und Scanner
 
 - responsive Hauptnavigation
-- responsive Startseite, Item-Detailseiten und Admin-Bereiche
-- Scanner-Seite fuer schnelles Oeffnen von Items ueber Code
-- fuer LAN-Nutzung auf Handy geeignet, wenn `APP_BASE_URL` und `NEXTAUTH_URL` korrekt gesetzt sind
+- responsive Startseite, Detailseiten und Admin-Bereiche
+- Scanner-Seite fuer Shelf-, Drawer- und Item-Codes
+- Drawer-/Shelf-first-Scanner mit Item-Fallback
+- fuer LAN-Nutzung auf Handy geeignet
 
 ## Wichtige Produktregeln
 
-### Label-System
+### Label-System fuer Items
 
-- Labels werden automatisch erzeugt.
-- Das Format bleibt `KATEGORIE-TYPE-NUMMER`, z. B. `EL-WI-024`.
+- Item-Labels werden automatisch erzeugt.
+- Das Format bleibt `KATEGORIE-TYPE-NUMMER`.
 - Beim Aendern von Kategorie oder Type wird bei Bedarf automatisch ein neues Label vergeben.
 - Nummern werden nicht recycelt.
+
+### Lagerplatz-Labels
+
+- Shelf-Labels bestehen aus genau zwei Buchstaben pro Lagerort, z. B. `AB`.
+- Drawer-Labels bestehen aus Shelf + Drawer-Nummer, z. B. `AB01`.
+- Unterfaecher bleiben Item-intern und erscheinen in der App, aber nicht zwingend auf dem physischen Label.
+
+### Placement-Status
+
+- `PLACED`: normal eingelagert und als verfuegbarer Bestand nutzbar
+- `UNPLACED`: physisch vorhanden, aber noch ohne finalen Lagerplatz
+- `INCOMING`: bestellt oder erwartet, aber noch nicht physisch eingelagert
+
+### Verfuegbarer Bestand
+
+- Auf Uebersichtsseiten wird verfuegbarer Bestand angezeigt.
+- Reservierungen reduzieren den verfuegbaren Bestand.
+- Ueberreservierung und negative Bestandsbuchungen werden serverseitig abgefangen.
 
 ### Archiv vs. Papierkorb
 
 - `Archiviert` bedeutet: Item bleibt erhalten, ist aber aus aktiven Listen ausgeblendet.
 - `Geloescht` bedeutet: Item liegt im Papierkorb.
 - Papierkorb-Eintraege koennen 14 Tage lang wiederhergestellt werden und werden danach automatisch entfernt.
-
-### Verfuegbarer Bestand
-
-- Auf Uebersichtsseiten wird der verfuegbare Bestand gezeigt.
-- Reservierungen reduzieren die verfuegbare Menge.
-- Ueberreservierung und Bestandsaenderungen ins Negative werden serverseitig abgefangen.
 
 ## Docker Quickstart
 
@@ -140,21 +174,29 @@ docker compose up -d --build
 ```
 
 Hinweis:
+
 - `RUN_SEED_ON_STARTUP=1` laedt Demo-Daten.
-- `bootstrap:system` erzeugt nur das Grundsystem mit Admin und Standardlager.
+- `bootstrap:system` erzeugt nur das Grundsystem mit Admin und Standardkonfiguration.
 
 ## Handy- und LAN-Zugriff
 
-Fuer Login-Redirects auf Handy oder im lokalen Netz muessen diese Werte zur echten Host-Adresse passen:
+Fuer Login-Redirects und generierte Links nutzt die App standardmaessig den aktuellen Request-Host.
+Dadurch funktionieren `localhost` und wechselnde LAN-IPs ohne manuelles Umstellen der Compose-Datei.
+
+Nur wenn du bewusst eine feste kanonische URL oder einen Reverse-Proxy-Host erzwingen willst, sind diese Werte relevant:
 
 - `APP_BASE_URL`
 - `NEXTAUTH_URL`
+- `NEXTAUTH_URL_INTERNAL`
+- `AUTH_TRUST_HOST=true`
 
 Beispiel:
 
 ```env
-APP_BASE_URL=http://192.168.1.119:3000
-NEXTAUTH_URL=http://192.168.1.119:3000
+APP_BASE_URL=http://inventar.lan:3000
+NEXTAUTH_URL=http://inventar.lan:3000
+NEXTAUTH_URL_INTERNAL=http://127.0.0.1:3000
+AUTH_TRUST_HOST=true
 ```
 
 ## Persistenz
@@ -172,6 +214,8 @@ Darauf liegen:
 
 - `APP_BASE_URL`
 - `NEXTAUTH_URL`
+- `NEXTAUTH_URL_INTERNAL=http://127.0.0.1:3000`
+- `AUTH_TRUST_HOST=true`
 - `NEXTAUTH_SECRET`
 - `DATABASE_URL=file:/data/sqlite/app.db`
 - `UPLOAD_DIR=/data/uploads`
@@ -185,47 +229,53 @@ Darauf liegen:
 
 ### Neues Item
 
-- Name, Hersteller, Beschreibung, MPN
-- Kategorie und Type bestimmen das Label
-- Lagerort, Regal und Fach ordnen den Lagerplatz zu
-- Tags und Bilder koennen direkt mit angelegt werden
+- Name, Hersteller, Beschreibung und MPN pflegen
+- Kategorie und Type bestimmen das Item-Label
+- Placement-Status waehlen
+- optional Shelf, Drawer und Unterfach zuweisen
+- Tags, Bilder und Felder direkt mitpflegen
 
-### Bulk-Bearbeitung
+### Platzierung und Umlagerung
 
-Auf der Startseite koennen mehrere Items gemeinsam geaendert werden:
+- Items koennen ohne finalen Lagerplatz angelegt werden
+- unplatzierte und erwartete Items erscheinen in `Placements`
+- Transfers laufen explizit ueber Transfer-Flows statt ueber implizite Standort-Aenderungen
+- Drawer-Move und Drawer-Swap sind im Drawer-Management verfuegbar
 
-- Kategorie
-- Lagerort
-- Regal
-- Fach
-- Tags
-- Archivieren
-- Loeschen
+### Inventur-Sessions
+
+- Inventur pro Lagerort und optional Shelf/Bereich
+- persistente Zaehlsession mit Entwurf
+- Review vor dem Buchen
+- Bestandsaenderung erst beim Finalize
+
+### P-touch-Export
+
+- Export fuer `alle Labels`, `nur Shelfs` oder `nur Drawers`
+- Shelf-CSV enthaelt Shelf-Link und Shelf-Label wie `AB`
+- Drawer-CSV enthaelt Drawer-Link und Drawer-Label wie `AB01`
+- delimiter waehlbar: `;`, `,`, `Tab`
 
 ### Backup / Restore
 
 - Backup im Admin erstellen und herunterladen
-- Restore mit Preview sowie `merge` oder `overwrite`
 - ZIP enthaelt Exportdaten plus Upload- und Attachment-Dateien
+- Restore mit Preview sowie `merge` oder `overwrite`
 
-### API Tokens
-
-- read-only Zugriff fuer externe Systeme
-- Nutzung per `x-api-token` oder `Authorization: Bearer ...`
-
-## CSV / Export
+## CSV / Import / Export
 
 Vorhanden sind:
 
 - CSV Export
 - JSON Export
 - P-touch CSV Export
-- CSV Import mit Dry-run / Apply
+- profilgestuetzter CSV-Import mit Preview und Apply
 
 Der CSV-Import nutzt:
 
-- Kategorie aus jeder CSV-Zeile
-- Type als Auswahl im Import-Formular fuer die Label-Vergabe
+- Mapping-Profile mit Header-Fingerprint
+- Kernfelder, feste Werte und Custom-Field-Mapping
+- zeilenweise Fehler- und Warnungsanzeige
 
 ## Lokal ohne Docker
 
@@ -273,4 +323,3 @@ Aktuell abgedeckt:
 ## Weitere Doku
 
 - [Feature-Analyse](docs/feature-analysis.md)
-

@@ -42,7 +42,7 @@ export default function StorageShelfPage({ params }: { params: { id: string } })
   return (
     <div className="space-y-4">
       <div className="card">
-        <p className="font-mono text-workshop-700">{shelf.code || shelf.name}</p>
+        <p className="font-mono text-workshop-700">{shelf.displayCode || shelf.code || shelf.name}</p>
         <h1 className="text-2xl font-semibold">{isOpenArea ? tr("Bereich", "Shelf area") : tr("Drawer-Regal", "Drawer shelf")}</h1>
         <p className="text-sm text-workshop-700">
           {[shelf.storageLocation?.name || null, shelf.name || null].filter(Boolean).join(" / ") || "-"}
@@ -87,7 +87,7 @@ export default function StorageShelfPage({ params }: { params: { id: string } })
               shelf.bins.map((bin: any) => (
                 <div key={bin.id} className="rounded-xl border border-workshop-200 p-3">
                   <Link className="font-medium hover:underline" href={`/bins/${bin.id}`}>
-                    {bin.code}
+                    {bin.fullCode || bin.code}
                   </Link>
                   <p className="text-sm text-workshop-700">
                     {tr("Slots", "Slots")}: {bin.slotCount} · {tr("Belegt", "Occupied")}: {bin._count?.items || 0}

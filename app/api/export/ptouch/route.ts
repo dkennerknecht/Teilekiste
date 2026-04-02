@@ -4,18 +4,41 @@ import { prisma } from "@/lib/prisma";
 import { toCsv } from "@/lib/csv";
 import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { serializeStoredQuantity } from "@/lib/quantity";
-import { formatItemPosition, normalizeStorageBinCode, normalizeStorageShelfCode } from "@/lib/storage-bins";
-import { env } from "@/lib/env";
+import { formatItemPosition } from "@/lib/storage-bins";
+import { formatStorageBinLabel, normalizeStorageShelfCode } from "@/lib/storage-labels";
+import { buildAbsoluteUrl } from "@/lib/request-origin";
+
+type PtouchLabelRow = {
+  labelUrl: string;
+  labelName: string;
+};
+
+function normalizeCsvDelimiter(value: string | null) {
+  if (value === "," || value === "comma") return ",";
+  if (value === "\t" || value === "tab") return "\t";
+  return ";";
+}
+
+function toPtouchResponse(rows: PtouchLabelRow[], filename: string, delimiter: string) {
+  const csv = toCsv(rows, delimiter);
+  return new NextResponse(csv, {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename=${filename}`
+    }
+  });
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth.error) return auth.error;
 
-  const delimiter = req.nextUrl.searchParams.get("delimiter") || ";";
-  const mode = req.nextUrl.searchParams.get("mode") || "items";
+  const delimiter = normalizeCsvDelimiter(req.nextUrl.searchParams.get("delimiter"));
+  const mode = req.nextUrl.searchParams.get("mode") || "all";
   const allowedLocationIds = await resolveAllowedLocationIds(auth.user! as never);
 
-  if (mode === "drawers") {
+  if (mode === "drawers" || mode === "shelves" || mode === "all") {
+    const requestOrigin = buildAbsoluteUrl(req, "/").replace(/\/$/, "");
     const bins = await prisma.storageBin.findMany({
       where: {
         isActive: true,
@@ -29,23 +52,20 @@ export async function GET(req: NextRequest) {
       orderBy: [{ storageShelf: { code: "asc" } }, { code: "asc" }]
     });
 
-    const csv = toCsv(
-      bins.map((bin) => ({
-        drawerUrl: `${env.APP_BASE_URL}/bins/${encodeURIComponent(bin.id)}`,
-        drawerName: normalizeStorageBinCode(bin.code) || bin.code
-      })),
-      ";"
-    );
+    const drawers: PtouchLabelRow[] = bins.map((bin) => ({
+      labelUrl: `${requestOrigin}/bins/${encodeURIComponent(
+        formatStorageBinLabel({
+          shelfCode: bin.storageShelf?.code || null,
+          binCode: bin.code
+        }) || bin.code
+      )}`,
+      labelName:
+        formatStorageBinLabel({
+          shelfCode: bin.storageShelf?.code || null,
+          binCode: bin.code
+        }) || bin.code
+    }));
 
-    return new NextResponse(csv, {
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": "attachment; filename=ptouch-drawers.csv"
-      }
-    });
-  }
-
-  if (mode === "shelves") {
     const shelves = await prisma.storageShelf.findMany({
       where: {
         storageLocationId: allowedLocationIds ? { in: allowedLocationIds.length ? allowedLocationIds : ["__none__"] } : undefined,
@@ -54,21 +74,24 @@ export async function GET(req: NextRequest) {
       orderBy: [{ storageLocation: { name: "asc" } }, { code: "asc" }, { name: "asc" }]
     });
 
-    const csv = toCsv(
-      shelves.map((shelf) => ({
-        shelfUrl: `${env.APP_BASE_URL}/shelves/${encodeURIComponent(shelf.id)}`,
-        shelfCode: normalizeStorageShelfCode(shelf.code) || shelf.name,
-        shelfDescription: shelf.description || shelf.name
-      })),
-      ";"
-    );
+    const shelfRows: PtouchLabelRow[] = shelves.map((shelf) => ({
+      labelUrl: `${requestOrigin}/shelves/${encodeURIComponent(shelf.id)}`,
+      labelName: normalizeStorageShelfCode(shelf.code) || shelf.name
+    }));
 
-    return new NextResponse(csv, {
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": "attachment; filename=ptouch-shelves.csv"
-      }
-    });
+    if (mode === "shelves") {
+      return toPtouchResponse(shelfRows, "ptouch-shelves.csv", delimiter);
+    }
+
+    if (mode === "drawers") {
+      return toPtouchResponse(drawers, "ptouch-drawers.csv", delimiter);
+    }
+
+    return toPtouchResponse(
+      [...shelfRows, ...drawers].sort((left, right) => left.labelName.localeCompare(right.labelName)),
+      "ptouch-all-labels.csv",
+      delimiter
+    );
   }
 
   const items = await prisma.item.findMany({

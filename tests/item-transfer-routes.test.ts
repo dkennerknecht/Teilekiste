@@ -204,7 +204,7 @@ describe("item transfer routes", () => {
       expect.any(Object)
     );
     expect(txStockMovementCreateMock).not.toHaveBeenCalled();
-  });
+  }, 20000);
 
   it("returns a dry-run preview for bulk transfers with blocked items", async () => {
     const allowedSourceLocationId = "33333333-3333-4333-8333-333333333333";

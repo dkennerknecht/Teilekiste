@@ -10,6 +10,7 @@ import { parseJson } from "@/lib/http";
 import {
   applyStorageBinSlotCountChange,
   findStorageBinCodeConflict,
+  formatStorageBinLabel,
   isManagedStorageBinCode,
   mapPlacementError,
   normalizeStorageBinCode
@@ -57,14 +58,21 @@ export async function GET(req: NextRequest) {
           }
         }
       },
-      orderBy: [{ code: "asc" }]
+      orderBy: [{ storageLocation: { name: "asc" } }, { storageShelf: { code: "asc" } }, { code: "asc" }]
     });
 
   return NextResponse.json(
-    bins.map((bin) => ({
-      ...bin,
-      code: normalizeStorageBinCode(bin.code) || bin.code
-    }))
+    bins.map((bin) => {
+      const code = normalizeStorageBinCode(bin.code) || bin.code;
+      return {
+        ...bin,
+        code,
+        fullCode: formatStorageBinLabel({
+          shelfCode: bin.storageShelf?.code || null,
+          binCode: code
+        })
+      };
+    })
   );
 }
 
@@ -80,7 +88,7 @@ export async function POST(req: NextRequest) {
     const validatedShelf = await validateStorageBinShelf(body.storageShelfId);
     const normalizedCode = normalizeStorageBinCode(body.code)!;
     if (!isManagedStorageBinCode(normalizedCode)) {
-      return NextResponse.json({ error: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen" }, { status: 400 });
+      return NextResponse.json({ error: "Drawer-Code muss aus zwei Ziffern von 01 bis 99 bestehen" }, { status: 400 });
     }
     const conflictingBin = await findStorageBinCodeConflict(prisma, normalizedCode, validatedShelf.id);
     if (conflictingBin) {
@@ -105,7 +113,16 @@ export async function POST(req: NextRequest) {
         }
       }
     });
-    return NextResponse.json(storageBin, { status: 201 });
+    return NextResponse.json(
+      {
+        ...storageBin,
+        fullCode: formatStorageBinLabel({
+          shelfCode: storageBin.storageShelf?.code || null,
+          binCode: storageBin.code
+        })
+      },
+      { status: 201 }
+    );
   } catch (error) {
     const placementError = mapPlacementError(error);
     if (placementError) {
@@ -133,7 +150,7 @@ export async function PATCH(req: NextRequest) {
     const normalizedCode =
       body.code !== undefined ? normalizeStorageBinCode(body.code)! : normalizeStorageBinCode(existing.code)!;
     if (!isManagedStorageBinCode(normalizedCode)) {
-      return NextResponse.json({ error: "Drawer-Code muss dem Muster A01 bis Z99 entsprechen" }, { status: 400 });
+      return NextResponse.json({ error: "Drawer-Code muss aus zwei Ziffern von 01 bis 99 bestehen" }, { status: 400 });
     }
     const conflictingBin = await findStorageBinCodeConflict(prisma, normalizedCode, validatedShelf.id, existing.id);
     if (conflictingBin) {
@@ -167,7 +184,13 @@ export async function PATCH(req: NextRequest) {
         }
       });
     });
-    return NextResponse.json(updated);
+    return NextResponse.json({
+      ...updated,
+      fullCode: formatStorageBinLabel({
+        shelfCode: updated.storageShelf?.code || null,
+        binCode: updated.code
+      })
+    });
   } catch (error) {
     const placementError = mapPlacementError(error);
     if (placementError) {

@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { translateApiErrorMessage } from "@/lib/app-language";
+import { formatStorageBinLabel, formatStorageShelfLabel } from "@/lib/storage-labels";
 
 type LocationRow = { id: string; name: string; code?: string | null };
 type ShelfRow = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
 type BinRow = {
   id: string;
   code: string;
+  fullCode?: string | null;
   storageLocationId: string;
   storageShelfId: string;
   storageArea?: string | null;
@@ -28,8 +30,10 @@ export default function AdminBinsPage() {
   const [bins, setBins] = useState<BinRow[]>([]);
   const [feedback, setFeedback] = useState("");
   const [newBin, setNewBin] = useState({ code: "", storageLocationId: "", storageShelfId: "", slotCount: 3 });
-  const [rangeForm, setRangeForm] = useState({ prefix: "A", start: 1, end: 30, storageLocationId: "", storageShelfId: "", slotCount: 3 });
+  const [rangeForm, setRangeForm] = useState({ start: 1, end: 30, storageLocationId: "", storageShelfId: "", slotCount: 3 });
   const [swapForm, setSwapForm] = useState({ leftBinId: "", rightBinId: "" });
+  const [moveForm, setMoveForm] = useState({ sourceBinId: "", targetBinId: "" });
+  const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [slotDrafts, setSlotDrafts] = useState<Record<string, string>>({});
   const [slotPreview, setSlotPreview] = useState<Record<string, string>>({});
   const [binFilters, setBinFilters] = useState({
@@ -55,6 +59,9 @@ export default function AdminBinsPage() {
     setSlotDrafts(
       Object.fromEntries((binsData || []).map((bin: BinRow) => [bin.id, String(bin.slotCount)]))
     );
+    setCodeDrafts(
+      Object.fromEntries((binsData || []).map((bin: BinRow) => [bin.id, String(bin.code || "")]))
+    );
   }, []);
 
   useEffect(() => {
@@ -73,7 +80,7 @@ export default function AdminBinsPage() {
     () =>
       binFilters.storageLocationId
         ? shelves.filter((entry) => entry.storageLocationId === binFilters.storageLocationId && entry.mode === "DRAWER_HOST")
-        : shelves,
+        : shelves.filter((entry) => entry.mode === "DRAWER_HOST"),
     [binFilters.storageLocationId, shelves]
   );
   const filteredBins = useMemo(() => {
@@ -98,6 +105,7 @@ export default function AdminBinsPage() {
 
       const haystack = [
         bin.code,
+        bin.fullCode || "",
         bin.storageLocation?.name || "",
         bin.storageLocation?.code || "",
         bin.storageShelf?.code || "",
@@ -124,6 +132,31 @@ export default function AdminBinsPage() {
     return data;
   }
 
+  function getShelfLabel(shelf?: ShelfRow | null) {
+    return formatStorageShelfLabel(shelf?.code || null, shelf?.name || null) || shelf?.name || "-";
+  }
+
+  function getShelfOptionLabel(shelf?: ShelfRow | null) {
+    const shelfLabel = getShelfLabel(shelf);
+    if (!shelf) return shelfLabel;
+    if (shelf.name && shelf.name !== shelfLabel) {
+      return `${shelfLabel} - ${shelf.name}`;
+    }
+    return shelfLabel;
+  }
+
+  function getBinLabel(bin?: BinRow | null) {
+    if (!bin) return "-";
+    return (
+      bin.fullCode ||
+      formatStorageBinLabel({
+        shelfCode: bin.storageShelf?.code || null,
+        binCode: bin.code
+      }) ||
+      bin.code
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -143,24 +176,51 @@ export default function AdminBinsPage() {
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">{tr("Einzelnen Drawer anlegen", "Create single drawer")}</h2>
         <div className="grid gap-3 md:grid-cols-4">
-          <input className="input" placeholder="A01" value={newBin.code} onChange={(e) => setNewBin((prev) => ({ ...prev, code: e.target.value }))} />
-          <select className="input" value={newBin.storageLocationId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={newBin.storageShelfId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
-            <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
-            {availableNewShelves.map((shelf) => (
-              <option key={shelf.id} value={shelf.id}>
-                {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-              </option>
-            ))}
-          </select>
-          <input className="input" type="number" min={1} max={99} value={newBin.slotCount} onChange={(e) => setNewBin((prev) => ({ ...prev, slotCount: Number(e.target.value) }))} />
+          <label className="space-y-1 text-sm">
+            <span>{tr("Drawer-Nummer", "Drawer number")}</span>
+            <input
+              className="input"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="01"
+              value={newBin.code}
+              onChange={(e) => setNewBin((prev) => ({ ...prev, code: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Lagerort", "Storage location")}</span>
+            <select className="input" value={newBin.storageLocationId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Regal", "Shelf")}</span>
+            <select className="input" value={newBin.storageShelfId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
+              <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
+              {availableNewShelves.map((shelf) => (
+                <option key={shelf.id} value={shelf.id}>
+                  {getShelfOptionLabel(shelf)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Unterfaecher", "Slots")}</span>
+            <input className="input" type="number" min={1} max={99} value={newBin.slotCount} onChange={(e) => setNewBin((prev) => ({ ...prev, slotCount: Number(e.target.value) }))} />
+          </label>
         </div>
+        {newBin.storageLocationId && availableNewShelves.length === 0 && (
+          <p className="text-sm text-workshop-700">
+            {tr(
+              'Kein Drawer-Host-Regal an diesem Lagerort vorhanden. Lege unter Admin ein Regal mit Modus "Drawer-Host" an.',
+              'No drawer-host shelf exists for this storage location yet. Create a shelf with mode "Drawer host" in Admin.'
+            )}
+          </p>
+        )}
         <button
           className="btn"
           onClick={async () => {
@@ -180,27 +240,49 @@ export default function AdminBinsPage() {
 
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">{tr("Bereich erzeugen / erweitern", "Generate / extend range")}</h2>
-        <div className="grid gap-3 md:grid-cols-6">
-          <input className="input" value={rangeForm.prefix} onChange={(e) => setRangeForm((prev) => ({ ...prev, prefix: e.target.value }))} />
-          <input className="input" type="number" min={1} value={rangeForm.start} onChange={(e) => setRangeForm((prev) => ({ ...prev, start: Number(e.target.value) }))} />
-          <input className="input" type="number" min={1} value={rangeForm.end} onChange={(e) => setRangeForm((prev) => ({ ...prev, end: Number(e.target.value) }))} />
-          <select className="input" value={rangeForm.storageLocationId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={rangeForm.storageShelfId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
-            <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
-            {availableRangeShelves.map((shelf) => (
-              <option key={shelf.id} value={shelf.id}>
-                {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-              </option>
-            ))}
-          </select>
-          <input className="input" type="number" min={1} max={99} value={rangeForm.slotCount} onChange={(e) => setRangeForm((prev) => ({ ...prev, slotCount: Number(e.target.value) }))} />
+        <div className="grid gap-3 md:grid-cols-5">
+          <label className="space-y-1 text-sm">
+            <span>{tr("Von", "From")}</span>
+            <input className="input" type="number" min={1} max={99} value={rangeForm.start} onChange={(e) => setRangeForm((prev) => ({ ...prev, start: Number(e.target.value) }))} />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Bis", "To")}</span>
+            <input className="input" type="number" min={1} max={99} value={rangeForm.end} onChange={(e) => setRangeForm((prev) => ({ ...prev, end: Number(e.target.value) }))} />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Lagerort", "Storage location")}</span>
+            <select className="input" value={rangeForm.storageLocationId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Regal", "Shelf")}</span>
+            <select className="input" value={rangeForm.storageShelfId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
+              <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
+              {availableRangeShelves.map((shelf) => (
+                <option key={shelf.id} value={shelf.id}>
+                  {getShelfOptionLabel(shelf)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Unterfaecher", "Slots")}</span>
+            <input className="input" type="number" min={1} max={99} value={rangeForm.slotCount} onChange={(e) => setRangeForm((prev) => ({ ...prev, slotCount: Number(e.target.value) }))} />
+          </label>
         </div>
+        {rangeForm.storageLocationId && availableRangeShelves.length === 0 && (
+          <p className="text-sm text-workshop-700">
+            {tr(
+              'Kein Drawer-Host-Regal an diesem Lagerort vorhanden. Lege unter Admin ein Regal mit Modus "Drawer-Host" an.',
+              'No drawer-host shelf exists for this storage location yet. Create a shelf with mode "Drawer host" in Admin.'
+            )}
+          </p>
+        )}
         <button
           className="btn-secondary"
           onClick={async () => {
@@ -222,24 +304,74 @@ export default function AdminBinsPage() {
       </section>
 
       <section className="card space-y-3">
+        <h2 className="text-lg font-semibold">{tr("Drawer verschieben", "Move drawers")}</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span>{tr("Quell-Drawer", "Source drawer")}</span>
+            <select className="input" value={moveForm.sourceBinId} onChange={(e) => setMoveForm((prev) => ({ ...prev, sourceBinId: e.target.value }))}>
+              <option value="">{tr("Quell-Drawer waehlen", "Choose source drawer")}</option>
+              {bins.map((bin) => (
+                <option key={bin.id} value={bin.id}>
+                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Ziel-Drawer", "Target drawer")}</span>
+            <select className="input" value={moveForm.targetBinId} onChange={(e) => setMoveForm((prev) => ({ ...prev, targetBinId: e.target.value }))}>
+              <option value="">{tr("Ziel-Drawer waehlen", "Choose target drawer")}</option>
+              {bins.map((bin) => (
+                <option key={bin.id} value={bin.id}>
+                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <button
+          className="btn-secondary"
+          onClick={async () => {
+            try {
+              await postJson("/api/admin/bins/move", moveForm);
+              setFeedback(tr("Drawer-Inhalte verschoben.", "Drawer contents moved."));
+              setMoveForm({ sourceBinId: "", targetBinId: "" });
+              await load();
+            } catch (error) {
+              setFeedback((error as Error).message);
+            }
+          }}
+          disabled={!moveForm.sourceBinId || !moveForm.targetBinId}
+        >
+          {tr("Move ausfuehren", "Run move")}
+        </button>
+      </section>
+
+      <section className="card space-y-3">
         <h2 className="text-lg font-semibold">{tr("Drawer tauschen", "Swap drawers")}</h2>
         <div className="grid gap-3 md:grid-cols-2">
-          <select className="input" value={swapForm.leftBinId} onChange={(e) => setSwapForm((prev) => ({ ...prev, leftBinId: e.target.value }))}>
-            <option value="">{tr("Linken Drawer waehlen", "Choose left drawer")}</option>
-            {bins.map((bin) => (
-              <option key={bin.id} value={bin.id}>
-                {bin.code}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={swapForm.rightBinId} onChange={(e) => setSwapForm((prev) => ({ ...prev, rightBinId: e.target.value }))}>
-            <option value="">{tr("Rechten Drawer waehlen", "Choose right drawer")}</option>
-            {bins.map((bin) => (
-              <option key={bin.id} value={bin.id}>
-                {bin.code}
-              </option>
-            ))}
-          </select>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Linker Drawer", "Left drawer")}</span>
+            <select className="input" value={swapForm.leftBinId} onChange={(e) => setSwapForm((prev) => ({ ...prev, leftBinId: e.target.value }))}>
+              <option value="">{tr("Linken Drawer waehlen", "Choose left drawer")}</option>
+              {bins.map((bin) => (
+                <option key={bin.id} value={bin.id}>
+                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Rechter Drawer", "Right drawer")}</span>
+            <select className="input" value={swapForm.rightBinId} onChange={(e) => setSwapForm((prev) => ({ ...prev, rightBinId: e.target.value }))}>
+              <option value="">{tr("Rechten Drawer waehlen", "Choose right drawer")}</option>
+              {bins.map((bin) => (
+                <option key={bin.id} value={bin.id}>
+                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <button
           className="btn-secondary"
@@ -247,6 +379,7 @@ export default function AdminBinsPage() {
             try {
               await postJson("/api/admin/bins/swap", swapForm);
               setFeedback(tr("Drawer-Inhalte getauscht.", "Drawer contents swapped."));
+              setSwapForm({ leftBinId: "", rightBinId: "" });
               await load();
             } catch (error) {
               setFeedback((error as Error).message);
@@ -261,45 +394,57 @@ export default function AdminBinsPage() {
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">{tr("Vorhandene Drawer", "Existing drawers")}</h2>
         <div className="grid gap-3 md:grid-cols-4">
-          <input
-            className="input"
-            placeholder={tr("Code, Ort oder Regal filtern", "Filter by code, location, or shelf")}
-            value={binFilters.query}
-            onChange={(e) => setBinFilters((prev) => ({ ...prev, query: e.target.value }))}
-          />
-          <select
-            className="input"
-            value={binFilters.storageLocationId}
-            onChange={(e) => setBinFilters((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}
-          >
-            <option value="">{tr("Alle Orte", "All locations")}</option>
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="input"
-            value={binFilters.storageShelfId}
-            onChange={(e) => setBinFilters((prev) => ({ ...prev, storageShelfId: e.target.value }))}
-          >
-            <option value="">{tr("Alle Regale", "All shelves")}</option>
-            {availableFilterShelves.map((shelf) => (
-              <option key={shelf.id} value={shelf.id}>
-                {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-              </option>
-            ))}
-          </select>
-          <select
-            className="input"
-            value={binFilters.status}
-            onChange={(e) => setBinFilters((prev) => ({ ...prev, status: e.target.value }))}
-          >
-            <option value="all">{tr("Alle Stati", "All statuses")}</option>
-            <option value="active">{tr("Nur aktiv", "Active only")}</option>
-            <option value="inactive">{tr("Nur inaktiv", "Inactive only")}</option>
-          </select>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Filter", "Filter")}</span>
+            <input
+              className="input"
+              placeholder={tr("Code, Ort oder Regal filtern", "Filter by code, location, or shelf")}
+              value={binFilters.query}
+              onChange={(e) => setBinFilters((prev) => ({ ...prev, query: e.target.value }))}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Lagerort", "Storage location")}</span>
+            <select
+              className="input"
+              value={binFilters.storageLocationId}
+              onChange={(e) => setBinFilters((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}
+            >
+              <option value="">{tr("Alle Orte", "All locations")}</option>
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Regal", "Shelf")}</span>
+            <select
+              className="input"
+              value={binFilters.storageShelfId}
+              onChange={(e) => setBinFilters((prev) => ({ ...prev, storageShelfId: e.target.value }))}
+            >
+              <option value="">{tr("Alle Regale", "All shelves")}</option>
+              {availableFilterShelves.map((shelf) => (
+                <option key={shelf.id} value={shelf.id}>
+                  {getShelfOptionLabel(shelf)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>{tr("Status", "Status")}</span>
+            <select
+              className="input"
+              value={binFilters.status}
+              onChange={(e) => setBinFilters((prev) => ({ ...prev, status: e.target.value }))}
+            >
+              <option value="all">{tr("Alle Stati", "All statuses")}</option>
+              <option value="active">{tr("Nur aktiv", "Active only")}</option>
+              <option value="inactive">{tr("Nur inaktiv", "Inactive only")}</option>
+            </select>
+          </label>
         </div>
         <div className="flex items-center justify-between text-sm text-workshop-700">
           <p>
@@ -332,13 +477,23 @@ export default function AdminBinsPage() {
               {filteredBins.map((bin) => (
                 <tr key={bin.id} className="border-b border-workshop-100">
                   <td className="px-2 py-2 font-mono">
-                    <Link className="hover:underline" href={`/bins/${encodeURIComponent(bin.id)}`}>
-                      {bin.code}
-                    </Link>
+                    <div className="space-y-2">
+                      <Link className="hover:underline" href={`/bins/${encodeURIComponent(bin.id)}`}>
+                        {getBinLabel(bin)}
+                      </Link>
+                      <input
+                        className="input h-10 w-20 font-mono"
+                        inputMode="numeric"
+                        maxLength={2}
+                        value={codeDrafts[bin.id] ?? String(bin.code)}
+                        onChange={(e) => setCodeDrafts((prev) => ({ ...prev, [bin.id]: e.target.value }))}
+                        placeholder="01"
+                      />
+                    </div>
                   </td>
                   <td className="px-2 py-2">{bin.storageLocation?.name || "-"}</td>
                   <td className="px-2 py-2">
-                    {[bin.storageShelf?.code, bin.storageShelf?.name || bin.storageArea].filter(Boolean).join(" - ") || "-"}
+                    {[getShelfLabel(bin.storageShelf), bin.storageShelf?.name || bin.storageArea].filter(Boolean).join(" - ") || "-"}
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-2">
@@ -389,6 +544,7 @@ export default function AdminBinsPage() {
                           try {
                             await postJson("/api/admin/bins", {
                               id: bin.id,
+                              code: codeDrafts[bin.id] || bin.code,
                               slotCount: Number(slotDrafts[bin.id] || bin.slotCount),
                               isActive: bin.isActive
                             }, "PATCH");

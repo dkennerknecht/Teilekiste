@@ -10,10 +10,9 @@ import { useAppLanguage } from "@/components/app-language-provider";
 
 type NavClientProps = {
   role: string;
-  recentLabels: string[];
 };
 
-export function NavClient({ role, recentLabels }: NavClientProps) {
+export function NavClient({ role }: NavClientProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
@@ -146,9 +145,9 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
                     <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/json" onClick={closeDesktopAdminMenu}>
                       {t("navJsonExport")}
                     </a>
-                    <a className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/api/export/ptouch" onClick={closeDesktopAdminMenu}>
+                    <Link className="rounded-lg px-3 py-2 text-sm text-workshop-800 hover:bg-workshop-100" href="/admin/ptouch" onClick={closeDesktopAdminMenu}>
                       {t("navPtouchExport")}
-                    </a>
+                    </Link>
                   </div>
                 )}
               </div>
@@ -232,9 +231,9 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
                         <a className="btn-secondary w-full" href="/api/export/json" onClick={closeMobileMenu}>
                           {t("navJsonExport")}
                         </a>
-                        <a className="btn-secondary w-full" href="/api/export/ptouch" onClick={closeMobileMenu}>
+                        <Link className="btn-secondary w-full" href="/admin/ptouch" onClick={closeMobileMenu}>
                           {t("navPtouchExport")}
-                        </a>
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -250,11 +249,6 @@ export function NavClient({ role, recentLabels }: NavClientProps) {
           )}
         </div>
       </div>
-      {recentLabels.length > 0 && (
-        <div className="mx-auto max-w-7xl px-3 pb-2 text-xs text-workshop-700 sm:px-4">
-          {t("navRecent")}: {recentLabels.join(", ")}
-        </div>
-      )}
     </header>
   );
 }

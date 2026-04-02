@@ -5,6 +5,7 @@ import { resolveAllowedLocationIds } from "@/lib/permissions";
 import { serializeStoredQuantity } from "@/lib/quantity";
 import { getAvailableQty, getReservedQty } from "@/lib/stock";
 import { findStorageBinByCode, formatItemPosition } from "@/lib/storage-bins";
+import { formatStorageBinLabel } from "@/lib/storage-labels";
 
 export async function GET(req: NextRequest, { params }: { params: { code: string } }) {
   const auth = await requireAuth(req);
@@ -56,11 +57,20 @@ export async function GET(req: NextRequest, { params }: { params: { code: string
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const occupiedSlots = new Set(storageBin.items.map((item) => item.binSlot).filter((value): value is number => typeof value === "number"));
+  const occupiedSlots = new Set(
+    storageBin.items
+      .map((item) => (typeof item.binSlot === "number" ? item.binSlot : storageBin.slotCount <= 1 ? 1 : null))
+      .filter((value): value is number => typeof value === "number")
+  );
   const freeSlots = Array.from({ length: storageBin.slotCount }, (_, index) => index + 1).filter((slot) => !occupiedSlots.has(slot));
 
   return NextResponse.json({
     ...storageBin,
+    fullCode:
+      formatStorageBinLabel({
+        shelfCode: storageBin.storageShelf?.code || null,
+        binCode: storageBin.code
+      }) || storageBin.code,
     freeSlots,
     items: storageBin.items.map((item) => {
       const reservedQty = getReservedQty(item.reservations);

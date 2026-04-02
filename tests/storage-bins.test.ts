@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  formatDrawerPosition,
+  formatStorageBinLabel,
   normalizeStorageBinCode,
   previewStorageBinSlotCountChange,
   resolveItemPlacement
 } from "@/lib/storage-bins";
 
 describe("storage bin helpers", () => {
-  it("normalizes single-digit drawer codes to two digits", () => {
-    expect(normalizeStorageBinCode("a1")).toBe("A01");
-    expect(normalizeStorageBinCode("A12")).toBe("A12");
+  it("formats managed drawer labels from shelf and numeric drawer codes", () => {
+    expect(normalizeStorageBinCode("1")).toBe("01");
+    expect(formatStorageBinLabel({ shelfCode: "ab", binCode: "1" })).toBe("AB01");
+    expect(formatDrawerPosition("1", 2, 3, "ab")).toBe("AB01-2");
   });
 
   it("allows incoming items without any location assignment", async () => {
@@ -82,6 +85,56 @@ describe("storage bin helpers", () => {
       })
     );
     expect(itemFindFirstMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows single-slot drawers without requiring an explicit slot", async () => {
+    const itemFindFirstMock = vi.fn().mockResolvedValue(null);
+    const placement = await resolveItemPlacement(
+      {
+        storageLocation: { findUnique: vi.fn() },
+        storageShelf: { findFirst: vi.fn() },
+        storageBin: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "bin-1",
+            code: "A01",
+            storageLocationId: "loc-1",
+            storageShelfId: "shelf-1",
+            storageArea: "Magazin A",
+            slotCount: 1,
+            isActive: true,
+            storageShelf: {
+              id: "shelf-1",
+              name: "Magazin A",
+              code: "SB1",
+              description: null,
+              mode: "DRAWER_HOST",
+              storageLocationId: "loc-1"
+            }
+          })
+        },
+        item: { findFirst: itemFindFirstMock }
+      } as never,
+      {
+        placementStatus: "PLACED",
+        storageBinId: "bin-1",
+        allowedLocationIds: ["loc-1"]
+      }
+    );
+
+    expect(placement).toEqual(
+      expect.objectContaining({
+        storageBinId: "bin-1",
+        binSlot: null
+      })
+    );
+    expect(itemFindFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          storageBinId: "bin-1",
+          binSlot: null
+        })
+      })
+    );
   });
 
   it("previews items that would be displaced by a slotCount reduction", async () => {

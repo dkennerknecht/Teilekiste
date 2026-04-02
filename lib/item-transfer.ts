@@ -58,6 +58,16 @@ type TransferBinMeta = {
   isActive?: boolean;
 };
 
+function normalizeTransferDrawerSlot(slotCount: number, binSlot: number | null | undefined) {
+  if (slotCount <= 1) {
+    if (binSlot && binSlot !== 1) {
+      throw new Error("TRANSFER_TARGET_BIN_SLOT_INVALID");
+    }
+    return null;
+  }
+  return binSlot ?? null;
+}
+
 function describeStoragePlace(input: {
   storageLocation?: TransferLocationMeta | null;
   storageShelf?: TransferShelfMeta | null;
@@ -272,11 +282,11 @@ export async function validateTransferTarget(
     throw new Error("TRANSFER_TARGET_BIN_INVALID");
   }
 
-  const binSlot = input.binSlot ?? null;
-  if (!binSlot) {
+  const binSlot = normalizeTransferDrawerSlot(storageBin.slotCount, input.binSlot ?? null);
+  if (storageBin.slotCount > 1 && !binSlot) {
     throw new Error("TRANSFER_TARGET_BIN_SLOT_REQUIRED");
   }
-  if (binSlot < 1 || binSlot > storageBin.slotCount) {
+  if (binSlot !== null && (binSlot < 1 || binSlot > storageBin.slotCount)) {
     throw new Error("TRANSFER_TARGET_BIN_SLOT_INVALID");
   }
 
@@ -457,7 +467,7 @@ export function buildTransferSourceGroups(
       storageBinCode: drawerCode,
       binSlot: item.binSlot || null,
       storageArea: shelfName,
-      bin: formatDrawerPosition(drawerCode, item.binSlot || null),
+      bin: formatDrawerPosition(drawerCode, item.binSlot || null, item.storageBin?.slotCount ?? null, shelfCode),
       displayPosition: formatStoragePosition({
         storageLocation: item.storageLocation,
         storageShelf: item.storageShelf || (shelfCode || shelfName ? { code: shelfCode, name: shelfName } : null),

@@ -5,6 +5,7 @@ import { bulkTransferSchema } from "@/lib/validation";
 import { parseJson } from "@/lib/http";
 import { canWrite, resolveAllowedLocationIds } from "@/lib/permissions";
 import { applyItemTransfer, buildTransferSourceGroups, validateTransferTarget } from "@/lib/item-transfer";
+import { formatDrawerPosition } from "@/lib/storage-labels";
 
 function buildBlockedItem(item: { id: string; labelCode: string; name: string }, reason: string) {
   return {
@@ -97,7 +98,12 @@ export async function POST(req: NextRequest) {
           binSlot: validatedTarget.binSlot ?? null,
           storageArea: validatedTarget.storageShelf.name,
           bin: validatedTarget.storageBin?.code
-            ? `${validatedTarget.storageBin.code}${validatedTarget.binSlot ? `-${validatedTarget.binSlot}` : ""}`
+            ? formatDrawerPosition(
+                validatedTarget.storageBin.code,
+                validatedTarget.binSlot ?? null,
+                validatedTarget.storageBin.slotCount ?? null,
+                validatedTarget.storageShelf.code || null
+              )
             : null
         }
       : {

@@ -27,12 +27,13 @@ import { ItemAuditSection } from "@/components/item-audit-section";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import { buildCustomValueMap, formatCustomFieldValue, parseStoredCustomFieldValue, type CustomFieldRow } from "@/lib/custom-fields";
 import { formatDisplayQuantity, getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
+import { formatDrawerPosition, formatStorageBinLabel } from "@/lib/storage-labels";
 
 type TagOption = { id: string; name: string };
 type CategoryOption = { id: string; name: string; code?: string | null };
 type LocationOption = { id: string; name: string; code?: string | null };
 type ShelfOption = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
-type StorageBinOption = { id: string; code: string; storageLocationId: string; storageShelfId: string; slotCount: number; isActive?: boolean };
+type StorageBinOption = { id: string; code: string; fullCode?: string | null; storageLocationId: string; storageShelfId: string; slotCount: number; isActive?: boolean };
 type TypeOption = { id: string; code: string; name: string };
 type TransferFormState = {
   storageLocationId: string;
@@ -176,7 +177,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     if (!selectedBin) return;
     setForm((prev: any) => {
       const nextBinSlot =
-        prev.binSlot && Number(prev.binSlot) <= selectedBin.slotCount ? prev.binSlot : "";
+        selectedBin.slotCount <= 1
+          ? ""
+          : prev.binSlot && Number(prev.binSlot) <= selectedBin.slotCount
+            ? prev.binSlot
+            : "";
       return {
         ...prev,
         storageLocationId: selectedBin.storageLocationId,
@@ -235,6 +240,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     () => bins.find((entry) => entry.id === form?.storageBinId) || null,
     [bins, form?.storageBinId]
   );
+  const selectedManagedBinRequiresSlot = !!selectedManagedBin && selectedManagedBin.slotCount > 1;
 
   const availableTransferShelves = useMemo(() => {
     const currentLocationId = transferForm.storageLocationId || "";
@@ -251,6 +257,23 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     () => bins.filter((entry) => entry.storageShelfId === transferForm.storageShelfId),
     [bins, transferForm.storageShelfId]
   );
+  const selectedTransferBin = useMemo(
+    () => availableTransferBins.find((entry) => entry.id === transferForm.storageBinId) || null,
+    [availableTransferBins, transferForm.storageBinId]
+  );
+  const selectedTransferBinRequiresSlot = !!selectedTransferBin && selectedTransferBin.slotCount > 1;
+
+  function getBinLabel(bin: StorageBinOption | null | undefined, shelfCode?: string | null) {
+    if (!bin) return "";
+    return (
+      bin.fullCode ||
+      formatStorageBinLabel({
+        shelfCode: shelfCode || shelves.find((entry) => entry.id === bin.storageShelfId)?.code || null,
+        binCode: bin.code
+      }) ||
+      bin.code
+    );
+  }
 
   const itemCustomValues = useMemo(
     () =>
@@ -280,11 +303,14 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   const targetStoragePlace = [
     locations.find((location) => location.id === transferForm.storageLocationId)?.name || null,
     selectedTransferShelf ? [selectedTransferShelf.code, selectedTransferShelf.name].filter(Boolean).join(" - ") : null,
-    (() => {
-      const selectedTransferBin = availableTransferBins.find((entry) => entry.id === transferForm.storageBinId);
-      if (!selectedTransferBin) return null;
-      return `${selectedTransferBin.code}${transferForm.binSlot ? `-${transferForm.binSlot}` : ""}`;
-    })()
+    selectedTransferBin
+      ? formatDrawerPosition(
+          selectedTransferBin.code,
+          transferForm.binSlot ? Number(transferForm.binSlot) : null,
+          selectedTransferBin.slotCount,
+          selectedTransferShelf?.code || null
+        )
+      : null
   ]
     .filter(Boolean)
     .join(" / ");
@@ -788,17 +814,17 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                           <option value="">{tr("Drawer waehlen", "Choose drawer")}</option>
                           {availableBins.map((entry) => (
                             <option key={entry.id} value={entry.id}>
-                              {entry.code}
+                              {getBinLabel(entry, selectedPlacementShelf?.code || null)}
                             </option>
                           ))}
                         </select>
                       ) : (
-                        <p className="text-lg text-[var(--app-text)]">{item.storageBin?.code || "-"}</p>
+                        <p className="text-lg text-[var(--app-text)]">{item.storageBin ? getBinLabel(item.storageBin, item.storageShelf?.code || null) : "-"}</p>
                       )}
                     </div>
                   )}
 
-                  {(editMode ? usesManagedDrawer : item.storageBin) && (
+                  {(editMode ? usesManagedDrawer && selectedManagedBinRequiresSlot : !!item.storageBin && (item.storageBin.slotCount || 0) > 1) && (
                     <div>
                       <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Unterfach", "Slot")}</p>
                       {editMode ? (
@@ -806,18 +832,28 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                           className="input"
                           value={form.binSlot}
                           onChange={(e) => setForm((v: any) => ({ ...v, binSlot: e.target.value }))}
-                          disabled={!selectedManagedBin}
+                          disabled={!selectedManagedBin || !selectedManagedBinRequiresSlot}
                         >
                           <option value="">{selectedManagedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
-                          {selectedManagedBin &&
+                          {selectedManagedBinRequiresSlot &&
+                            selectedManagedBin &&
                             Array.from({ length: selectedManagedBin.slotCount }, (_, index) => (
                               <option key={index + 1} value={String(index + 1)}>
-                                {selectedManagedBin.code}-{index + 1}
+                                {getBinLabel(selectedManagedBin, selectedPlacementShelf?.code || null)}-{index + 1}
                               </option>
                             ))}
                         </select>
                       ) : (
-                        <p className="text-lg text-[var(--app-text)]">{item.binSlot ? `${item.storageBin?.code || ""}-${item.binSlot}` : "-"}</p>
+                        <p className="text-lg text-[var(--app-text)]">
+                          {item.storageBin
+                            ? formatDrawerPosition(
+                                item.storageBin.code,
+                                item.binSlot || null,
+                                item.storageBin.slotCount || null,
+                                item.storageShelf?.code || null
+                              ) || "-"
+                            : "-"}
+                        </p>
                       )}
                     </div>
                   )}
@@ -1005,7 +1041,7 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     </option>
                     {availableTransferBins.map((bin) => (
                       <option key={bin.id} value={bin.id}>
-                        {bin.code}
+                        {getBinLabel(bin, selectedTransferShelf?.code || null)}
                       </option>
                     ))}
                   </select>
@@ -1017,21 +1053,17 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                     className="input"
                     value={transferForm.binSlot}
                     onChange={(e) => setTransferForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                    disabled={!transferForm.storageBinId}
+                    disabled={!transferForm.storageBinId || !selectedTransferBinRequiresSlot}
                   >
                     <option value="">
                       {!transferForm.storageBinId
                         ? tr("Erst Drawer waehlen", "Choose drawer first")
-                        : tr("Unterfach waehlen", "Choose slot")}
+                        : selectedTransferBinRequiresSlot
+                          ? tr("Unterfach waehlen", "Choose slot")
+                          : tr("Kein Unterfach erforderlich", "No slot required")}
                     </option>
-                    {(availableTransferBins.find((bin) => bin.id === transferForm.storageBinId)
-                      ? Array.from(
-                          {
-                            length:
-                              availableTransferBins.find((bin) => bin.id === transferForm.storageBinId)?.slotCount || 0
-                          },
-                          (_, index) => index + 1
-                        )
+                    {(selectedTransferBinRequiresSlot && selectedTransferBin
+                      ? Array.from({ length: selectedTransferBin.slotCount }, (_, index) => index + 1)
                       : []
                     ).map((slot) => (
                       <option key={slot} value={String(slot)}>

@@ -116,6 +116,13 @@ type BackupSequenceCounter = {
   nextNumber: number;
 };
 
+type BackupCategoryTypeCounter = {
+  id: string;
+  categoryId: string;
+  typeId: string;
+  nextNumber: number;
+};
+
 type BackupLabelConfig = {
   id?: string;
   language?: string;
@@ -165,6 +172,7 @@ type BackupStockMovement = {
   reason: string;
   note?: string | null;
   userId: string;
+  inventorySessionId?: string | null;
   createdAt?: string | null;
 };
 
@@ -227,6 +235,90 @@ type BackupAuditLog = {
   createdAt?: string | null;
 };
 
+type BackupInventorySession = {
+  id: string;
+  title?: string | null;
+  status: string;
+  storageLocationId: string;
+  storageArea?: string | null;
+  ownerUserId: string;
+  createdByUserId?: string | null;
+  note?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  finalizedAt?: string | null;
+  cancelledAt?: string | null;
+};
+
+type BackupInventorySessionRow = {
+  id: string;
+  sessionId: string;
+  itemId: string;
+  labelCode: string;
+  name: string;
+  unit: string;
+  storageArea?: string | null;
+  storageShelfCode?: string | null;
+  storageBinCode?: string | null;
+  binSlot?: number | null;
+  expectedStock: number;
+  countedStock?: number | null;
+  countedByUserId?: string | null;
+  countedAt?: string | null;
+  note?: string | null;
+};
+
+type BackupFavorite = {
+  userId: string;
+  itemId: string;
+  createdAt?: string | null;
+};
+
+type BackupRecentView = {
+  userId: string;
+  itemId: string;
+  lastViewedAt?: string | null;
+};
+
+type BackupApiToken = {
+  id: string;
+  name: string;
+  tokenHash: string;
+  isActive: boolean;
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  createdAt?: string | null;
+  userId: string;
+};
+
+type BackupAccount = {
+  id: string;
+  userId: string;
+  type: string;
+  provider: string;
+  providerAccountId: string;
+  refresh_token?: string | null;
+  access_token?: string | null;
+  expires_at?: number | null;
+  token_type?: string | null;
+  scope?: string | null;
+  id_token?: string | null;
+  session_state?: string | null;
+};
+
+type BackupSession = {
+  id: string;
+  sessionToken: string;
+  userId: string;
+  expires: string;
+};
+
+type BackupVerificationToken = {
+  identifier: string;
+  token: string;
+  expires: string;
+};
+
 export type BackupPayload = {
   users?: BackupUser[];
   categories?: BackupCategory[];
@@ -238,9 +330,18 @@ export type BackupPayload = {
   technicalFieldScopeAssignments?: BackupTechnicalFieldScopeAssignment[];
   technicalFieldPresets?: BackupTechnicalFieldPreset[];
   importProfiles?: BackupImportProfile[];
+  inventorySessions?: BackupInventorySession[];
+  inventorySessionRows?: BackupInventorySessionRow[];
+  favorites?: BackupFavorite[];
+  recentViews?: BackupRecentView[];
+  apiTokens?: BackupApiToken[];
+  accounts?: BackupAccount[];
+  sessions?: BackupSession[];
+  verificationTokens?: BackupVerificationToken[];
   areas?: BackupArea[];
   types?: BackupLabelType[];
   sequenceCounters?: BackupSequenceCounter[];
+  categoryTypeCounters?: BackupCategoryTypeCounter[];
   labelConfig?: BackupLabelConfig | null;
   items?: BackupItem[];
   boms?: BackupBom[];
@@ -265,6 +366,7 @@ export type RestoreResult = {
   restoredAreas: number;
   restoredTypes: number;
   restoredSequenceCounters: number;
+  restoredCategoryTypeCounters: number;
   restoredImportProfiles: number;
   restoredItems: number;
   restoredBomEntries: number;
@@ -379,6 +481,10 @@ export async function restoreBackupData(input: {
   };
 
   const { userIdMap, restoredUsers, placeholderUsers } = await resolveUserIds(payload.users, strategy);
+  const resolvedFallbackUserId =
+    (payload.users || [])
+      .map((user) => userIdMap.get(user.id))
+      .find((userId): userId is string => Boolean(userId)) || fallbackUserId;
   const categoryIdMap = new Map<string, string>();
   const locationIdMap = new Map<string, string>();
   const shelfIdMap = new Map<string, string>();
@@ -386,6 +492,7 @@ export async function restoreBackupData(input: {
   const tagIdMap = new Map<string, string>();
   const customFieldIdMap = new Map<string, string>();
   const technicalFieldScopeAssignmentIdMap = new Map<string, string>();
+  const inventorySessionIdMap = new Map<string, string>();
   const areaIdMap = new Map<string, string>();
   const typeIdMap = new Map<string, string>();
 
@@ -701,6 +808,28 @@ export async function restoreBackupData(input: {
     });
   }
 
+  for (const counter of payload.categoryTypeCounters || []) {
+    const resolvedCategoryId = categoryIdMap.get(counter.categoryId) || counter.categoryId;
+    const resolvedTypeId = typeIdMap.get(counter.typeId) || counter.typeId;
+    await prisma.categoryTypeCounter.upsert({
+      where: {
+        categoryId_typeId: {
+          categoryId: resolvedCategoryId,
+          typeId: resolvedTypeId
+        }
+      },
+      update: {
+        nextNumber: counter.nextNumber
+      },
+      create: {
+        id: counter.id,
+        categoryId: resolvedCategoryId,
+        typeId: resolvedTypeId,
+        nextNumber: counter.nextNumber
+      }
+    });
+  }
+
   for (const profile of payload.importProfiles || []) {
     await importProfileTable.upsert({
       where: { name: profile.name },
@@ -719,6 +848,44 @@ export async function restoreBackupData(input: {
         mappingConfig: serializeJsonValue(profile.mappingConfig) || JSON.stringify({ assignments: [] })
       }
     });
+  }
+
+  for (const inventorySession of payload.inventorySessions || []) {
+    const resolvedLocationId = locationIdMap.get(inventorySession.storageLocationId) || inventorySession.storageLocationId;
+    const resolvedOwnerUserId = userIdMap.get(inventorySession.ownerUserId) || resolvedFallbackUserId;
+    const resolvedCreatedByUserId = inventorySession.createdByUserId
+      ? userIdMap.get(inventorySession.createdByUserId) || resolvedFallbackUserId
+      : null;
+
+    const restoredInventorySession = await prisma.inventorySession.upsert({
+      where: { id: inventorySession.id },
+      update: {
+        title: inventorySession.title ?? null,
+        status: inventorySession.status,
+        storageLocationId: resolvedLocationId,
+        storageArea: inventorySession.storageArea ?? null,
+        ownerUserId: resolvedOwnerUserId,
+        createdByUserId: resolvedCreatedByUserId,
+        note: inventorySession.note ?? null,
+        finalizedAt: parseDate(inventorySession.finalizedAt) ?? null,
+        cancelledAt: parseDate(inventorySession.cancelledAt) ?? null
+      },
+      create: {
+        id: inventorySession.id,
+        title: inventorySession.title ?? null,
+        status: inventorySession.status,
+        storageLocationId: resolvedLocationId,
+        storageArea: inventorySession.storageArea ?? null,
+        ownerUserId: resolvedOwnerUserId,
+        createdByUserId: resolvedCreatedByUserId,
+        note: inventorySession.note ?? null,
+        ...(parseDate(inventorySession.createdAt) ? { createdAt: parseDate(inventorySession.createdAt) } : {}),
+        ...(parseDate(inventorySession.updatedAt) ? { updatedAt: parseDate(inventorySession.updatedAt) } : {}),
+        ...(parseDate(inventorySession.finalizedAt) ? { finalizedAt: parseDate(inventorySession.finalizedAt) } : {}),
+        ...(parseDate(inventorySession.cancelledAt) ? { cancelledAt: parseDate(inventorySession.cancelledAt) } : {})
+      }
+    });
+    inventorySessionIdMap.set(inventorySession.id, restoredInventorySession.id);
   }
 
   for (const field of payload.customFields || []) {
@@ -940,7 +1107,10 @@ export async function restoreBackupData(input: {
     }
 
     for (const movement of item.movements || []) {
-      const resolvedUserId = userIdMap.get(movement.userId) || fallbackUserId;
+      const resolvedUserId = userIdMap.get(movement.userId) || resolvedFallbackUserId;
+      const resolvedInventorySessionId = movement.inventorySessionId
+        ? inventorySessionIdMap.get(movement.inventorySessionId) || movement.inventorySessionId
+        : null;
       await prisma.stockMovement.upsert({
         where: { id: movement.id },
         update: {
@@ -948,7 +1118,8 @@ export async function restoreBackupData(input: {
           delta: movement.delta,
           reason: movement.reason,
           note: movement.note || null,
-          userId: resolvedUserId
+          userId: resolvedUserId,
+          inventorySessionId: resolvedInventorySessionId
         },
         create: {
           id: movement.id,
@@ -957,13 +1128,14 @@ export async function restoreBackupData(input: {
           reason: movement.reason,
           note: movement.note || null,
           userId: resolvedUserId,
+          inventorySessionId: resolvedInventorySessionId,
           ...(parseDate(movement.createdAt) ? { createdAt: parseDate(movement.createdAt) } : {})
         }
       });
     }
 
     for (const reservation of item.reservations || []) {
-      const resolvedUserId = userIdMap.get(reservation.userId) || fallbackUserId;
+      const resolvedUserId = userIdMap.get(reservation.userId) || resolvedFallbackUserId;
       await prisma.reservation.upsert({
         where: { id: reservation.id },
         update: {
@@ -984,6 +1156,47 @@ export async function restoreBackupData(input: {
         }
       });
     }
+  }
+
+  for (const row of payload.inventorySessionRows || []) {
+    const resolvedSessionId = inventorySessionIdMap.get(row.sessionId) || row.sessionId;
+    const resolvedCountedByUserId = row.countedByUserId ? userIdMap.get(row.countedByUserId) || resolvedFallbackUserId : null;
+    await prisma.inventorySessionRow.upsert({
+      where: { id: row.id },
+      update: {
+        sessionId: resolvedSessionId,
+        itemId: row.itemId,
+        labelCode: row.labelCode,
+        name: row.name,
+        unit: row.unit,
+        storageArea: row.storageArea ?? null,
+        storageShelfCode: row.storageShelfCode ?? null,
+        storageBinCode: row.storageBinCode ?? null,
+        binSlot: row.binSlot ?? null,
+        expectedStock: row.expectedStock,
+        countedStock: row.countedStock ?? null,
+        countedByUserId: resolvedCountedByUserId,
+        countedAt: parseDate(row.countedAt) ?? null,
+        note: row.note ?? null
+      },
+      create: {
+        id: row.id,
+        sessionId: resolvedSessionId,
+        itemId: row.itemId,
+        labelCode: row.labelCode,
+        name: row.name,
+        unit: row.unit,
+        storageArea: row.storageArea ?? null,
+        storageShelfCode: row.storageShelfCode ?? null,
+        storageBinCode: row.storageBinCode ?? null,
+        binSlot: row.binSlot ?? null,
+        expectedStock: row.expectedStock,
+        countedStock: row.countedStock ?? null,
+        countedByUserId: resolvedCountedByUserId,
+        countedAt: parseDate(row.countedAt) ?? null,
+        note: row.note ?? null
+      }
+    });
   }
 
   for (const item of payload.items || []) {
@@ -1024,7 +1237,7 @@ export async function restoreBackupData(input: {
     await prisma.auditLog.upsert({
       where: { id: log.id },
       update: {
-        userId: log.userId ? userIdMap.get(log.userId) || fallbackUserId : null,
+        userId: log.userId ? userIdMap.get(log.userId) || resolvedFallbackUserId : null,
         action: log.action,
         entity: log.entity,
         entityId: log.entityId,
@@ -1033,7 +1246,7 @@ export async function restoreBackupData(input: {
       },
       create: {
         id: log.id,
-        userId: log.userId ? userIdMap.get(log.userId) || fallbackUserId : null,
+        userId: log.userId ? userIdMap.get(log.userId) || resolvedFallbackUserId : null,
         action: log.action,
         entity: log.entity,
         entityId: log.entityId,
@@ -1043,6 +1256,129 @@ export async function restoreBackupData(input: {
       }
     });
     restoredAuditLogs += 1;
+  }
+
+  for (const favorite of payload.favorites || []) {
+    const resolvedUserId = userIdMap.get(favorite.userId) || resolvedFallbackUserId;
+    await prisma.favorite.upsert({
+      where: { userId_itemId: { userId: resolvedUserId, itemId: favorite.itemId } },
+      update: {
+        createdAt: parseDate(favorite.createdAt) ?? undefined
+      },
+      create: {
+        userId: resolvedUserId,
+        itemId: favorite.itemId,
+        ...(parseDate(favorite.createdAt) ? { createdAt: parseDate(favorite.createdAt) } : {})
+      }
+    });
+  }
+
+  for (const recentView of payload.recentViews || []) {
+    const resolvedUserId = userIdMap.get(recentView.userId) || resolvedFallbackUserId;
+    await prisma.recentView.upsert({
+      where: { userId_itemId: { userId: resolvedUserId, itemId: recentView.itemId } },
+      update: {
+        lastViewedAt: parseDate(recentView.lastViewedAt) ?? new Date()
+      },
+      create: {
+        userId: resolvedUserId,
+        itemId: recentView.itemId,
+        lastViewedAt: parseDate(recentView.lastViewedAt) ?? new Date()
+      }
+    });
+  }
+
+  for (const apiToken of payload.apiTokens || []) {
+    const resolvedUserId = userIdMap.get(apiToken.userId) || resolvedFallbackUserId;
+    await prisma.apiToken.upsert({
+      where: { tokenHash: apiToken.tokenHash },
+      update: {
+        name: apiToken.name,
+        isActive: apiToken.isActive,
+        expiresAt: parseDate(apiToken.expiresAt) ?? null,
+        lastUsedAt: parseDate(apiToken.lastUsedAt) ?? null,
+        userId: resolvedUserId
+      },
+      create: {
+        id: apiToken.id,
+        name: apiToken.name,
+        tokenHash: apiToken.tokenHash,
+        isActive: apiToken.isActive,
+        expiresAt: parseDate(apiToken.expiresAt) ?? null,
+        lastUsedAt: parseDate(apiToken.lastUsedAt) ?? null,
+        userId: resolvedUserId,
+        ...(parseDate(apiToken.createdAt) ? { createdAt: parseDate(apiToken.createdAt) } : {})
+      }
+    });
+  }
+
+  for (const account of payload.accounts || []) {
+    const resolvedUserId = userIdMap.get(account.userId) || resolvedFallbackUserId;
+    await prisma.account.upsert({
+      where: {
+        provider_providerAccountId: {
+          provider: account.provider,
+          providerAccountId: account.providerAccountId
+        }
+      },
+      update: {
+        userId: resolvedUserId,
+        type: account.type,
+        refresh_token: account.refresh_token ?? null,
+        access_token: account.access_token ?? null,
+        expires_at: account.expires_at ?? null,
+        token_type: account.token_type ?? null,
+        scope: account.scope ?? null,
+        id_token: account.id_token ?? null,
+        session_state: account.session_state ?? null
+      },
+      create: {
+        id: account.id,
+        userId: resolvedUserId,
+        type: account.type,
+        provider: account.provider,
+        providerAccountId: account.providerAccountId,
+        refresh_token: account.refresh_token ?? null,
+        access_token: account.access_token ?? null,
+        expires_at: account.expires_at ?? null,
+        token_type: account.token_type ?? null,
+        scope: account.scope ?? null,
+        id_token: account.id_token ?? null,
+        session_state: account.session_state ?? null
+      }
+    });
+  }
+
+  for (const session of payload.sessions || []) {
+    const resolvedUserId = userIdMap.get(session.userId) || resolvedFallbackUserId;
+    await prisma.session.upsert({
+      where: { sessionToken: session.sessionToken },
+      update: {
+        userId: resolvedUserId,
+        expires: new Date(session.expires)
+      },
+      create: {
+        id: session.id,
+        sessionToken: session.sessionToken,
+        userId: resolvedUserId,
+        expires: new Date(session.expires)
+      }
+    });
+  }
+
+  for (const verificationToken of payload.verificationTokens || []) {
+    await prisma.verificationToken.upsert({
+      where: { token: verificationToken.token },
+      update: {
+        identifier: verificationToken.identifier,
+        expires: new Date(verificationToken.expires)
+      },
+      create: {
+        identifier: verificationToken.identifier,
+        token: verificationToken.token,
+        expires: new Date(verificationToken.expires)
+      }
+    });
   }
 
   return {
@@ -1055,6 +1391,7 @@ export async function restoreBackupData(input: {
     restoredAreas: (payload.areas || []).length,
     restoredTypes: (payload.types || []).length,
     restoredSequenceCounters: (payload.sequenceCounters || []).length,
+    restoredCategoryTypeCounters: (payload.categoryTypeCounters || []).length,
     restoredImportProfiles: (payload.importProfiles || []).length,
     restoredItems: (payload.items || []).length,
     restoredBomEntries,
@@ -1153,11 +1490,21 @@ export async function previewBackupRestore(input: {
       categories: (payload.categories || []).length,
       locations: (payload.locations || []).length,
       shelves: (payload.shelves || []).length,
+      bins: (payload.bins || []).length,
       tags: (payload.tags || []).length,
       areas: (payload.areas || []).length,
       types: (payload.types || []).length,
       sequenceCounters: (payload.sequenceCounters || []).length,
+      categoryTypeCounters: (payload.categoryTypeCounters || []).length,
       importProfiles: (payload.importProfiles || []).length,
+      inventorySessions: (payload.inventorySessions || []).length,
+      inventorySessionRows: (payload.inventorySessionRows || []).length,
+      favorites: (payload.favorites || []).length,
+      recentViews: (payload.recentViews || []).length,
+      apiTokens: (payload.apiTokens || []).length,
+      accounts: (payload.accounts || []).length,
+      sessions: (payload.sessions || []).length,
+      verificationTokens: (payload.verificationTokens || []).length,
       items: (payload.items || []).length,
       boms: (payload.boms || []).length,
       auditLogs: (payload.auditLogs || []).length

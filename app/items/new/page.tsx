@@ -8,6 +8,7 @@ import { translateApiErrorMessage } from "@/lib/app-language";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
+import { formatStorageBinLabel } from "@/lib/storage-labels";
 
 type Option = { id: string; name: string; code?: string; codeLabel?: string };
 type ShelfOption = {
@@ -21,6 +22,7 @@ type ShelfOption = {
 type StorageBinOption = {
   id: string;
   code: string;
+  fullCode?: string | null;
   storageLocationId: string;
   storageShelfId: string;
   storageArea?: string | null;
@@ -121,7 +123,7 @@ export default function NewItemPage() {
         storageArea: selectedShelf?.name || selectedBin.storageArea || ""
       }));
     }
-    if (form.binSlot && Number(form.binSlot) > selectedBin.slotCount) {
+    if ((selectedBin.slotCount <= 1 && form.binSlot) || (form.binSlot && Number(form.binSlot) > selectedBin.slotCount)) {
       setForm((prev) => ({ ...prev, binSlot: "" }));
     }
   }, [bins, shelves, form.storageBinId, form.storageLocationId, form.storageShelfId, form.binSlot]);
@@ -132,6 +134,20 @@ export default function NewItemPage() {
   const selectedBin = bins.find((entry) => entry.id === form.storageBinId) || null;
   const isPlaced = form.placementStatus === "PLACED";
   const usesManagedDrawer = isPlaced && selectedShelf?.mode === "DRAWER_HOST";
+  const selectedBinRequiresSlot = !!selectedBin && selectedBin.slotCount > 1;
+
+  function getBinLabel(bin: StorageBinOption | null | undefined) {
+    if (!bin) return "";
+    const shelf = shelves.find((entry) => entry.id === bin.storageShelfId) || null;
+    return (
+      bin.fullCode ||
+      formatStorageBinLabel({
+        shelfCode: shelf?.code || null,
+        binCode: bin.code
+      }) ||
+      bin.code
+    );
+  }
 
   useEffect(() => {
     if (!form.categoryId || !form.typeId) return;
@@ -421,7 +437,7 @@ export default function NewItemPage() {
                 <option value="">{usesManagedDrawer ? tr("Drawer waehlen", "Choose drawer") : tr("Regal ohne Drawer", "Shelf without drawers")}</option>
                 {availableBins.map((entry) => (
                   <option key={entry.id} value={entry.id}>
-                    {entry.code}
+                    {getBinLabel(entry)}
                   </option>
                 ))}
               </select>
@@ -433,13 +449,20 @@ export default function NewItemPage() {
                 className="input mt-1"
                 value={form.binSlot}
                 onChange={(e) => setForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                disabled={!hasRequiredMeta || !usesManagedDrawer || !selectedBin}
+                disabled={!hasRequiredMeta || !usesManagedDrawer || !selectedBin || !selectedBinRequiresSlot}
               >
-                <option value="">{selectedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
-                {selectedBin &&
+                <option value="">
+                  {!selectedBin
+                    ? tr("Erst Drawer waehlen", "Choose drawer first")
+                    : selectedBinRequiresSlot
+                      ? tr("Unterfach waehlen", "Choose slot")
+                      : tr("Kein Unterfach erforderlich", "No slot required")}
+                </option>
+                {selectedBinRequiresSlot &&
+                  selectedBin &&
                   Array.from({ length: selectedBin.slotCount }, (_, index) => (
                     <option key={index + 1} value={String(index + 1)}>
-                      {selectedBin.code}-{index + 1}
+                      {getBinLabel(selectedBin)}-{index + 1}
                     </option>
                   ))}
               </select>

@@ -22,12 +22,18 @@ export default function ScannerPage() {
     const drawerRes = await fetch(`/api/bins/${encodeURIComponent(val)}`);
     if (drawerRes.ok) {
       const drawer = await drawerRes.json();
-      router.push(`/bins/${encodeURIComponent(drawer.code || val.toUpperCase())}`);
+      router.push(`/bins/${encodeURIComponent(drawer.fullCode || drawer.code || val.toUpperCase())}`);
       return;
     }
-    if (drawerRes.status === 403) {
+    const shelfRes = await fetch(`/api/shelves/${encodeURIComponent(val)}`);
+    if (shelfRes.ok) {
+      const shelf = await shelfRes.json();
+      router.push(`/shelves/${encodeURIComponent(shelf.displayCode || shelf.code || val.toUpperCase())}`);
+      return;
+    }
+    if (drawerRes.status === 403 || shelfRes.status === 403) {
       setItem(null);
-      setMessage(tr("Kein Zugriff auf diesen Drawer", "No access to this drawer"));
+      setMessage(tr("Kein Zugriff auf diese Position", "No access to this storage position"));
       return;
     }
     const res = await fetch(`/api/search?q=${encodeURIComponent(val)}`);

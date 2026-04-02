@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { auditLog } from "@/lib/audit";
 import { canSetStock } from "@/lib/stock";
 import { QuantityValidationError, formatDisplayQuantity, serializeStoredQuantity, toStoredQuantity } from "@/lib/quantity";
-import { formatDrawerPosition } from "@/lib/storage-bins";
+import { formatDrawerPosition, formatStorageShelfLabel } from "@/lib/storage-labels";
 
 type InventorySessionDb =
   | Pick<
@@ -135,13 +135,15 @@ function buildStoragePlaceLabel(input: {
   storageBinCode?: string | null;
   binSlot?: number | null;
 }) {
-  return [
-    normalizeOptionalText(input.storageArea),
-    normalizeOptionalText(input.storageShelfCode),
-    formatDrawerPosition(input.storageBinCode, input.binSlot)
-  ]
-    .filter(Boolean)
-    .join(" / ") || "-";
+  const shelfLabel =
+    formatStorageShelfLabel(input.storageShelfCode, null) || normalizeOptionalText(input.storageArea);
+  const drawerLabel = formatDrawerPosition(
+    input.storageBinCode,
+    input.binSlot,
+    null,
+    input.storageShelfCode
+  );
+  return drawerLabel || shelfLabel || "-";
 }
 
 function buildCountProgress(rows: Array<{ expectedStock: number; countedStock: number | null }>) {

@@ -132,6 +132,72 @@ describe("item transfer helpers", () => {
     ).rejects.toThrow("TRANSFER_TARGET_SHELF_INVALID");
   });
 
+  it("accepts single-slot drawers without requiring an explicit slot", async () => {
+    const locationId = "55555555-5555-4555-8555-555555555555";
+    const shelfId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const binId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const storageLocationFindUniqueMock = vi.fn().mockResolvedValue({
+      id: locationId,
+      name: "Werkstatt",
+      code: "WERK"
+    });
+    const storageShelfFindUniqueMock = vi.fn().mockResolvedValue({
+      id: shelfId,
+      name: "Kleinteilemagazin",
+      code: "SA1",
+      description: null,
+      mode: "DRAWER_HOST",
+      storageLocationId: locationId
+    });
+    const storageBinFindUniqueMock = vi.fn().mockResolvedValue({
+      id: binId,
+      code: "A01",
+      slotCount: 1,
+      storageLocationId: locationId,
+      storageShelfId: shelfId,
+      isActive: true
+    });
+    const itemFindFirstMock = vi.fn().mockResolvedValue(null);
+
+    const result = await validateTransferTarget(
+      {
+        storageLocation: {
+          findUnique: storageLocationFindUniqueMock
+        },
+        storageShelf: {
+          findUnique: storageShelfFindUniqueMock
+        },
+        storageBin: {
+          findUnique: storageBinFindUniqueMock
+        },
+        item: {
+          findFirst: itemFindFirstMock
+        }
+      } as never,
+      {
+        storageLocationId: locationId,
+        storageShelfId: shelfId,
+        storageBinId: binId,
+        allowedLocationIds: [locationId]
+      }
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        storageBin: expect.objectContaining({ id: binId, code: "A01" }),
+        binSlot: null
+      })
+    );
+    expect(itemFindFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          storageBinId: binId,
+          binSlot: null
+        })
+      })
+    );
+  });
+
   it("groups bulk transfer preview items by source place", () => {
     const groups = buildTransferSourceGroups([
       {

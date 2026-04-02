@@ -146,7 +146,7 @@ export const storageLocationUpdateSchema = z.object({
 
 export const storageShelfCreateSchema = z.object({
   name: nameSchema,
-  code: z.string().trim().max(40).optional().nullable(),
+  code: z.string().trim().regex(/^[A-Za-z]{2}$/).optional().nullable(),
   description: z.string().trim().max(300).optional().nullable(),
   mode: z.enum(["OPEN_AREA", "DRAWER_HOST"]).default("OPEN_AREA"),
   storageLocationId: uuidSchema
@@ -157,7 +157,7 @@ export const storageShelfUpdateSchema = storageShelfCreateSchema.extend({
 });
 
 export const storageBinCreateSchema = z.object({
-  code: z.string().trim().min(1).max(40),
+  code: z.string().trim().regex(/^(0[1-9]|[1-9][0-9])$/),
   storageShelfId: uuidSchema,
   slotCount: z.number().int().min(1).max(99).default(1),
   isActive: z.boolean().optional().default(true)
@@ -169,7 +169,6 @@ export const storageBinUpdateSchema = storageBinCreateSchema.partial().extend({
 
 export const storageBinRangeCreateSchema = z.object({
   storageShelfId: uuidSchema,
-  prefix: z.string().trim().regex(/^[A-Za-z]+$/).min(1).max(20),
   start: z.number().int().min(1).max(99),
   end: z.number().int().min(1).max(99),
   slotCount: z.number().int().min(1).max(99).default(1)
@@ -186,6 +185,11 @@ export const storageBinSlotCountPreviewSchema = z.object({
 export const storageBinSwapSchema = z.object({
   leftBinId: uuidSchema,
   rightBinId: uuidSchema
+});
+
+export const storageBinMoveSchema = z.object({
+  sourceBinId: uuidSchema,
+  targetBinId: uuidSchema
 });
 
 export const customFieldCreateSchema = z.object({

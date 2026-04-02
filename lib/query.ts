@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { AppRole } from "@/lib/permissions";
 import { buildPlacementAccessWhere } from "@/lib/storage-bins";
+import { parseManagedDrawerLabel, parseManagedStorageShelfLabel } from "@/lib/storage-labels";
 
 export function buildItemFilter(
   params: URLSearchParams,
@@ -31,6 +32,8 @@ export function buildItemFilter(
   };
 
   if (q) {
+    const managedDrawerLabel = parseManagedDrawerLabel(q);
+    const managedShelfLabel = parseManagedStorageShelfLabel(q);
     where.OR = [
       { labelCode: { contains: q } },
       { name: { contains: q } },
@@ -40,6 +43,39 @@ export function buildItemFilter(
       { storageShelf: { is: { code: { contains: q } } } },
       { storageShelf: { is: { name: { contains: q } } } },
       { storageBin: { is: { code: { contains: q } } } },
+      ...(managedShelfLabel
+        ? [
+            {
+              storageShelf: {
+                is: {
+                  code: managedShelfLabel
+                }
+              }
+            }
+          ]
+        : []),
+      ...(managedDrawerLabel
+        ? [
+            {
+              AND: [
+                {
+                  storageShelf: {
+                    is: {
+                      code: managedDrawerLabel.shelfCode
+                    }
+                  }
+                },
+                {
+                  storageBin: {
+                    is: {
+                      code: managedDrawerLabel.binCode
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        : []),
       { tags: { some: { tag: { name: { contains: q } } } } }
     ];
   }

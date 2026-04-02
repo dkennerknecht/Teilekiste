@@ -1,109 +1,113 @@
 # Feature-Analyse fuer Teilekiste
 
-Stand: Maerz 2026
+Stand: April 2026
 
 ## Stand heute
 
-Teilekiste ist inzwischen mehr als eine einfache Inventar-App. Der Produktkern ist heute stark in den Bereichen:
+Teilekiste ist inzwischen keine einfache CRUD-Inventarliste mehr, sondern eine recht klare Werkstatt- und Materialverwaltungs-App mit Fokus auf:
 
-- einfache Selbsthostbarkeit
-- schneller Materialzugriff
-- mobile Bedienung
-- Lagerstruktur mit Lagerort, Regal und Fach
-- automatische Labels auf Basis von Kategorie + Type
-- Auditierbarkeit und Datensicherheit
-- standardisierte technische Materialdaten
-- qualitaetsgesicherter CSV-Import
-- Dubletten-Erkennung und sicheres Merge
-- Mengenlogik fuer Meterware
+- kleine Teams und Selbsthoster
+- Elektronik- und Elektroinstallationsmaterial
+- mobile Nutzung im Lager
+- nachvollziehbare Lagerplaetze
+- robuste Datenqualitaet
+- einfache, lokale Betriebsform ohne externe Abhaengigkeiten
+
+Der Produktkern ist heute stark in diesen Bereichen:
+
+- Shelf-/Drawer-basierte Lagerstruktur
+- Item-Labels und physische Lagerplatz-Labels
+- verwaltete technische Materialdaten
+- Import mit Profilen und Preview
+- Dubletten-Erkennung und Merge
+- Meterware in `m` mit interner `mm`-Logik
 - explizite Lagertransfers
-
-Damit ist Teilekiste aktuell besonders stark als:
-
-- internes Werkstattlager
-- Elektronik- und Installationsmaterial-Verwaltung
-- Materialbestand fuer kleine Teams
-- mobile Such-, Entnahme- und Umlagerungs-App
+- Inventur-Sessions
+- Backup/Restore fuer reale Selbsthoster-Szenarien
 
 ## Bereits geliefert
 
-### 1. Materialdaten-Standardisierung
+### 1. Lagerstruktur mit Shelfs, Drawers und Placement-Status
 
 Bereits umgesetzt:
 
-- Werte-Normalisierung fuer `CustomField`
-- kanonische Werte mit Aliasen und Vorschlaegen
-- gesperrte Listen fuer `SELECT` und `MULTI_SELECT`
-- verwaltete technische Feldsaetze pro `Kategorie + Type`
-- Presets fuer typische technische Materialgruppen
-- Sortierung technischer und freier Felder ueber `sortOrder`
+- `StorageLocation -> StorageShelf -> optional StorageBin -> optional binSlot`
+- Shelf-Codes mit zwei Buchstaben pro Lagerort, z. B. `AB`
+- Drawer-Codes `01..99` pro Shelf
+- sichtbare Drawer-Labels wie `AB01`
+- Shelf-Modi `OPEN_AREA` und `DRAWER_HOST`
+- Placement-Status `PLACED`, `UNPLACED`, `INCOMING`
+- eigene Uebersicht fuer unplatzierte und erwartete Items
+- Lagerplatzuebersicht unter `Locations`
 
 Nutzen:
 
-- deutlich bessere Datenqualitaet
-- robusterer Import
-- bessere Suchbarkeit
-- sauberere Grundlage fuer Dubletten-Erkennung
+- reale Magazin- und Regalstruktur ist sauber abbildbar
+- offene Bereiche und Drawer koennen nebeneinander existieren
+- physisch vorhandene, aber noch nicht final eingeordnete Ware ist sichtbar
 
-### 2. Typ-spezifische technische Felder
+### 2. Technische Materialdaten
 
 Bereits umgesetzt:
 
-- technische Presets als verwaltete Feldsaetze
-- Zuordnung pro `Kategorie + Type`
-- Synchronisation der daraus erzeugten `CustomField`-Eintraege
-- sichere Deaktivierung alter managed Felder statt Loeschung
-- sichtbare Trennung zwischen freien und verwalteten Feldern im Admin
+- freie `Custom Fields`
+- verwaltete `Technical Field Sets` pro `Kategorie + Type`
+- sichtbare Trennung zwischen freien und verwalteten Feldern
+- technische Presets nicht nur als Code-Default, sondern im Admin bearbeitbar
+- Sortierung von Listenwerten inklusive Drag-and-drop
+- Werte-Normalisierung, Alias- und Suggestion-Logik
 
-Beispiele, die bereits als Presets vorgesehen sind:
+Nutzen:
 
-- Widerstand
-- Kondensator
-- Temperatursensor
-- Relais / Schuetz
-- Kabel / Litze
+- bessere Datenqualitaet
+- konsistentere technische Angaben
+- sauberere Basis fuer Suche, Import und Dubletten-Erkennung
 
-### 3. Verbrauch fuer Kabel, Rollen und Meterware
+### 3. Import-Qualitaet
 
-Bereits umgesetzt in V1:
+Bereits umgesetzt:
 
-- `unit = M` mit interner Speicherung in `mm`
-- Dezimalmengen fuer Bestand, Mindestbestand, Bewegungen und Reservierungen
-- korrekte Anzeige in `m` in UI und API
-- CSV-Import und Export fuer Meterwerte
+- dedizierter Admin-Import-Workflow
+- Import-Profile mit Header-Fingerprint
+- Mapping fuer Kernfelder, feste Werte und Custom Fields
+- Preview mit strukturierten Fehlern und Warnungen pro Zeile
+- striktes Apply nur bei fachlich gueltigem Import
 
-Bewusste V1-Grenze:
+Nutzen:
 
-- noch kein Rollenmodell
-- noch keine Restlaenge pro Einzelrolle
-- noch keine Mehrgebinde-Logik
+- deutlich weniger manuelle Nacharbeit
+- wiederverwendbare Importe fuer typische Lieferanten- oder Altformate
 
 ### 4. Deduplizierung und Datenqualitaet
 
 Bereits umgesetzt:
 
 - persistiertes `typeId` auf `Item`
-- Dubletten-Scoring ueber Name, Hersteller, MPN und Type
+- Dubletten-Scoring ueber Name, Hersteller, MPN, Type und Lagerkontext
 - Admin-Ansicht fuer Kandidaten
-- Merge-Preview mit Konfliktaufloesung
-- sicherer Vollmerge mit Relationen, Audit und Redirect alter Quellitems
+- Merge-Preview mit Konfliktentscheidung
+- sicherer Vollmerge mit Redirect der alten Quellitems
 
 Nutzen:
 
-- bessere Datenqualitaet im Bestand
-- weniger Wildwuchs bei fast gleichen Artikeln
-- weniger Such- und Einkaufsfehler
+- weniger Wildwuchs im Bestand
+- bessere Suchbarkeit
+- sauberere Stammdaten
 
-### 5. Bessere Import-Qualitaet
+### 5. Mengenlogik fuer Meterware
 
 Bereits umgesetzt:
 
-- dedizierter Admin-Import-Workflow
-- speicherbare Import-Profile
-- Header-Fingerprint und Profilvorschlaege
-- Feldzuordnung fuer Kernfelder, feste Werte und Custom Fields
-- Preview mit Fehlern und Warnungen pro Zeile
-- striktes Apply nur bei fehlerfreiem Import
+- `unit = M` mit interner Speicherung in `mm`
+- Dezimalmengen fuer Bestand, Mindestbestand, Bewegungen und Reservierungen
+- korrekte Anzeige in `m`
+- CSV-Import und Export fuer Meterware
+
+Bewusste V1-Grenze:
+
+- kein Rollenmodell pro Einzelrolle
+- keine Restlaenge je Einzelrolle
+- keine automatische Gebinde- oder Rollenoptimierung
 
 ### 6. Lagertransfers
 
@@ -111,9 +115,10 @@ Bereits umgesetzt:
 
 - expliziter Einzeltransfer
 - explizite Sammelumlagerung
-- Validierung fuer Ziel-Lagerort und Ziel-Regal
+- Bulk-Transfer getrennt von Bulk-Edit
 - eigener Audit-Typ `ITEM_TRANSFER`
-- Standortwechsel im normalen Item-Update laufen intern ueber dieselbe Transfer-Logik
+- Standortwechsel im Item-Update laufen intern ueber dieselbe Transfer-Logik
+- Drawer-Move und Drawer-Swap im Drawer-Management
 
 Wichtig:
 
@@ -121,7 +126,62 @@ Wichtig:
 - es gibt keine Teilmengen-Umlagerung
 - Transfers erzeugen keine Bestandsbewegung
 
-## Teilweise geliefert oder noch bewusst einfach
+### 7. Inventur-Sessions
+
+Bereits umgesetzt:
+
+- Session-basierte Inventur pro Lagerort und optional Shelf/Bereich
+- persistenter Entwurf statt sofortiger Direktbuchung
+- Review mit Differenzanzeige
+- Finalize mit echten Inventurbewegungen
+- gesperrte Bearbeitung fuer geschlossene Sessions
+
+Nutzen:
+
+- deutlich robuster als Einzelzaehlungen
+- passt besser zu echter Lagerarbeit
+
+### 8. Scanner, Shelf- und Drawer-Labels
+
+Bereits umgesetzt:
+
+- Scanner fuer Item-, Shelf- und Drawer-Codes
+- drawer-/shelf-first mit Item-Fallback
+- P-touch-Export fuer Shelfs, Drawers oder beides
+- waehbares CSV-Trennzeichen fuer den P-touch-Export
+
+Nutzen:
+
+- schnellere Navigation im Lager
+- konsistente physische Beschriftung
+
+### 9. Backup / Restore
+
+Bereits umgesetzt:
+
+- ZIP-Backup mit Exportdaten, Uploads und Attachments
+- Preview vor Restore
+- `merge` und `overwrite`
+- Restore von Shelfs, Drawers, Placement-Daten, Inventur-Sessions und relevanten Nutzerdaten
+
+Nutzen:
+
+- sinnvoll fuer echte Selbsthoster
+- brauchbar fuer Geraetewechsel, Neuinstallation und Testsysteme
+
+### 10. Host-dynamischer Betrieb
+
+Bereits umgesetzt:
+
+- Browserzugriff ueber `localhost` und wechselnde LAN-IP
+- request-basierte Redirects und generierte Links
+- keine harte Bindung an eine einmal konfigurierte DHCP-IP
+
+Nutzen:
+
+- deutlich angenehmerer Betrieb im Heimnetz oder kleinen Werkstatt-LAN
+
+## Teilweise geliefert oder bewusst einfach gehalten
 
 ### Einkauf
 
@@ -145,7 +205,7 @@ Noch offen:
 Vorhanden:
 
 - Reservierungen mit Menge
-- Freitextfeld `reservedFor`
+- Freitext `reservedFor`
 
 Noch offen:
 
@@ -154,22 +214,21 @@ Noch offen:
 - Materiallisten pro Projekt
 - Rueckgabe oder Verbrauch aus Reservierung
 
-### Scanner
+### BOM
 
 Vorhanden:
 
-- Scan oder Eingabe eines Labelcodes
-- direktes Oeffnen des Items
-- schneller `-1` Verbrauch aus dem Scanner
+- BOM-Grundstruktur
+- BOM-Bereich am Item
 
 Noch offen:
 
-- mehrere Schnellaktionen nach dem Scan
-- Sammelmodus fuer viele Scans
-- Inventurmodus
-- Transfer direkt aus dem Scanner
+- Picking-Workflow
+- Materialausgabe
+- Teilverbrauch und Rueckgabe
+- engerer Bezug zu Reservierungen oder Projekten
 
-### Integrationen
+### API und Integrationen
 
 Vorhanden:
 
@@ -179,8 +238,7 @@ Noch offen:
 
 - dokumentierte API fuer externe Systeme
 - Webhooks
-- Push in n8n / Home Assistant / ERP-Bridge
-- klar definierte Integrationspunkte fuer Fremdsysteme
+- klar definierte Integrationspunkte fuer n8n, Home Assistant oder ERP-nahe Systeme
 
 ## Offene Prioritaeten
 
@@ -201,9 +259,8 @@ Empfehlung:
 
 Warum jetzt:
 
-- der Inventarkern ist stark genug
-- der operative Hebel im Alltag ist hoch
-- Mindestbestand und Einkaufsliste sind bereits vorhanden
+- Mindestbestand und Einkaufsliste sind schon da
+- der groesste praktische Hebel liegt im Alltag oft bei Beschaffung
 
 ### 2. Projekt- oder Auftragsbezug fuer Reservierungen
 
@@ -221,21 +278,20 @@ Warum jetzt:
 
 - passt direkt zu realer Werkstattarbeit
 - baut auf bestehender Reservierungslogik auf
-- ist ein sinnvoller naechster Schritt nach Datenqualitaet und Transfers
 
-### 3. Scanner-Workflow ausbauen
+### 3. Scanner-Workflow weiter ausbauen
 
 Nutzen: mittel bis hoch  
 Aufwand: mittel
 
 Empfehlung:
 
-- Scan -> Aktion auswaehlen
-- `+1`, `-1`, reservieren, transferieren, archivieren
-- schneller Wechsel zwischen mehreren gescannten Items
-- Sammelmodus fuer Inventur
+- mehr Schnellaktionen nach dem Scan
+- `+1`, `-1`, reservieren, transferieren
+- Sammelmodus fuer viele Scans
+- staerkerer Lagerprozess direkt aus dem Scanner
 
-### 4. Lieferfaehige API und Integrationen
+### 4. API, Webhooks und Integrationen
 
 Nutzen: mittel bis hoch  
 Aufwand: mittel bis hoch
@@ -249,28 +305,7 @@ Empfehlung:
 
 ## Neue sinnvolle Feature-Vorschlaege
 
-### 1. Inventur-Sessions
-
-Statt einzelner Inventur-Buchungen:
-
-- Inventur pro Lagerort
-- Zaehlstatus und Fortschritt
-- Differenzen gesammelt pruefen
-- Freigabe der Inventur als eigener Schritt
-
-Das wuerde Teilekiste operativ deutlich staerker machen.
-
-### 2. Standort-Scan-Workflow
-
-Statt Lagerort manuell zu tippen:
-
-- erst Lagerplatz scannen
-- dann Item scannen
-- danach Einlagern oder Umlagern bestaetigen
-
-Das passt sehr gut zur neuen Transfer-Logik.
-
-### 3. Chargen, Seriennummern und Verfallsdaten
+### 1. Chargen, Seriennummern und Verfallsdaten
 
 Sinnvoll fuer:
 
@@ -278,18 +313,18 @@ Sinnvoll fuer:
 - Relais
 - Messgeraete
 - Chemie, Kleber, Verbrauchsmaterial
-- hochwertige oder rueckverfolgbare Komponenten
+- rueckverfolgbare Komponenten
 
-### 4. BOM-Picking und Materialausgabe
+### 2. BOM-Picking und Materialausgabe
 
 Aufbauend auf vorhandener BOM-Logik:
 
-- Pickliste fuer Baugruppen
-- Materialausgabe fuer Aufbau oder Auftrag
+- Picklisten fuer Baugruppen
+- Materialausgabe fuer Auftrag oder Aufbau
 - Teilverbrauch dokumentieren
 - Rueckgabe von Restmaterial
 
-### 5. Regeln und Benachrichtigungen
+### 3. Regeln und Benachrichtigungen
 
 Beispiele:
 
@@ -304,14 +339,14 @@ Ausgabe moeglich als:
 - Mail
 - Webhook
 
-### 6. Lagerplatz-Optimierung
+### 4. Lagerplatz-Optimierung
 
 Beispiele:
 
-- freie / volle Lagerplaetze sichtbar machen
+- freie und volle Lagerplaetze sichtbar machen
 - bevorzugte Zielplaetze fuer bestimmte Kategorien
 - Vorschlaege fuer Einlagerung
-- Regal-Labels und Fachkennzeichnung konsistent verwalten
+- konsistente Regal- und Shelf-Kennzeichnung ueber groessere Lager hinweg
 
 ## Empfohlene Priorisierung ab jetzt
 
@@ -323,51 +358,33 @@ Beispiele:
 ### Danach
 
 3. Scanner-Workflow ausbauen
-4. Inventur-Sessions
-5. Integrationen / Webhooks / API-Doku
+4. API / Webhooks / Integrationen
+5. Chargen- und Seriennummern
 
 ### Spaeter
 
-6. Chargen- und Seriennummern
-7. BOM-Picking und Materialausgabe
+6. BOM-Picking und Materialausgabe
+7. Regeln und Benachrichtigungen
 8. Lagerplatz-Optimierung
-
-## Klare Empfehlung
-
-Wenn nur ein grosser naechster Schritt gebaut werden soll, ist die beste fachliche Wahl aktuell:
-
-### Einkauf ausbauen
-
-Warum:
-
-- die Datenbasis ist jetzt stark genug
-- Mindestbestand, Import, Dubletten und technische Felder sind bereits deutlich reifer
-- der groesste praktische Hebel liegt nun im Beschaffungsworkflow
-
-Die zweitbeste direkte Erweiterung waere:
-
-### Reservierungen mit Projektbezug
-
-Warum:
-
-- sehr nah am Werkstattalltag
-- fachlich klar
-- passt gut zu Bestand, Scanner, BOM und spaeterer Materialausgabe
 
 ## Fazit
 
-Teilekiste ist heute nicht mehr nur eine brauchbare Inventar-App, sondern bereits eine recht starke Werkstatt- und Materialverwaltungsbasis.
+Teilekiste ist heute bereits eine recht starke Werkstatt- und Materialverwaltungsbasis fuer kleine Teams und Selbsthoster.
 
 Die groessten bereits erreichten Fortschritte liegen in:
 
-- standardisierten Materialdaten
+- strukturierter Lagerplatzlogik mit Shelfs und Drawers
+- technischen Materialdaten
 - qualitaetsgesichertem Import
-- Deduplizierung
+- Dubletten-Erkennung und Merge
 - Meterware
+- Inventur-Sessions
 - expliziten Lagertransfers
+- robustem Backup/Restore
 
-Das naechste groesste Potenzial liegt jetzt weniger im allgemeinen CRUD und mehr in:
+Das groesste verbleibende Potenzial liegt jetzt weniger im allgemeinen CRUD und mehr in:
 
 - echtem Einkaufsworkflow
 - projektbezogener Materialplanung
-- operativen Lagerprozessen rund um Scanner, Inventur und Integrationen
+- operativen Scanner-Prozessen
+- Integrationen in angrenzende Systeme

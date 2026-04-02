@@ -1,5 +1,27 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { canWrite, type AppRole } from "@/lib/permissions";
+import {
+  formatDrawerPosition as formatDrawerPositionLabel,
+  formatStorageBinLabel,
+  formatStorageShelfLabel,
+  getStorageBinCodeVariants,
+  isManagedStorageBinCode,
+  isManagedStorageShelfCode,
+  normalizeStorageBinCode,
+  normalizeStorageShelfCode,
+  parseManagedDrawerLabel,
+  parseManagedStorageShelfLabel
+} from "@/lib/storage-labels";
+
+export {
+  formatStorageBinLabel,
+  formatStorageShelfLabel,
+  getStorageBinCodeVariants,
+  isManagedStorageBinCode,
+  isManagedStorageShelfCode,
+  normalizeStorageBinCode,
+  normalizeStorageShelfCode
+};
 
 export const placementStatuses = ["INCOMING", "UNPLACED", "PLACED"] as const;
 export type PlacementStatus = (typeof placementStatuses)[number];
@@ -66,57 +88,6 @@ export function normalizeOptionalText(value: string | null | undefined) {
   return trimmed ? trimmed : null;
 }
 
-export function normalizeStorageShelfCode(value: string | null | undefined) {
-  const normalized = normalizeOptionalText(value);
-  return normalized ? normalized.toUpperCase() : null;
-}
-
-export function normalizeStorageBinCode(value: string | null | undefined) {
-  const normalized = normalizeOptionalText(value);
-  if (!normalized) return null;
-
-  const upperCased = normalized.toUpperCase();
-  const match = /^([A-Z]+)(\d+)$/.exec(upperCased);
-  if (!match) {
-    return upperCased;
-  }
-
-  const [, prefix, digits] = match;
-  const parsedNumber = Number.parseInt(digits, 10);
-  if (!Number.isFinite(parsedNumber)) {
-    return upperCased;
-  }
-
-  return `${prefix}${String(parsedNumber).padStart(2, "0")}`;
-}
-
-export function getStorageBinCodeVariants(value: string | null | undefined) {
-  const normalized = normalizeOptionalText(value);
-  if (!normalized) return [];
-
-  const upperCased = normalized.toUpperCase();
-  const match = /^([A-Z]+)(\d+)$/.exec(upperCased);
-  if (!match) {
-    return [upperCased];
-  }
-
-  const [, prefix, digits] = match;
-  const parsedNumber = Number.parseInt(digits, 10);
-  if (!Number.isFinite(parsedNumber)) {
-    return [upperCased];
-  }
-
-  const unpadded = `${prefix}${String(parsedNumber)}`;
-  const padded = `${prefix}${String(parsedNumber).padStart(2, "0")}`;
-
-  return Array.from(new Set([upperCased, unpadded, padded]));
-}
-
-export function isManagedStorageBinCode(value: string | null | undefined) {
-  const normalized = normalizeStorageBinCode(value);
-  return normalized ? /^[A-Z]+\d{2}$/.test(normalized) : false;
-}
-
 export function normalizePlacementStatus(value: string | null | undefined, fallback: PlacementStatus = "PLACED"): PlacementStatus {
   if (!value) return fallback;
   const normalized = value.trim().toUpperCase();
@@ -133,23 +104,43 @@ export function isPlacedStatus(value: string | null | undefined) {
   return normalizePlacementStatus(value) === "PLACED";
 }
 
-export function formatDrawerPosition(code: string | null | undefined, slot: number | null | undefined) {
-  const normalizedCode = normalizeStorageBinCode(code);
-  if (!normalizedCode) return null;
-  return slot ? `${normalizedCode}-${slot}` : normalizedCode;
+export function formatDrawerPosition(
+  code: string | null | undefined,
+  slot: number | null | undefined,
+  slotCount?: number | null,
+  shelfCode?: string | null
+) {
+  return formatDrawerPositionLabel(code, slot, slotCount, shelfCode);
+}
+
+function normalizeDrawerSlotSelection(slotCount: number, binSlot: number | null | undefined) {
+  if (slotCount <= 1) {
+    if (binSlot && binSlot !== 1) {
+      throw new Error("PLACEMENT_BIN_SLOT_INVALID");
+    }
+    return null;
+  }
+  return binSlot ?? null;
 }
 
 export function formatStoragePosition(input: {
   storageLocation?: { name?: string | null } | null;
   storageShelf?: { code?: string | null; name?: string | null } | null;
-  storageBin?: { code?: string | null } | null;
+  storageBin?: { code?: string | null; slotCount?: number | null } | null;
   binSlot?: number | null;
   storageArea?: string | null;
 }) {
+  const shelfLabel =
+    formatStorageShelfLabel(input.storageShelf?.code, input.storageShelf?.name) || normalizeOptionalText(input.storageArea);
+  const drawerLabel = formatDrawerPosition(
+    input.storageBin?.code || null,
+    input.binSlot || null,
+    input.storageBin?.slotCount ?? null,
+    input.storageShelf?.code || null
+  );
   const parts = [
     normalizeOptionalText(input.storageLocation?.name),
-    normalizeStorageShelfCode(input.storageShelf?.code) || normalizeOptionalText(input.storageShelf?.name) || normalizeOptionalText(input.storageArea),
-    formatDrawerPosition(input.storageBin?.code || null, input.binSlot || null)
+    drawerLabel || shelfLabel
   ].filter(Boolean);
 
   return parts.join(" / ") || null;
@@ -158,7 +149,7 @@ export function formatStoragePosition(input: {
 export function formatItemPosition(input: {
   storageLocation?: { name?: string | null } | null;
   storageShelf?: { code?: string | null; name?: string | null } | null;
-  storageBin?: { code?: string | null } | null;
+  storageBin?: { code?: string | null; slotCount?: number | null } | null;
   storageArea?: string | null;
   binSlot?: number | null;
 }) {
@@ -332,11 +323,11 @@ async function resolveManagedDrawerPlacement(
     throw new Error("PLACEMENT_SHELF_OPEN_AREA_ONLY");
   }
 
-  const binSlot = input.binSlot ?? null;
-  if (!binSlot) {
+  const binSlot = normalizeDrawerSlotSelection(storageBin.slotCount, input.binSlot ?? null);
+  if (storageBin.slotCount > 1 && !binSlot) {
     throw new Error("PLACEMENT_BIN_SLOT_REQUIRED");
   }
-  if (binSlot < 1 || binSlot > storageBin.slotCount) {
+  if (binSlot !== null && (binSlot < 1 || binSlot > storageBin.slotCount)) {
     throw new Error("PLACEMENT_BIN_SLOT_INVALID");
   }
 
@@ -406,6 +397,20 @@ export async function findStorageBinByCode(
     return db.storageBin.findUnique({ where: { id: normalized } });
   }
 
+  const managedDrawerLabel = parseManagedDrawerLabel(normalized);
+  if (managedDrawerLabel) {
+    const matches = await db.storageBin.findMany({
+      where: {
+        code: managedDrawerLabel.binCode,
+        storageShelf: {
+          code: managedDrawerLabel.shelfCode
+        }
+      },
+      take: 2
+    });
+    return matches.length === 1 ? matches[0] : null;
+  }
+
   const variants = getStorageBinCodeVariants(normalized);
   const matches = await db.storageBin.findMany({
     where: { code: { in: variants } },
@@ -426,6 +431,15 @@ export async function findStorageShelfByCode(
 
   if (isUuidLike(normalized)) {
     return db.storageShelf.findUnique({ where: { id: normalized } });
+  }
+
+  const managedShelfCode = parseManagedStorageShelfLabel(normalized);
+  if (managedShelfCode) {
+    const matches = await db.storageShelf.findMany({
+      where: { code: managedShelfCode },
+      take: 2
+    });
+    return matches.length === 1 ? matches[0] : null;
   }
 
   const matches = await db.storageShelf.findMany({
@@ -538,7 +552,35 @@ export async function applyStorageBinSlotCountChange(
   return preview;
 }
 
-export async function swapStorageBinContents(
+function getEffectiveSlot(binSlot: number | null | undefined, slotCount?: number | null) {
+  if ((slotCount ?? null) !== null && Number(slotCount) <= 1) {
+    return 1;
+  }
+  return binSlot ?? null;
+}
+
+function normalizeStoredSlotForTarget(slot: number | null, targetSlotCount?: number | null) {
+  if ((targetSlotCount ?? null) !== null && Number(targetSlotCount) <= 1) {
+    return null;
+  }
+  return slot;
+}
+
+function assertBinContentFitsTarget(
+  items: Array<{ binSlot: number | null }>,
+  targetBin: { slotCount?: number | null }
+) {
+  const targetSlotCount = targetBin.slotCount ?? null;
+  const targetEffectiveMax = targetSlotCount !== null && targetSlotCount <= 1 ? 1 : targetSlotCount;
+  for (const item of items) {
+    const effectiveSlot = getEffectiveSlot(item.binSlot, targetSlotCount);
+    if (effectiveSlot !== null && targetEffectiveMax !== null && effectiveSlot > targetEffectiveMax) {
+      throw new Error("STORAGE_BIN_TARGET_SLOT_CAPACITY_MISMATCH");
+    }
+  }
+}
+
+async function loadStorageBinsForPlacementChange(
   db: Pick<Prisma.TransactionClient, "storageBin" | "item">,
   input: {
     leftBinId: string;
@@ -552,7 +594,8 @@ export async function swapStorageBinContents(
       code: true,
       storageLocationId: true,
       storageShelfId: true,
-      storageArea: true
+      storageArea: true,
+      slotCount: true
     }
   });
   const leftBin = bins.find((entry) => entry.id === input.leftBinId);
@@ -561,9 +604,20 @@ export async function swapStorageBinContents(
   if (!leftBin || !rightBin) {
     throw new Error("STORAGE_BIN_NOT_FOUND");
   }
-  if (leftBin.storageShelfId !== rightBin.storageShelfId) {
+  if (leftBin.storageLocationId !== rightBin.storageLocationId) {
     throw new Error("STORAGE_BIN_SWAP_SCOPE_MISMATCH");
   }
+  return { leftBin, rightBin };
+}
+
+export async function swapStorageBinContents(
+  db: Pick<Prisma.TransactionClient, "storageBin" | "item">,
+  input: {
+    leftBinId: string;
+    rightBinId: string;
+  }
+) {
+  const { leftBin, rightBin } = await loadStorageBinsForPlacementChange(db, input);
 
   const [leftItems, rightItems] = await Promise.all([
     db.item.findMany({
@@ -588,6 +642,9 @@ export async function swapStorageBinContents(
     })
   ]);
 
+  assertBinContentFitsTarget(leftItems, rightBin);
+  assertBinContentFitsTarget(rightItems, leftBin);
+
   const resetIds = [...leftItems.map((item) => item.id), ...rightItems.map((item) => item.id)];
   if (resetIds.length) {
     await db.item.updateMany({
@@ -611,7 +668,7 @@ export async function swapStorageBinContents(
         storageShelfId: rightBin.storageShelfId,
         storageArea: rightBin.storageArea || null,
         storageBinId: rightBin.id,
-        binSlot: item.binSlot,
+        binSlot: normalizeStoredSlotForTarget(getEffectiveSlot(item.binSlot, leftBin.slotCount), rightBin.slotCount),
         placementStatus: "PLACED"
       }
     });
@@ -625,7 +682,7 @@ export async function swapStorageBinContents(
         storageShelfId: leftBin.storageShelfId,
         storageArea: leftBin.storageArea || null,
         storageBinId: leftBin.id,
-        binSlot: item.binSlot,
+        binSlot: normalizeStoredSlotForTarget(getEffectiveSlot(item.binSlot, rightBin.slotCount), leftBin.slotCount),
         placementStatus: "PLACED"
       }
     });
@@ -636,6 +693,68 @@ export async function swapStorageBinContents(
     rightBin,
     leftCount: leftItems.length,
     rightCount: rightItems.length
+  };
+}
+
+export async function moveStorageBinContents(
+  db: Pick<Prisma.TransactionClient, "storageBin" | "item">,
+  input: {
+    sourceBinId: string;
+    targetBinId: string;
+  }
+) {
+  const { leftBin: sourceBin, rightBin: targetBin } = await loadStorageBinsForPlacementChange(db, {
+    leftBinId: input.sourceBinId,
+    rightBinId: input.targetBinId
+  });
+
+  const [sourceItems, targetItems] = await Promise.all([
+    db.item.findMany({
+      where: {
+        storageBinId: sourceBin.id,
+        deletedAt: null,
+        isArchived: false,
+        mergedIntoItemId: null
+      },
+      select: { id: true, binSlot: true },
+      orderBy: [{ binSlot: "asc" }, { labelCode: "asc" }]
+    }),
+    db.item.findMany({
+      where: {
+        storageBinId: targetBin.id,
+        deletedAt: null,
+        isArchived: false,
+        mergedIntoItemId: null
+      },
+      select: { id: true },
+      take: 1
+    })
+  ]);
+
+  if (targetItems.length > 0) {
+    throw new Error("STORAGE_BIN_MOVE_TARGET_NOT_EMPTY");
+  }
+
+  assertBinContentFitsTarget(sourceItems, targetBin);
+
+  for (const item of sourceItems) {
+    await db.item.update({
+      where: { id: item.id },
+      data: {
+        storageLocationId: targetBin.storageLocationId,
+        storageShelfId: targetBin.storageShelfId,
+        storageArea: targetBin.storageArea || null,
+        storageBinId: targetBin.id,
+        binSlot: normalizeStoredSlotForTarget(getEffectiveSlot(item.binSlot, sourceBin.slotCount), targetBin.slotCount),
+        placementStatus: "PLACED"
+      }
+    });
+  }
+
+  return {
+    sourceBin,
+    targetBin,
+    movedCount: sourceItems.length
   };
 }
 
@@ -673,7 +792,11 @@ export function mapPlacementError(error: unknown) {
     case "STORAGE_BIN_NOT_FOUND":
       return { status: 404, body: { error: "Drawer nicht gefunden" } };
     case "STORAGE_BIN_SWAP_SCOPE_MISMATCH":
-      return { status: 400, body: { error: "Drawer-Tausch ist nur innerhalb desselben Regals moeglich" } };
+      return { status: 400, body: { error: "Drawer-Move oder -Tausch ist nur innerhalb desselben Lagerorts moeglich" } };
+    case "STORAGE_BIN_MOVE_TARGET_NOT_EMPTY":
+      return { status: 409, body: { error: "Ziel-Drawer ist bereits belegt" } };
+    case "STORAGE_BIN_TARGET_SLOT_CAPACITY_MISMATCH":
+      return { status: 400, body: { error: "Die Zielposition hat nicht genug Unterfaecher fuer die aktuelle Belegung" } };
     default:
       return null;
   }
