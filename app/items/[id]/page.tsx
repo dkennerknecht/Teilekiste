@@ -21,19 +21,31 @@ import {
   RotateCcw
 } from "lucide-react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import {
+  StorageBinSelectField,
+  StorageBinSlotSelectField,
+  StorageLocationSelectField,
+  StorageShelfSelectField
+} from "@/components/storage-select-fields";
 import { translateApiErrorMessage } from "@/lib/app-language";
 import { ItemImageGallery } from "@/components/item-image-gallery";
 import { ItemAuditSection } from "@/components/item-audit-section";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import { buildCustomValueMap, formatCustomFieldValue, parseStoredCustomFieldValue, type CustomFieldRow } from "@/lib/custom-fields";
 import { formatDisplayQuantity, getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
-import { formatDrawerPosition, formatStorageBinLabel } from "@/lib/storage-labels";
+import { formatDrawerPosition } from "@/lib/storage-labels";
+import {
+  getBinsForShelf,
+  getShelvesForLocation,
+  getStorageBinDisplayLabel,
+  storageBinRequiresSlot,
+  type StorageBinOption,
+  type StorageLocationOption,
+  type StorageShelfOption
+} from "@/lib/storage-ui";
 
 type TagOption = { id: string; name: string };
 type CategoryOption = { id: string; name: string; code?: string | null };
-type LocationOption = { id: string; name: string; code?: string | null };
-type ShelfOption = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
-type StorageBinOption = { id: string; code: string; fullCode?: string | null; storageLocationId: string; storageShelfId: string; slotCount: number; isActive?: boolean };
 type TypeOption = { id: string; code: string; name: string };
 type TransferFormState = {
   storageLocationId: string;
@@ -105,8 +117,8 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   });
   const [tags, setTags] = useState<TagOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [locations, setLocations] = useState<LocationOption[]>([]);
-  const [shelves, setShelves] = useState<ShelfOption[]>([]);
+  const [locations, setLocations] = useState<StorageLocationOption[]>([]);
+  const [shelves, setShelves] = useState<StorageShelfOption[]>([]);
   const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [types, setTypes] = useState<TypeOption[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldRow[]>([]);
@@ -222,12 +234,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
   const availableShelves = useMemo(() => {
     const currentLocationId = form?.storageLocationId || "";
-    const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
-    return filtered;
+    return getShelvesForLocation(shelves, currentLocationId);
   }, [form?.storageLocationId, shelves]);
 
   const availableBins = useMemo(
-    () => bins.filter((entry) => entry.storageShelfId === form?.storageShelfId),
+    () => getBinsForShelf(bins, form?.storageShelfId || ""),
     [bins, form?.storageShelfId]
   );
 
@@ -240,12 +251,11 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     () => bins.find((entry) => entry.id === form?.storageBinId) || null,
     [bins, form?.storageBinId]
   );
-  const selectedManagedBinRequiresSlot = !!selectedManagedBin && selectedManagedBin.slotCount > 1;
+  const selectedManagedBinRequiresSlot = storageBinRequiresSlot(selectedManagedBin);
 
   const availableTransferShelves = useMemo(() => {
     const currentLocationId = transferForm.storageLocationId || "";
-    const filtered = shelves.filter((shelf) => shelf.storageLocationId === currentLocationId);
-    return filtered;
+    return getShelvesForLocation(shelves, currentLocationId);
   }, [shelves, transferForm.storageLocationId]);
 
   const selectedTransferShelf = useMemo(
@@ -254,26 +264,14 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
   );
 
   const availableTransferBins = useMemo(
-    () => bins.filter((entry) => entry.storageShelfId === transferForm.storageShelfId),
+    () => getBinsForShelf(bins, transferForm.storageShelfId),
     [bins, transferForm.storageShelfId]
   );
   const selectedTransferBin = useMemo(
     () => availableTransferBins.find((entry) => entry.id === transferForm.storageBinId) || null,
     [availableTransferBins, transferForm.storageBinId]
   );
-  const selectedTransferBinRequiresSlot = !!selectedTransferBin && selectedTransferBin.slotCount > 1;
-
-  function getBinLabel(bin: StorageBinOption | null | undefined, shelfCode?: string | null) {
-    if (!bin) return "";
-    return (
-      bin.fullCode ||
-      formatStorageBinLabel({
-        shelfCode: shelfCode || shelves.find((entry) => entry.id === bin.storageShelfId)?.code || null,
-        binCode: bin.code
-      }) ||
-      bin.code
-    );
-  }
+  const selectedTransferBinRequiresSlot = storageBinRequiresSlot(selectedTransferBin);
 
   const itemCustomValues = useMemo(
     () =>
@@ -739,27 +737,26 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
                   <div>
                     <p className="theme-muted mb-1 inline-flex items-center gap-2 text-[18px] font-medium"><MapPin size={15} /> {tr("Ort", "Location")}</p>
                     {editMode ? (
-                      <select
-                        className="input"
+                      <StorageLocationSelectField
+                        label={tr("Ort", "Location")}
+                        wrapperClassName="text-sm"
+                        labelClassName="sr-only"
+                        selectClassName="input"
                         value={form.storageLocationId}
-                        onChange={(e) =>
+                        options={locations}
+                        onChange={(value) =>
                           setForm((v: any) => ({
                             ...v,
-                            storageLocationId: e.target.value,
+                            storageLocationId: value,
                             storageShelfId: "",
                             storageBinId: "",
                             binSlot: ""
                           }))
                         }
+                        emptyLabel={tr("Kein Lagerort", "No storage location")}
                         disabled={!isPlaced}
-                      >
-                        <option value="">{tr("Kein Lagerort", "No storage location")}</option>
-                        {locations.map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {location.name} ({location.code || "--"})
-                          </option>
-                        ))}
-                      </select>
+                        optionLabel={(location) => `${location.name} (${location.code || "--"})`}
+                      />
                     ) : (
                       <p className="text-lg font-medium text-[var(--app-text)]">{item.storageLocation?.name || "-"}</p>
                     )}
@@ -767,34 +764,32 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
                   {(editMode || item.storageShelf) && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Regal / Bereich", "Shelf / area")}</p>
-                      {editMode ? (
-                        <select
-                          className="input"
+                    <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Regal / Bereich", "Shelf / area")}</p>
+                    {editMode ? (
+                        <StorageShelfSelectField
+                          label={tr("Regal / Bereich", "Shelf / area")}
+                          wrapperClassName="text-sm"
+                          labelClassName="sr-only"
+                          selectClassName="input"
                           value={form.storageShelfId}
-                          onChange={(e) =>
+                          shelves={availableShelves}
+                          onChange={(value) =>
                             setForm((v: any) => ({
                               ...v,
-                              storageShelfId: e.target.value,
+                              storageShelfId: value,
                               storageBinId: "",
                               binSlot: ""
                             }))
                           }
-                          disabled={!isPlaced || !form.storageLocationId}
-                        >
-                          <option value="">
-                            {!form.storageLocationId
+                          emptyLabel={
+                            !form.storageLocationId
                               ? tr("Erst Lagerort waehlen", "Choose storage location first")
                               : availableShelves.length
                                 ? tr("Regal waehlen", "Choose shelf")
-                                : tr("Keine Regale fuer Lagerort", "No shelves for location")}
-                          </option>
-                          {availableShelves.map((shelf) => (
-                            <option key={shelf.id} value={shelf.id}>
-                              {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-                            </option>
-                          ))}
-                        </select>
+                                : tr("Keine Regale fuer Lagerort", "No shelves for location")
+                          }
+                          disabled={!isPlaced || !form.storageLocationId}
+                        />
                       ) : (
                         <p className="text-lg text-[var(--app-text)]">{[item.storageShelf?.code, item.storageShelf?.name].filter(Boolean).join(" - ") || "-"}</p>
                       )}
@@ -803,46 +798,42 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
 
                   {(editMode ? usesManagedDrawer : item.storageBin) && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Drawer", "Drawer")}</p>
-                      {editMode ? (
-                        <select
-                          className="input"
+                    <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Drawer", "Drawer")}</p>
+                    {editMode ? (
+                        <StorageBinSelectField
+                          label={tr("Drawer", "Drawer")}
+                          wrapperClassName="text-sm"
+                          labelClassName="sr-only"
+                          selectClassName="input"
                           value={form.storageBinId}
-                          onChange={(e) => setForm((v: any) => ({ ...v, storageBinId: e.target.value, binSlot: "" }))}
+                          bins={availableBins}
+                          shelves={shelves}
+                          onChange={(value) => setForm((v: any) => ({ ...v, storageBinId: value, binSlot: "" }))}
+                          emptyLabel={tr("Drawer waehlen", "Choose drawer")}
                           disabled={!isPlaced || !usesManagedDrawer}
-                        >
-                          <option value="">{tr("Drawer waehlen", "Choose drawer")}</option>
-                          {availableBins.map((entry) => (
-                            <option key={entry.id} value={entry.id}>
-                              {getBinLabel(entry, selectedPlacementShelf?.code || null)}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       ) : (
-                        <p className="text-lg text-[var(--app-text)]">{item.storageBin ? getBinLabel(item.storageBin, item.storageShelf?.code || null) : "-"}</p>
+                        <p className="text-lg text-[var(--app-text)]">{item.storageBin ? getStorageBinDisplayLabel(item.storageBin, shelves) : "-"}</p>
                       )}
                     </div>
                   )}
 
                   {(editMode ? usesManagedDrawer && selectedManagedBinRequiresSlot : !!item.storageBin && (item.storageBin.slotCount || 0) > 1) && (
                     <div>
-                      <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Unterfach", "Slot")}</p>
+                    <p className="theme-muted mb-1 text-[18px] font-medium">{tr("Unterfach", "Slot")}</p>
                       {editMode ? (
-                        <select
-                          className="input"
+                        <StorageBinSlotSelectField
+                          label={tr("Unterfach", "Slot")}
+                          wrapperClassName="text-sm"
+                          labelClassName="sr-only"
+                          selectClassName="input"
                           value={form.binSlot}
-                          onChange={(e) => setForm((v: any) => ({ ...v, binSlot: e.target.value }))}
+                          selectedBin={selectedManagedBin}
+                          shelves={shelves}
+                          onChange={(value) => setForm((v: any) => ({ ...v, binSlot: value }))}
+                          emptyLabel={selectedManagedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}
                           disabled={!selectedManagedBin || !selectedManagedBinRequiresSlot}
-                        >
-                          <option value="">{selectedManagedBin ? tr("Unterfach waehlen", "Choose slot") : tr("Erst Drawer waehlen", "Choose drawer first")}</option>
-                          {selectedManagedBinRequiresSlot &&
-                            selectedManagedBin &&
-                            Array.from({ length: selectedManagedBin.slotCount }, (_, index) => (
-                              <option key={index + 1} value={String(index + 1)}>
-                                {getBinLabel(selectedManagedBin, selectedPlacementShelf?.code || null)}-{index + 1}
-                              </option>
-                            ))}
-                        </select>
+                        />
                       ) : (
                         <p className="text-lg text-[var(--app-text)]">
                           {item.storageBin
@@ -970,108 +961,88 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
           {transferError && <p className="theme-status-danger mb-3 rounded-lg border border-transparent px-3 py-2 text-sm">{transferError}</p>}
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">{tr("Ziel-Lagerort", "Target storage location")}</span>
-              <select
-                className="input"
-                value={transferForm.storageLocationId}
-                onChange={(e) =>
-                  setTransferForm((prev) => ({
-                    ...prev,
-                    storageLocationId: e.target.value,
-                    storageShelfId: "",
-                    storageBinId: "",
-                    binSlot: ""
-                  }))
-                }
-              >
-                <option value="">{tr("Lagerort waehlen", "Choose storage location")}</option>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name} ({location.code || "--"})
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StorageLocationSelectField
+              label={tr("Ziel-Lagerort", "Target storage location")}
+              wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+              labelClassName="text-sm font-medium"
+              selectClassName="input"
+              value={transferForm.storageLocationId}
+              options={locations}
+              onChange={(value) =>
+                setTransferForm((prev) => ({
+                  ...prev,
+                  storageLocationId: value,
+                  storageShelfId: "",
+                  storageBinId: "",
+                  binSlot: ""
+                }))
+              }
+              emptyLabel={tr("Lagerort waehlen", "Choose storage location")}
+              optionLabel={(location) => `${location.name} (${location.code || "--"})`}
+            />
 
-            <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-              <span className="text-sm font-medium">{tr("Ziel-Regal / Bereich", "Target shelf / area")}</span>
-              <select
-                className="input"
-                value={transferForm.storageShelfId}
-                onChange={(e) =>
-                  setTransferForm((prev) => ({
-                    ...prev,
-                    storageShelfId: e.target.value,
-                    storageBinId: "",
-                    binSlot: ""
-                  }))
-                }
-                disabled={!transferForm.storageLocationId}
-              >
-                <option value="">
-                  {!transferForm.storageLocationId
-                    ? tr("Erst Lagerort waehlen", "Choose storage location first")
-                    : availableTransferShelves.length
-                      ? tr("Regal waehlen", "Choose shelf")
-                      : tr("Keine Regale fuer Lagerort", "No shelves for location")}
-                </option>
-                {availableTransferShelves.map((shelf) => (
-                  <option key={shelf.id} value={shelf.id}>
-                    {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StorageShelfSelectField
+              label={tr("Ziel-Regal / Bereich", "Target shelf / area")}
+              wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+              labelClassName="text-sm font-medium"
+              selectClassName="input"
+              value={transferForm.storageShelfId}
+              shelves={availableTransferShelves}
+              onChange={(value) =>
+                setTransferForm((prev) => ({
+                  ...prev,
+                  storageShelfId: value,
+                  storageBinId: "",
+                  binSlot: ""
+                }))
+              }
+              emptyLabel={
+                !transferForm.storageLocationId
+                  ? tr("Erst Lagerort waehlen", "Choose storage location first")
+                  : availableTransferShelves.length
+                    ? tr("Regal waehlen", "Choose shelf")
+                    : tr("Keine Regale fuer Lagerort", "No shelves for location")
+              }
+              disabled={!transferForm.storageLocationId}
+            />
 
             {selectedTransferShelf?.mode === "DRAWER_HOST" && (
               <>
-                <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <span className="text-sm font-medium">{tr("Ziel-Drawer", "Target drawer")}</span>
-                  <select
-                    className="input"
-                    value={transferForm.storageBinId}
-                    onChange={(e) => setTransferForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
-                    disabled={!transferForm.storageShelfId}
-                  >
-                    <option value="">
-                      {!transferForm.storageShelfId
-                        ? tr("Erst Regal waehlen", "Choose shelf first")
-                        : tr("Drawer waehlen", "Choose drawer")}
-                    </option>
-                    {availableTransferBins.map((bin) => (
-                      <option key={bin.id} value={bin.id}>
-                        {getBinLabel(bin, selectedTransferShelf?.code || null)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <StorageBinSelectField
+                  label={tr("Ziel-Drawer", "Target drawer")}
+                  wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+                  labelClassName="text-sm font-medium"
+                  selectClassName="input"
+                  value={transferForm.storageBinId}
+                  bins={availableTransferBins}
+                  shelves={shelves}
+                  onChange={(value) => setTransferForm((prev) => ({ ...prev, storageBinId: value, binSlot: "" }))}
+                  emptyLabel={
+                    !transferForm.storageShelfId
+                      ? tr("Erst Regal waehlen", "Choose shelf first")
+                      : tr("Drawer waehlen", "Choose drawer")
+                  }
+                  disabled={!transferForm.storageShelfId}
+                />
 
-                <label className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <span className="text-sm font-medium">{tr("Unterfach", "Slot")}</span>
-                  <select
-                    className="input"
-                    value={transferForm.binSlot}
-                    onChange={(e) => setTransferForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                    disabled={!transferForm.storageBinId || !selectedTransferBinRequiresSlot}
-                  >
-                    <option value="">
-                      {!transferForm.storageBinId
-                        ? tr("Erst Drawer waehlen", "Choose drawer first")
-                        : selectedTransferBinRequiresSlot
-                          ? tr("Unterfach waehlen", "Choose slot")
-                          : tr("Kein Unterfach erforderlich", "No slot required")}
-                    </option>
-                    {(selectedTransferBinRequiresSlot && selectedTransferBin
-                      ? Array.from({ length: selectedTransferBin.slotCount }, (_, index) => index + 1)
-                      : []
-                    ).map((slot) => (
-                      <option key={slot} value={String(slot)}>
-                        {slot}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <StorageBinSlotSelectField
+                  label={tr("Unterfach", "Slot")}
+                  wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+                  labelClassName="text-sm font-medium"
+                  selectClassName="input"
+                  value={transferForm.binSlot}
+                  selectedBin={selectedTransferBin}
+                  shelves={shelves}
+                  onChange={(value) => setTransferForm((prev) => ({ ...prev, binSlot: value }))}
+                  emptyLabel={
+                    !transferForm.storageBinId
+                      ? tr("Erst Drawer waehlen", "Choose drawer first")
+                      : selectedTransferBinRequiresSlot
+                        ? tr("Unterfach waehlen", "Choose slot")
+                        : tr("Kein Unterfach erforderlich", "No slot required")
+                  }
+                  disabled={!transferForm.storageBinId || !selectedTransferBinRequiresSlot}
+                />
               </>
             )}
           </div>

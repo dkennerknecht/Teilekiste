@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { translateApiErrorMessage } from "@/lib/app-language";
+import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
 
 export default function LocationsPage() {
@@ -115,6 +117,21 @@ export default function LocationsPage() {
 
   if (loading && !overview) {
     return <p>{tr("Lade...", "Loading...")}</p>;
+  }
+
+  function renderItemImage(item: any) {
+    return item.primaryImage ? (
+      <Image
+        src={fileHref(item.primaryImage.thumbPath || item.primaryImage.path)}
+        alt={item.primaryImage.caption || item.name}
+        width={48}
+        height={48}
+        unoptimized
+        className="h-12 w-12 shrink-0 rounded border border-workshop-200 object-cover"
+      />
+    ) : (
+      <div className="h-12 w-12 shrink-0 rounded border border-dashed border-workshop-200" />
+    );
   }
 
   return (
@@ -264,15 +281,20 @@ export default function LocationsPage() {
                         <div className="space-y-2">
                           {shelf.items.map((item: any) => (
                             <div key={item.id} className="rounded-xl border border-workshop-200 p-3">
-                              <Link className="font-medium hover:underline" href={`/items/${item.id}`}>
-                                {item.name}
-                              </Link>
-                              <p className="text-sm text-workshop-700">{item.labelCode}</p>
-                              <p className="text-sm text-workshop-700">{item.displayPosition || "-"}</p>
-                              <p className="text-sm">
-                                {tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} · {tr("Verfuegbar", "Available")}:{" "}
-                                {formatDisplayQuantity(item.unit, item.availableStock)}
-                              </p>
+                              <div className="flex items-start gap-3">
+                                {renderItemImage(item)}
+                                <div className="min-w-0 flex-1">
+                                  <Link className="font-medium hover:underline" href={`/items/${item.id}`}>
+                                    {item.name}
+                                  </Link>
+                                  <p className="text-sm text-workshop-700">{item.labelCode}</p>
+                                  <p className="text-sm text-workshop-700">{item.displayPosition || "-"}</p>
+                                  <p className="text-sm">
+                                    {tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} · {tr("Verfuegbar", "Available")}:{" "}
+                                    {formatDisplayQuantity(item.unit, item.availableStock)}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -305,17 +327,22 @@ export default function LocationsPage() {
                               <div className="mt-2 space-y-2">
                                 {bin.items.map((item: any) => (
                                   <div key={item.id} className="rounded-lg border border-workshop-100 p-2">
-                                    <Link className="font-medium hover:underline" href={`/items/${item.id}`}>
-                                      {item.name}
-                                    </Link>
-                                    <p className="text-sm text-workshop-700">
-                                      {item.labelCode}
-                                      {item.binSlot ? ` · ${bin.fullCode || bin.code}-${item.binSlot}` : ""}
-                                    </p>
-                                    <p className="text-sm">
-                                      {tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} · {tr("Verfuegbar", "Available")}:{" "}
-                                      {formatDisplayQuantity(item.unit, item.availableStock)}
-                                    </p>
+                                    <div className="flex items-start gap-3">
+                                      {renderItemImage(item)}
+                                      <div className="min-w-0 flex-1">
+                                        <Link className="font-medium hover:underline" href={`/items/${item.id}`}>
+                                          {item.name}
+                                        </Link>
+                                        <p className="text-sm text-workshop-700">
+                                          {item.labelCode}
+                                          {item.binSlot ? ` · ${bin.fullCode || bin.code}-${item.binSlot}` : ""}
+                                        </p>
+                                        <p className="text-sm">
+                                          {tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} · {tr("Verfuegbar", "Available")}:{" "}
+                                          {formatDisplayQuantity(item.unit, item.availableStock)}
+                                        </p>
+                                      </div>
+                                    </div>
                                   </div>
                                 ))}
                               </div>

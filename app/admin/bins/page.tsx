@@ -3,31 +3,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAppLanguage } from "@/components/app-language-provider";
+import { StorageLocationSelectField, StorageShelfSelectField } from "@/components/storage-select-fields";
 import { translateApiErrorMessage } from "@/lib/app-language";
-import { formatStorageBinLabel, formatStorageShelfLabel } from "@/lib/storage-labels";
-
-type LocationRow = { id: string; name: string; code?: string | null };
-type ShelfRow = { id: string; name: string; code?: string | null; mode?: string; storageLocationId: string };
-type BinRow = {
-  id: string;
-  code: string;
-  fullCode?: string | null;
-  storageLocationId: string;
-  storageShelfId: string;
-  storageArea?: string | null;
-  slotCount: number;
-  isActive: boolean;
-  storageLocation?: LocationRow | null;
-  storageShelf?: ShelfRow | null;
-  _count?: { items?: number };
-};
+import {
+  getShelvesForLocation,
+  getStorageBinDisplayLabel,
+  getStorageShelfDisplayLabel,
+  type StorageBinOption,
+  type StorageLocationOption,
+  type StorageShelfOption
+} from "@/lib/storage-ui";
 
 export default function AdminBinsPage() {
   const { language } = useAppLanguage();
   const tr = useCallback((de: string, en: string) => (language === "en" ? en : de), [language]);
-  const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [shelves, setShelves] = useState<ShelfRow[]>([]);
-  const [bins, setBins] = useState<BinRow[]>([]);
+  const [locations, setLocations] = useState<StorageLocationOption[]>([]);
+  const [shelves, setShelves] = useState<StorageShelfOption[]>([]);
+  const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [feedback, setFeedback] = useState("");
   const [newBin, setNewBin] = useState({ code: "", storageLocationId: "", storageShelfId: "", slotCount: 3 });
   const [rangeForm, setRangeForm] = useState({ start: 1, end: 30, storageLocationId: "", storageShelfId: "", slotCount: 3 });
@@ -57,10 +49,10 @@ export default function AdminBinsPage() {
       setRangeForm((prev) => ({ ...prev, storageLocationId: prev.storageLocationId || locationsData[0].id }));
     }
     setSlotDrafts(
-      Object.fromEntries((binsData || []).map((bin: BinRow) => [bin.id, String(bin.slotCount)]))
+      Object.fromEntries((binsData || []).map((bin: StorageBinOption) => [bin.id, String(bin.slotCount)]))
     );
     setCodeDrafts(
-      Object.fromEntries((binsData || []).map((bin: BinRow) => [bin.id, String(bin.code || "")]))
+      Object.fromEntries((binsData || []).map((bin: StorageBinOption) => [bin.id, String(bin.code || "")]))
     );
   }, []);
 
@@ -69,17 +61,17 @@ export default function AdminBinsPage() {
   }, [load]);
 
   const availableNewShelves = useMemo(
-    () => shelves.filter((entry) => entry.storageLocationId === newBin.storageLocationId && entry.mode === "DRAWER_HOST"),
+    () => getShelvesForLocation(shelves, newBin.storageLocationId, { mode: "DRAWER_HOST" }),
     [newBin.storageLocationId, shelves]
   );
   const availableRangeShelves = useMemo(
-    () => shelves.filter((entry) => entry.storageLocationId === rangeForm.storageLocationId && entry.mode === "DRAWER_HOST"),
+    () => getShelvesForLocation(shelves, rangeForm.storageLocationId, { mode: "DRAWER_HOST" }),
     [rangeForm.storageLocationId, shelves]
   );
   const availableFilterShelves = useMemo(
     () =>
       binFilters.storageLocationId
-        ? shelves.filter((entry) => entry.storageLocationId === binFilters.storageLocationId && entry.mode === "DRAWER_HOST")
+        ? getShelvesForLocation(shelves, binFilters.storageLocationId, { mode: "DRAWER_HOST" })
         : shelves.filter((entry) => entry.mode === "DRAWER_HOST"),
     [binFilters.storageLocationId, shelves]
   );
@@ -132,31 +124,6 @@ export default function AdminBinsPage() {
     return data;
   }
 
-  function getShelfLabel(shelf?: ShelfRow | null) {
-    return formatStorageShelfLabel(shelf?.code || null, shelf?.name || null) || shelf?.name || "-";
-  }
-
-  function getShelfOptionLabel(shelf?: ShelfRow | null) {
-    const shelfLabel = getShelfLabel(shelf);
-    if (!shelf) return shelfLabel;
-    if (shelf.name && shelf.name !== shelfLabel) {
-      return `${shelfLabel} - ${shelf.name}`;
-    }
-    return shelfLabel;
-  }
-
-  function getBinLabel(bin?: BinRow | null) {
-    if (!bin) return "-";
-    return (
-      bin.fullCode ||
-      formatStorageBinLabel({
-        shelfCode: bin.storageShelf?.code || null,
-        binCode: bin.code
-      }) ||
-      bin.code
-    );
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -187,27 +154,26 @@ export default function AdminBinsPage() {
               onChange={(e) => setNewBin((prev) => ({ ...prev, code: e.target.value }))}
             />
           </label>
-          <label className="space-y-1 text-sm">
-            <span>{tr("Lagerort", "Storage location")}</span>
-            <select className="input" value={newBin.storageLocationId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>{tr("Regal", "Shelf")}</span>
-            <select className="input" value={newBin.storageShelfId} onChange={(e) => setNewBin((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
-              <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
-              {availableNewShelves.map((shelf) => (
-                <option key={shelf.id} value={shelf.id}>
-                  {getShelfOptionLabel(shelf)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <StorageLocationSelectField
+            label={tr("Lagerort", "Storage location")}
+            wrapperClassName="space-y-1 text-sm"
+            labelClassName=""
+            selectClassName="input"
+            value={newBin.storageLocationId}
+            options={locations}
+            onChange={(value) => setNewBin((prev) => ({ ...prev, storageLocationId: value, storageShelfId: "" }))}
+            emptyLabel={tr("Lagerort waehlen", "Choose storage location")}
+          />
+          <StorageShelfSelectField
+            label={tr("Regal", "Shelf")}
+            wrapperClassName="space-y-1 text-sm"
+            labelClassName=""
+            selectClassName="input"
+            value={newBin.storageShelfId}
+            shelves={availableNewShelves}
+            onChange={(value) => setNewBin((prev) => ({ ...prev, storageShelfId: value }))}
+            emptyLabel={tr("Regal waehlen", "Choose shelf")}
+          />
           <label className="space-y-1 text-sm">
             <span>{tr("Unterfaecher", "Slots")}</span>
             <input className="input" type="number" min={1} max={99} value={newBin.slotCount} onChange={(e) => setNewBin((prev) => ({ ...prev, slotCount: Number(e.target.value) }))} />
@@ -249,27 +215,26 @@ export default function AdminBinsPage() {
             <span>{tr("Bis", "To")}</span>
             <input className="input" type="number" min={1} max={99} value={rangeForm.end} onChange={(e) => setRangeForm((prev) => ({ ...prev, end: Number(e.target.value) }))} />
           </label>
-          <label className="space-y-1 text-sm">
-            <span>{tr("Lagerort", "Storage location")}</span>
-            <select className="input" value={rangeForm.storageLocationId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>{tr("Regal", "Shelf")}</span>
-            <select className="input" value={rangeForm.storageShelfId} onChange={(e) => setRangeForm((prev) => ({ ...prev, storageShelfId: e.target.value }))}>
-              <option value="">{tr("Regal waehlen", "Choose shelf")}</option>
-              {availableRangeShelves.map((shelf) => (
-                <option key={shelf.id} value={shelf.id}>
-                  {getShelfOptionLabel(shelf)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <StorageLocationSelectField
+            label={tr("Lagerort", "Storage location")}
+            wrapperClassName="space-y-1 text-sm"
+            labelClassName=""
+            selectClassName="input"
+            value={rangeForm.storageLocationId}
+            options={locations}
+            onChange={(value) => setRangeForm((prev) => ({ ...prev, storageLocationId: value, storageShelfId: "" }))}
+            emptyLabel={tr("Lagerort waehlen", "Choose storage location")}
+          />
+          <StorageShelfSelectField
+            label={tr("Regal", "Shelf")}
+            wrapperClassName="space-y-1 text-sm"
+            labelClassName=""
+            selectClassName="input"
+            value={rangeForm.storageShelfId}
+            shelves={availableRangeShelves}
+            onChange={(value) => setRangeForm((prev) => ({ ...prev, storageShelfId: value }))}
+            emptyLabel={tr("Regal waehlen", "Choose shelf")}
+          />
           <label className="space-y-1 text-sm">
             <span>{tr("Unterfaecher", "Slots")}</span>
             <input className="input" type="number" min={1} max={99} value={rangeForm.slotCount} onChange={(e) => setRangeForm((prev) => ({ ...prev, slotCount: Number(e.target.value) }))} />
@@ -312,7 +277,7 @@ export default function AdminBinsPage() {
               <option value="">{tr("Quell-Drawer waehlen", "Choose source drawer")}</option>
               {bins.map((bin) => (
                 <option key={bin.id} value={bin.id}>
-                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                  {`${getStorageBinDisplayLabel(bin, shelves)} · ${bin.storageLocation?.name || "-"}`}
                 </option>
               ))}
             </select>
@@ -323,7 +288,7 @@ export default function AdminBinsPage() {
               <option value="">{tr("Ziel-Drawer waehlen", "Choose target drawer")}</option>
               {bins.map((bin) => (
                 <option key={bin.id} value={bin.id}>
-                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                  {`${getStorageBinDisplayLabel(bin, shelves)} · ${bin.storageLocation?.name || "-"}`}
                 </option>
               ))}
             </select>
@@ -356,7 +321,7 @@ export default function AdminBinsPage() {
               <option value="">{tr("Linken Drawer waehlen", "Choose left drawer")}</option>
               {bins.map((bin) => (
                 <option key={bin.id} value={bin.id}>
-                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                  {`${getStorageBinDisplayLabel(bin, shelves)} · ${bin.storageLocation?.name || "-"}`}
                 </option>
               ))}
             </select>
@@ -367,7 +332,7 @@ export default function AdminBinsPage() {
               <option value="">{tr("Rechten Drawer waehlen", "Choose right drawer")}</option>
               {bins.map((bin) => (
                 <option key={bin.id} value={bin.id}>
-                  {`${getBinLabel(bin)} · ${bin.storageLocation?.name || "-"}`}
+                  {`${getStorageBinDisplayLabel(bin, shelves)} · ${bin.storageLocation?.name || "-"}`}
                 </option>
               ))}
             </select>
@@ -403,36 +368,26 @@ export default function AdminBinsPage() {
               onChange={(e) => setBinFilters((prev) => ({ ...prev, query: e.target.value }))}
             />
           </label>
-          <label className="space-y-1 text-sm">
-            <span>{tr("Lagerort", "Storage location")}</span>
-            <select
-              className="input"
-              value={binFilters.storageLocationId}
-              onChange={(e) => setBinFilters((prev) => ({ ...prev, storageLocationId: e.target.value, storageShelfId: "" }))}
-            >
-              <option value="">{tr("Alle Orte", "All locations")}</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>{tr("Regal", "Shelf")}</span>
-            <select
-              className="input"
-              value={binFilters.storageShelfId}
-              onChange={(e) => setBinFilters((prev) => ({ ...prev, storageShelfId: e.target.value }))}
-            >
-              <option value="">{tr("Alle Regale", "All shelves")}</option>
-              {availableFilterShelves.map((shelf) => (
-                <option key={shelf.id} value={shelf.id}>
-                  {getShelfOptionLabel(shelf)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <StorageLocationSelectField
+            label={tr("Lagerort", "Storage location")}
+            wrapperClassName="space-y-1 text-sm"
+            labelClassName=""
+            selectClassName="input"
+            value={binFilters.storageLocationId}
+            options={locations}
+            onChange={(value) => setBinFilters((prev) => ({ ...prev, storageLocationId: value, storageShelfId: "" }))}
+            emptyLabel={tr("Alle Orte", "All locations")}
+          />
+          <StorageShelfSelectField
+            label={tr("Regal", "Shelf")}
+            wrapperClassName="space-y-1 text-sm"
+            labelClassName=""
+            selectClassName="input"
+            value={binFilters.storageShelfId}
+            shelves={availableFilterShelves}
+            onChange={(value) => setBinFilters((prev) => ({ ...prev, storageShelfId: value }))}
+            emptyLabel={tr("Alle Regale", "All shelves")}
+          />
           <label className="space-y-1 text-sm">
             <span>{tr("Status", "Status")}</span>
             <select
@@ -478,8 +433,11 @@ export default function AdminBinsPage() {
                 <tr key={bin.id} className="border-b border-workshop-100">
                   <td className="px-2 py-2 font-mono">
                     <div className="space-y-2">
-                      <Link className="hover:underline" href={`/bins/${encodeURIComponent(bin.id)}`}>
-                        {getBinLabel(bin)}
+                      <Link
+                        className="hover:underline"
+                        href={`/bins/${encodeURIComponent(getStorageBinDisplayLabel(bin, shelves) || bin.code)}`}
+                      >
+                        {getStorageBinDisplayLabel(bin, shelves)}
                       </Link>
                       <input
                         className="input h-10 w-20 font-mono"
@@ -493,7 +451,7 @@ export default function AdminBinsPage() {
                   </td>
                   <td className="px-2 py-2">{bin.storageLocation?.name || "-"}</td>
                   <td className="px-2 py-2">
-                    {[getShelfLabel(bin.storageShelf), bin.storageShelf?.name || bin.storageArea].filter(Boolean).join(" - ") || "-"}
+                    {[getStorageShelfDisplayLabel(bin.storageShelf), bin.storageShelf?.name || bin.storageArea].filter(Boolean).join(" - ") || "-"}
                   </td>
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-2">

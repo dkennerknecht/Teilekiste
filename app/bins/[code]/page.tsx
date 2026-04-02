@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { translateApiErrorMessage } from "@/lib/app-language";
+import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
 
 export default function StorageBinPage({ params }: { params: { code: string } }) {
@@ -65,15 +67,29 @@ export default function StorageBinPage({ params }: { params: { code: string } })
               <div key={slot} className="rounded-xl border border-workshop-200 p-3">
                 <p className="font-mono text-sm text-workshop-700">{drawer.slotCount <= 1 ? drawer.fullCode || drawer.code : `${drawer.fullCode || drawer.code}-${slot}`}</p>
                 {item ? (
-                  <div className="mt-1 space-y-1">
-                    <Link className="font-medium hover:underline" href={`/items/${item.id}`}>
-                      {item.name}
-                    </Link>
-                    <p className="text-sm text-workshop-700">{item.labelCode}</p>
-                    <p className="text-sm">
-                      {tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} · {tr("Verfuegbar", "Available")}:{" "}
-                      {formatDisplayQuantity(item.unit, item.availableStock)}
-                    </p>
+                  <div className="mt-2 flex items-start gap-3">
+                    {item.primaryImage ? (
+                      <Image
+                        src={fileHref(item.primaryImage.thumbPath || item.primaryImage.path)}
+                        alt={item.primaryImage.caption || item.name}
+                        width={56}
+                        height={56}
+                        unoptimized
+                        className="h-14 w-14 shrink-0 rounded border border-workshop-200 object-cover"
+                      />
+                    ) : (
+                      <div className="h-14 w-14 shrink-0 rounded border border-dashed border-workshop-200" />
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <Link className="font-medium hover:underline" href={`/items/${item.id}`}>
+                        {item.name}
+                      </Link>
+                      <p className="text-sm text-workshop-700">{item.labelCode}</p>
+                      <p className="text-sm">
+                        {tr("Bestand", "Stock")}: {formatDisplayQuantity(item.unit, item.stock)} · {tr("Verfuegbar", "Available")}:{" "}
+                        {formatDisplayQuantity(item.unit, item.availableStock)}
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <p className="mt-1 text-sm text-workshop-700">{tr("Frei", "Free")}</p>

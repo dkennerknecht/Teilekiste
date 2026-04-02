@@ -7,10 +7,23 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, CheckCheck, ChevronDown, ChevronUp, MapPin, PencilLine, Trash2, X } from "lucide-react";
 import { useAppLanguage } from "@/components/app-language-provider";
+import {
+  StorageBinSelectField,
+  StorageBinSlotSelectField,
+  StorageLocationSelectField,
+  StorageShelfSelectField
+} from "@/components/storage-select-fields";
 import { translateApiErrorMessage } from "@/lib/app-language";
 import { fileHref } from "@/lib/file-href";
 import { formatDisplayQuantity } from "@/lib/quantity";
-import { formatStorageBinLabel } from "@/lib/storage-labels";
+import {
+  getBinsForShelf,
+  getShelvesForLocation,
+  storageBinRequiresSlot,
+  type StorageBinOption,
+  type StorageLocationOption,
+  type StorageShelfOption
+} from "@/lib/storage-ui";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash-policy";
 
 type Item = {
@@ -36,22 +49,6 @@ type Item = {
 type Option = {
   id: string;
   name: string;
-};
-type ShelfOption = {
-  id: string;
-  name: string;
-  code?: string | null;
-  mode?: string;
-  storageLocationId: string;
-};
-type StorageBinOption = {
-  id: string;
-  code: string;
-  fullCode?: string | null;
-  storageLocationId: string;
-  storageShelfId: string;
-  slotCount: number;
-  isActive?: boolean;
 };
 
 type BulkForm = {
@@ -92,8 +89,8 @@ export default function HomePage() {
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
-  const [locations, setLocations] = useState<Option[]>([]);
-  const [shelves, setShelves] = useState<ShelfOption[]>([]);
+  const [locations, setLocations] = useState<StorageLocationOption[]>([]);
+  const [shelves, setShelves] = useState<StorageShelfOption[]>([]);
   const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [tags, setTags] = useState<Option[]>([]);
   const [bulkEditorOpen, setBulkEditorOpen] = useState(false);
@@ -476,11 +473,11 @@ export default function HomePage() {
 
   const selectedSet = new Set(selected);
   const allVisibleSelected = items.length > 0 && items.every((item) => selectedSet.has(item.id));
-  const availableBulkTransferShelves = shelves.filter((shelf) => shelf.storageLocationId === bulkTransferForm.storageLocationId);
+  const availableBulkTransferShelves = getShelvesForLocation(shelves, bulkTransferForm.storageLocationId);
   const selectedBulkTransferShelf = availableBulkTransferShelves.find((shelf) => shelf.id === bulkTransferForm.storageShelfId) || null;
-  const availableBulkTransferBins = bins.filter((bin) => bin.storageShelfId === bulkTransferForm.storageShelfId);
+  const availableBulkTransferBins = getBinsForShelf(bins, bulkTransferForm.storageShelfId);
   const selectedBulkTransferBin = availableBulkTransferBins.find((bin) => bin.id === bulkTransferForm.storageBinId) || null;
-  const selectedBulkTransferBinRequiresSlot = !!selectedBulkTransferBin && selectedBulkTransferBin.slotCount > 1;
+  const selectedBulkTransferBinRequiresSlot = storageBinRequiresSlot(selectedBulkTransferBin);
   const hasActiveFilters = Boolean(categoryFilter || locationFilter || tagFilter || lowStockFilter || hasImagesFilter);
   const activeFilterCount = [Boolean(categoryFilter), Boolean(locationFilter), Boolean(tagFilter), lowStockFilter, hasImagesFilter].filter(Boolean).length;
 
@@ -489,18 +486,6 @@ export default function HomePage() {
       setMobileFiltersOpen(true);
     }
   }, [hasActiveFilters]);
-
-  function getBulkTransferBinLabel(bin: StorageBinOption | null | undefined) {
-    if (!bin) return "";
-    return (
-      bin.fullCode ||
-      formatStorageBinLabel({
-        shelfCode: selectedBulkTransferShelf?.code || shelves.find((entry) => entry.id === bin.storageShelfId)?.code || null,
-        binCode: bin.code
-      }) ||
-      bin.code
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -993,108 +978,87 @@ export default function HomePage() {
               {bulkTransferError && <p className="theme-status-danger rounded-lg border border-transparent px-3 py-2 text-sm">{bulkTransferError}</p>}
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2 rounded-xl border border-workshop-200 p-3 sm:col-span-2">
-                  <label className="text-sm font-medium">{tr("Ziel-Lagerort", "Target storage location")}</label>
-                  <select
-                    className="input h-10 min-h-0"
-                    value={bulkTransferForm.storageLocationId}
-                    onChange={(e) =>
-                      setBulkTransferForm((prev) => ({
-                        ...prev,
-                        storageLocationId: e.target.value,
-                        storageShelfId: "",
-                        storageBinId: "",
-                        binSlot: ""
-                      }))
-                    }
-                  >
-                    <option value="">{tr("Lagerort waehlen", "Choose storage location")}</option>
-                    {locations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <StorageLocationSelectField
+                  label={tr("Ziel-Lagerort", "Target storage location")}
+                  wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3 sm:col-span-2"
+                  labelClassName="text-sm font-medium"
+                  selectClassName="input h-10 min-h-0"
+                  value={bulkTransferForm.storageLocationId}
+                  options={locations}
+                  onChange={(value) =>
+                    setBulkTransferForm((prev) => ({
+                      ...prev,
+                      storageLocationId: value,
+                      storageShelfId: "",
+                      storageBinId: "",
+                      binSlot: ""
+                    }))
+                  }
+                  emptyLabel={tr("Lagerort waehlen", "Choose storage location")}
+                />
 
-                <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                  <label className="text-sm font-medium">{tr("Ziel-Regal / Bereich", "Target shelf / area")}</label>
-                  <select
-                    className="input h-10 min-h-0"
-                    value={bulkTransferForm.storageShelfId}
-                    onChange={(e) =>
-                      setBulkTransferForm((prev) => ({
-                        ...prev,
-                        storageShelfId: e.target.value,
-                        storageBinId: "",
-                        binSlot: ""
-                      }))
-                    }
-                    disabled={!bulkTransferForm.storageLocationId}
-                  >
-                    <option value="">
-                      {!bulkTransferForm.storageLocationId
-                        ? tr("Erst Lagerort waehlen", "Choose storage location first")
-                        : availableBulkTransferShelves.length
+                <StorageShelfSelectField
+                  label={tr("Ziel-Regal / Bereich", "Target shelf / area")}
+                  wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+                  labelClassName="text-sm font-medium"
+                  selectClassName="input h-10 min-h-0"
+                  value={bulkTransferForm.storageShelfId}
+                  shelves={availableBulkTransferShelves}
+                  onChange={(value) =>
+                    setBulkTransferForm((prev) => ({
+                      ...prev,
+                      storageShelfId: value,
+                      storageBinId: "",
+                      binSlot: ""
+                    }))
+                  }
+                  emptyLabel={
+                    !bulkTransferForm.storageLocationId
+                      ? tr("Erst Lagerort waehlen", "Choose storage location first")
+                      : availableBulkTransferShelves.length
                         ? tr("Kein Regal", "No shelf")
-                        : tr("Keine Regale fuer Lagerort", "No shelves for location")}
-                    </option>
-                    {availableBulkTransferShelves.map((shelf) => (
-                      <option key={shelf.id} value={shelf.id}>
-                        {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                        : tr("Keine Regale fuer Lagerort", "No shelves for location")
+                  }
+                  disabled={!bulkTransferForm.storageLocationId}
+                />
 
                 {selectedBulkTransferShelf?.mode === "DRAWER_HOST" && (
                   <>
-                    <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                      <label className="text-sm font-medium">{tr("Ziel-Drawer", "Target drawer")}</label>
-                      <select
-                        className="input h-10 min-h-0"
-                        value={bulkTransferForm.storageBinId}
-                        onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
-                        disabled={!bulkTransferForm.storageShelfId}
-                      >
-                        <option value="">
-                          {!bulkTransferForm.storageShelfId
-                            ? tr("Erst Regal waehlen", "Choose shelf first")
-                            : tr("Drawer waehlen", "Choose drawer")}
-                        </option>
-                        {availableBulkTransferBins.map((bin) => (
-                          <option key={bin.id} value={bin.id}>
-                            {getBulkTransferBinLabel(bin)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <StorageBinSelectField
+                      label={tr("Ziel-Drawer", "Target drawer")}
+                      wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+                      labelClassName="text-sm font-medium"
+                      selectClassName="input h-10 min-h-0"
+                      value={bulkTransferForm.storageBinId}
+                      bins={availableBulkTransferBins}
+                      shelves={shelves}
+                      onChange={(value) => setBulkTransferForm((prev) => ({ ...prev, storageBinId: value, binSlot: "" }))}
+                      emptyLabel={
+                        !bulkTransferForm.storageShelfId
+                          ? tr("Erst Regal waehlen", "Choose shelf first")
+                          : tr("Drawer waehlen", "Choose drawer")
+                      }
+                      disabled={!bulkTransferForm.storageShelfId}
+                    />
 
-                    <div className="space-y-2 rounded-xl border border-workshop-200 p-3">
-                      <label className="text-sm font-medium">{tr("Unterfach", "Slot")}</label>
-                      <select
-                        className="input h-10 min-h-0"
-                        value={bulkTransferForm.binSlot}
-                        onChange={(e) => setBulkTransferForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                        disabled={!bulkTransferForm.storageBinId || !selectedBulkTransferBinRequiresSlot}
-                      >
-                        <option value="">
-                          {!bulkTransferForm.storageBinId
-                            ? tr("Erst Drawer waehlen", "Choose drawer first")
-                            : selectedBulkTransferBinRequiresSlot
-                              ? tr("Unterfach waehlen", "Choose slot")
-                              : tr("Kein Unterfach erforderlich", "No slot required")}
-                        </option>
-                        {(selectedBulkTransferBinRequiresSlot && selectedBulkTransferBin
-                          ? Array.from({ length: selectedBulkTransferBin.slotCount }, (_, index) => index + 1)
-                          : []
-                        ).map((slot) => (
-                          <option key={slot} value={String(slot)}>
-                            {slot}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <StorageBinSlotSelectField
+                      label={tr("Unterfach", "Slot")}
+                      wrapperClassName="space-y-2 rounded-xl border border-workshop-200 p-3"
+                      labelClassName="text-sm font-medium"
+                      selectClassName="input h-10 min-h-0"
+                      value={bulkTransferForm.binSlot}
+                      selectedBin={selectedBulkTransferBin}
+                      shelves={shelves}
+                      onChange={(value) => setBulkTransferForm((prev) => ({ ...prev, binSlot: value }))}
+                      emptyLabel={
+                        !bulkTransferForm.storageBinId
+                          ? tr("Erst Drawer waehlen", "Choose drawer first")
+                          : selectedBulkTransferBinRequiresSlot
+                            ? tr("Unterfach waehlen", "Choose slot")
+                            : tr("Kein Unterfach erforderlich", "No slot required")
+                      }
+                      disabled={!bulkTransferForm.storageBinId || !selectedBulkTransferBinRequiresSlot}
+                    />
                   </>
                 )}
               </div>

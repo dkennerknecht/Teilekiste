@@ -5,17 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { PencilLine, Trash2 } from "lucide-react";
 import { useAppLanguage } from "@/components/app-language-provider";
 import { appLanguageOptions, type AppLanguage } from "@/lib/app-language";
+import { getStorageShelfDisplayLabel, type StorageLocationOption, type StorageShelfOption } from "@/lib/storage-ui";
 
 type IdObj = { id: string };
-type LocationRow = { id: string; name: string; code?: string | null };
-type ShelfRow = {
-  id: string;
-  name: string;
-  code?: string | null;
-  mode?: string;
-  storageLocationId: string;
-  storageLocation?: LocationRow | null;
-};
+type LocationRow = StorageLocationOption;
+type ShelfRow = StorageShelfOption & { storageLocation?: LocationRow | null };
 
 function IconActionButton({
   label,
@@ -861,9 +855,9 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between gap-2">
                     <span
                       className="min-w-0 truncate whitespace-nowrap"
-                      title={`${[shelf.code, shelf.name, shelf.storageLocation?.name || "-", describeShelfMode(shelf.mode)].filter(Boolean).join(" · ")}`}
+                      title={`${[getStorageShelfDisplayLabel(shelf), shelf.storageLocation?.name || "-", describeShelfMode(shelf.mode)].filter(Boolean).join(" · ")}`}
                     >
-                      {[shelf.code, shelf.name, shelf.storageLocation?.name || "-", describeShelfMode(shelf.mode)].filter(Boolean).join(" · ")}
+                      {[getStorageShelfDisplayLabel(shelf), shelf.storageLocation?.name || "-", describeShelfMode(shelf.mode)].filter(Boolean).join(" · ")}
                     </span>
                     <div className="flex shrink-0 items-center gap-1">
                       <IconActionButton label={tr("Regal bearbeiten", "Edit shelf")} onClick={() => startEdit(shelf, "shelf")}>

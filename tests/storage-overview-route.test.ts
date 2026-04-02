@@ -58,6 +58,14 @@ describe("storage overview route", () => {
             incomingQty: 0,
             placementStatus: "PLACED",
             binSlot: null,
+            images: [
+              {
+                path: "/data/uploads/item-1/photo.jpg",
+                thumbPath: "/data/uploads/item-1/thumb-photo.jpg",
+                caption: "LS B16",
+                isPrimary: true
+              }
+            ],
             reservations: [{ reservedQty: 1 }]
           }
         ],
@@ -87,6 +95,7 @@ describe("storage overview route", () => {
                 incomingQty: 0,
                 placementStatus: "PLACED",
                 binSlot: 2,
+                images: [],
                 reservations: []
               }
             ]
@@ -126,7 +135,11 @@ describe("storage overview route", () => {
                   expect.objectContaining({
                     id: "item-1",
                     displayPosition: "Werkstatt / AB",
-                    availableStock: 4
+                    availableStock: 4,
+                    primaryImage: expect.objectContaining({
+                      path: "/data/uploads/item-1/photo.jpg",
+                      thumbPath: "/data/uploads/item-1/thumb-photo.jpg"
+                    })
                   })
                 ]
               }),
@@ -204,6 +217,7 @@ describe("storage overview route", () => {
                 incomingQty: 0,
                 placementStatus: "PLACED",
                 binSlot: 2,
+                images: [],
                 reservations: []
               }
             ]
@@ -279,6 +293,7 @@ describe("storage overview route", () => {
             incomingQty: 0,
             placementStatus: "PLACED",
             binSlot: null,
+            images: [],
             reservations: []
           }
         ],
@@ -308,6 +323,7 @@ describe("storage overview route", () => {
                 incomingQty: 0,
                 placementStatus: "PLACED",
                 binSlot: 1,
+                images: [],
                 reservations: []
               }
             ]

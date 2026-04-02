@@ -4,31 +4,26 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppLanguage } from "@/components/app-language-provider";
+import {
+  StorageBinSelectField,
+  StorageBinSlotSelectField,
+  StorageLocationSelectField,
+  StorageShelfSelectField
+} from "@/components/storage-select-fields";
 import { translateApiErrorMessage } from "@/lib/app-language";
 import { CustomFieldsEditor } from "@/components/custom-fields-editor";
 import type { CustomFieldRow, CustomFieldValueMap } from "@/lib/custom-fields";
 import { getQuantityStep, getUnitDisplayLabel } from "@/lib/quantity";
-import { formatStorageBinLabel } from "@/lib/storage-labels";
+import {
+  getBinsForShelf,
+  getShelvesForLocation,
+  storageBinRequiresSlot,
+  type StorageBinOption,
+  type StorageLocationOption,
+  type StorageShelfOption
+} from "@/lib/storage-ui";
 
 type Option = { id: string; name: string; code?: string; codeLabel?: string };
-type ShelfOption = {
-  id: string;
-  name: string;
-  code?: string | null;
-  description?: string | null;
-  mode?: string;
-  storageLocationId: string;
-};
-type StorageBinOption = {
-  id: string;
-  code: string;
-  fullCode?: string | null;
-  storageLocationId: string;
-  storageShelfId: string;
-  storageArea?: string | null;
-  slotCount: number;
-  isActive?: boolean;
-};
 
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
@@ -46,8 +41,8 @@ export default function NewItemPage() {
   const { language } = useAppLanguage();
   const tr = (de: string, en: string) => (language === "en" ? en : de);
   const [categories, setCategories] = useState<Option[]>([]);
-  const [locations, setLocations] = useState<Option[]>([]);
-  const [shelves, setShelves] = useState<ShelfOption[]>([]);
+  const [locations, setLocations] = useState<StorageLocationOption[]>([]);
+  const [shelves, setShelves] = useState<StorageShelfOption[]>([]);
   const [bins, setBins] = useState<StorageBinOption[]>([]);
   const [types, setTypes] = useState<Option[]>([]);
   const [tags, setTags] = useState<Option[]>([]);
@@ -128,26 +123,13 @@ export default function NewItemPage() {
     }
   }, [bins, shelves, form.storageBinId, form.storageLocationId, form.storageShelfId, form.binSlot]);
 
-  const availableShelves = shelves.filter((shelf) => shelf.storageLocationId === form.storageLocationId);
+  const availableShelves = getShelvesForLocation(shelves, form.storageLocationId);
   const selectedShelf = shelves.find((shelf) => shelf.id === form.storageShelfId) || null;
-  const availableBins = bins.filter((entry) => entry.storageShelfId === form.storageShelfId);
+  const availableBins = getBinsForShelf(bins, form.storageShelfId);
   const selectedBin = bins.find((entry) => entry.id === form.storageBinId) || null;
   const isPlaced = form.placementStatus === "PLACED";
   const usesManagedDrawer = isPlaced && selectedShelf?.mode === "DRAWER_HOST";
-  const selectedBinRequiresSlot = !!selectedBin && selectedBin.slotCount > 1;
-
-  function getBinLabel(bin: StorageBinOption | null | undefined) {
-    if (!bin) return "";
-    const shelf = shelves.find((entry) => entry.id === bin.storageShelfId) || null;
-    return (
-      bin.fullCode ||
-      formatStorageBinLabel({
-        shelfCode: shelf?.code || null,
-        binCode: bin.code
-      }) ||
-      bin.code
-    );
-  }
+  const selectedBinRequiresSlot = storageBinRequiresSlot(selectedBin);
 
   useEffect(() => {
     if (!form.categoryId || !form.typeId) return;
@@ -381,92 +363,69 @@ export default function NewItemPage() {
               </select>
             </label>
 
-            <label className="text-sm">
-              {tr("Lagerort", "Storage location")}
-              <select
-                className="input mt-1"
-                value={form.storageLocationId}
-                onChange={(e) => setForm({ ...form, storageLocationId: e.target.value, storageShelfId: "", storageArea: "", storageBinId: "", binSlot: "" })}
-                disabled={!hasRequiredMeta || !isPlaced}
-              >
-                <option value="">{tr("Kein Lagerort", "No storage location")}</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StorageLocationSelectField
+              label={tr("Lagerort", "Storage location")}
+              value={form.storageLocationId}
+              options={locations}
+              onChange={(value) =>
+                setForm((prev) => ({
+                  ...prev,
+                  storageLocationId: value,
+                  storageShelfId: "",
+                  storageArea: "",
+                  storageBinId: "",
+                  binSlot: ""
+                }))
+              }
+              emptyLabel={tr("Kein Lagerort", "No storage location")}
+              disabled={!hasRequiredMeta || !isPlaced}
+            />
 
-            <label className="text-sm">
-              {tr("Regal / Bereich", "Shelf / area")}
-              <select
-                className="input mt-1"
-                value={form.storageShelfId}
-                onChange={(e) => {
-                  const nextShelf = shelves.find((shelf) => shelf.id === e.target.value) || null;
-                  setForm((prev) => ({
-                    ...prev,
-                    storageShelfId: e.target.value,
-                    storageArea: nextShelf?.name || "",
-                    storageBinId: "",
-                    binSlot: ""
-                  }));
-                }}
-                disabled={!hasRequiredMeta || !isPlaced || !form.storageLocationId || availableShelves.length === 0}
-              >
-                <option value="">{availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}</option>
-                {availableShelves.map((shelf) => (
-                  <option key={shelf.id} value={shelf.id}>
-                    {[shelf.code, shelf.name].filter(Boolean).join(" - ")}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StorageShelfSelectField
+              label={tr("Regal / Bereich", "Shelf / area")}
+              value={form.storageShelfId}
+              shelves={availableShelves}
+              onChange={(value) => {
+                const nextShelf = shelves.find((shelf) => shelf.id === value) || null;
+                setForm((prev) => ({
+                  ...prev,
+                  storageShelfId: value,
+                  storageArea: nextShelf?.name || "",
+                  storageBinId: "",
+                  binSlot: ""
+                }));
+              }}
+              emptyLabel={availableShelves.length ? tr("Kein Regal", "No shelf") : tr("Keine Regale fuer Lagerort", "No shelves for location")}
+              disabled={!hasRequiredMeta || !isPlaced || !form.storageLocationId || availableShelves.length === 0}
+            />
           </div>
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
-            <label className="text-sm">
-              {tr("Drawer", "Drawer")}
-              <select
-                className="input mt-1"
-                value={form.storageBinId}
-                onChange={(e) => setForm((prev) => ({ ...prev, storageBinId: e.target.value, binSlot: "" }))}
-                disabled={!hasRequiredMeta || !isPlaced || !usesManagedDrawer}
-              >
-                <option value="">{usesManagedDrawer ? tr("Drawer waehlen", "Choose drawer") : tr("Regal ohne Drawer", "Shelf without drawers")}</option>
-                {availableBins.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {getBinLabel(entry)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StorageBinSelectField
+              label={tr("Drawer", "Drawer")}
+              value={form.storageBinId}
+              bins={availableBins}
+              shelves={shelves}
+              onChange={(value) => setForm((prev) => ({ ...prev, storageBinId: value, binSlot: "" }))}
+              emptyLabel={usesManagedDrawer ? tr("Drawer waehlen", "Choose drawer") : tr("Regal ohne Drawer", "Shelf without drawers")}
+              disabled={!hasRequiredMeta || !isPlaced || !usesManagedDrawer}
+            />
 
-            <label className="text-sm">
-              {tr("Unterfach", "Slot")}
-              <select
-                className="input mt-1"
-                value={form.binSlot}
-                onChange={(e) => setForm((prev) => ({ ...prev, binSlot: e.target.value }))}
-                disabled={!hasRequiredMeta || !usesManagedDrawer || !selectedBin || !selectedBinRequiresSlot}
-              >
-                <option value="">
-                  {!selectedBin
-                    ? tr("Erst Drawer waehlen", "Choose drawer first")
-                    : selectedBinRequiresSlot
-                      ? tr("Unterfach waehlen", "Choose slot")
-                      : tr("Kein Unterfach erforderlich", "No slot required")}
-                </option>
-                {selectedBinRequiresSlot &&
-                  selectedBin &&
-                  Array.from({ length: selectedBin.slotCount }, (_, index) => (
-                    <option key={index + 1} value={String(index + 1)}>
-                      {getBinLabel(selectedBin)}-{index + 1}
-                    </option>
-                  ))}
-              </select>
-            </label>
+            <StorageBinSlotSelectField
+              label={tr("Unterfach", "Slot")}
+              value={form.binSlot}
+              selectedBin={selectedBin}
+              shelves={shelves}
+              onChange={(value) => setForm((prev) => ({ ...prev, binSlot: value }))}
+              emptyLabel={
+                !selectedBin
+                  ? tr("Erst Drawer waehlen", "Choose drawer first")
+                  : selectedBinRequiresSlot
+                    ? tr("Unterfach waehlen", "Choose slot")
+                    : tr("Kein Unterfach erforderlich", "No slot required")
+              }
+              disabled={!hasRequiredMeta || !usesManagedDrawer || !selectedBin || !selectedBinRequiresSlot}
+            />
           </div>
 
           <div className="grid gap-3 md:col-span-2 md:grid-cols-3">

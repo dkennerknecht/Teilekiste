@@ -1,6 +1,8 @@
 node_modules
 .next
 out
+.idea
+.claude
 .env
 .env.*
 !.env.example
@@ -10,6 +12,7 @@ prisma/playwright.db
 prisma/playwright.db-journal
 /data
 *.log
+*.tsbuildinfo
 .DS_Store
 playwright-report
 test-results

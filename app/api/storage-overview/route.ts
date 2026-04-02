@@ -50,6 +50,12 @@ function serializeOverviewItem(
     incomingQty: number;
     placementStatus: string;
     binSlot: number | null;
+    images: Array<{
+      path: string;
+      thumbPath: string | null;
+      caption: string | null;
+      isPrimary: boolean;
+    }>;
     reservations: Array<{ reservedQty: number }>;
   },
   input: {
@@ -72,6 +78,7 @@ function serializeOverviewItem(
     incomingQty: serializeStoredQuantity(item.unit, item.incomingQty),
     placementStatus: item.placementStatus,
     binSlot: item.binSlot ?? null,
+    primaryImage: item.images[0] ?? null,
     displayPosition: buildItemDisplayPosition({
       locationName: input.locationName,
       shelfCode: input.shelfCode,
@@ -177,6 +184,11 @@ export async function GET(req: NextRequest) {
           incomingQty: true,
           placementStatus: true,
           binSlot: true,
+          images: {
+            select: { path: true, thumbPath: true, caption: true, isPrimary: true },
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            take: 1
+          },
           reservations: { select: { reservedQty: true } }
         },
         orderBy: [{ labelCode: "asc" }]
@@ -202,6 +214,11 @@ export async function GET(req: NextRequest) {
               incomingQty: true,
               placementStatus: true,
               binSlot: true,
+              images: {
+                select: { path: true, thumbPath: true, caption: true, isPrimary: true },
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+                take: 1
+              },
               reservations: { select: { reservedQty: true } }
             },
             orderBy: [{ binSlot: "asc" }, { labelCode: "asc" }]

@@ -42,7 +42,12 @@ export async function GET(req: NextRequest, { params }: { params: { code: string
           storageBin: {
             select: { id: true, code: true }
           },
-          reservations: { select: { reservedQty: true } }
+          reservations: { select: { reservedQty: true } },
+          images: {
+            select: { path: true, thumbPath: true, caption: true, isPrimary: true },
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            take: 1
+          }
         },
         orderBy: [{ binSlot: "asc" }, { labelCode: "asc" }]
       }
@@ -81,6 +86,7 @@ export async function GET(req: NextRequest, { params }: { params: { code: string
         minStock: serializeStoredQuantity(item.unit, item.minStock),
         reservedQty: serializeStoredQuantity(item.unit, reservedQty),
         availableStock: serializeStoredQuantity(item.unit, getAvailableQty(item.stock, reservedQty, item.placementStatus)),
+        primaryImage: item.images[0] ?? null,
         displayPosition: formatItemPosition(item)
       };
     })
