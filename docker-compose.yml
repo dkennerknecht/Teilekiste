@@ -3,7 +3,7 @@ services:
     build: .
     container_name: teilekiste
     ports:
-      - "3000:3000"
+      - "${HOST_PORT:-3000}:3000"
     environment:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}

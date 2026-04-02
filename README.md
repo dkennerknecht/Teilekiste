@@ -157,6 +157,33 @@ docker exec teilekiste npm run bootstrap:system
 - `admin@local`
 - `admin123`
 
+## Source Install Script
+
+Wenn du nicht das vorgebaute Image, sondern das Repository selbst als Quelle verwenden willst, gibt es ein Install-Script in `scripts/install-from-source.sh`.
+
+Typischer One-liner auf einem frischen Debian/Ubuntu-Server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --public-url http://SERVER-IP:3000
+```
+
+Beispiele:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --public-url http://192.168.1.222:3000
+curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --ref v2.3.0 --public-url https://inventar.example.com
+```
+
+Das Script:
+
+- installiert Docker und Grundpakete
+- klont oder aktualisiert das Repo in `/opt/teilekiste`
+- checkt den gewuenschten Branch oder Tag aus
+- erzeugt oder aktualisiert `.env`
+- baut die Container lokal aus dem Source-Code
+- startet die App per `docker compose up -d --build`
+- fuehrt standardmaessig `bootstrap:system` aus, sofern kein Seed aktiviert ist
+
 ## GitHub Container Registry
 
 Dieses Repository publisht automatisch ein Docker-Image nach `ghcr.io`.
@@ -254,6 +281,7 @@ Darauf liegen:
 - `APP_BASE_URL`
 - `NEXTAUTH_URL`
 - `NEXTAUTH_URL_INTERNAL=http://127.0.0.1:3000`
+- `HOST_PORT=3000`
 - `AUTH_TRUST_HOST=true`
 - `NEXTAUTH_SECRET`
 - `DATABASE_URL=file:/data/sqlite/app.db`
