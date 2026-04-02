@@ -9,6 +9,7 @@ PUBLIC_URL="${PUBLIC_URL:-}"
 NEXTAUTH_SECRET_VALUE="${NEXTAUTH_SECRET_VALUE:-}"
 RUN_SEED_ON_STARTUP_VALUE="${RUN_SEED_ON_STARTUP_VALUE:-0}"
 BOOTSTRAP_SYSTEM="${BOOTSTRAP_SYSTEM:-1}"
+PUBLIC_URL_EXPLICIT=0
 
 usage() {
   cat <<'EOF'
@@ -21,7 +22,7 @@ Options:
   --repo URL                Git repository URL
   --ref REF                 Git ref to install, e.g. main or v2.3.0
   --install-dir PATH        Target directory, default: /opt/teilekiste
-  --public-url URL          Public app URL, default: auto-detect first host IP with port
+  --public-url URL          Public app URL override, default: auto-detect
   --port PORT               Exposed app port, default: 3000
   --nextauth-secret SECRET  Explicit NEXTAUTH_SECRET value
   --seed                    Enable demo seed on startup
@@ -29,7 +30,7 @@ Options:
   --help                    Show this help
 
 Examples:
-  bash scripts/install-from-source.sh --public-url http://192.168.1.222:3000
+  bash scripts/install-from-source.sh
   bash scripts/install-from-source.sh --ref v2.3.0 --public-url https://inventar.example.com
 EOF
 }
@@ -50,6 +51,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --public-url)
       PUBLIC_URL="$2"
+      PUBLIC_URL_EXPLICIT=1
       shift 2
       ;;
     --port)
@@ -85,12 +87,38 @@ if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ -z "$PUBLIC_URL" ]]; then
+detect_public_url() {
+  local detected_host
   detected_host="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [[ -z "$detected_host" ]]; then
+    detected_host="$(hostname 2>/dev/null || true)"
+  fi
   if [[ -z "$detected_host" ]]; then
     detected_host="localhost"
   fi
-  PUBLIC_URL="http://${detected_host}:${APP_PORT}"
+  printf 'http://%s:%s\n' "$detected_host" "$APP_PORT"
+}
+
+if [[ -z "$PUBLIC_URL" ]]; then
+  PUBLIC_URL="$(detect_public_url)"
+fi
+
+if [[ "$PUBLIC_URL_EXPLICIT" != "1" && -t 0 && -t 1 ]]; then
+  echo "Detected public URL: $PUBLIC_URL"
+  read -r -p "Use detected URL? [Y/n/custom] " public_url_answer || true
+  case "${public_url_answer:-y}" in
+    n|N)
+      read -r -p "Enter public URL: " custom_public_url
+      if [[ -n "${custom_public_url:-}" ]]; then
+        PUBLIC_URL="$custom_public_url"
+      fi
+      ;;
+    y|Y|"")
+      ;;
+    *)
+      PUBLIC_URL="$public_url_answer"
+      ;;
+  esac
 fi
 
 if [[ -z "$NEXTAUTH_SECRET_VALUE" ]]; then
@@ -204,6 +232,7 @@ echo "Building and starting containers from source..."
 run_compose up -d --build
 
 echo "Waiting for app startup..."
+echo "Using public URL fallback: $PUBLIC_URL"
 for _ in $(seq 1 60); do
   if curl -fsS "${PUBLIC_URL}/api/runtime-version" >/dev/null 2>&1; then
     break

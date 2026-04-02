@@ -164,13 +164,13 @@ Wenn du nicht das vorgebaute Image, sondern das Repository selbst als Quelle ver
 Typischer One-liner auf einem frischen Debian/Ubuntu-Server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --public-url http://SERVER-IP:3000
+curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash
 ```
 
 Beispiele:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --public-url http://192.168.1.222:3000
+curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash
 curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --ref v2.3.0 --public-url https://inventar.example.com
 ```
 
@@ -179,6 +179,7 @@ Das Script:
 - installiert Docker und Grundpakete
 - klont oder aktualisiert das Repo in `/opt/teilekiste`
 - checkt den gewuenschten Branch oder Tag aus
+- erkennt die oeffentliche URL automatisch und fragt nur bei interaktiver Ausfuehrung optional nach einem Override
 - erzeugt oder aktualisiert `.env`
 - baut die Container lokal aus dem Source-Code
 - startet die App per `docker compose up -d --build`
