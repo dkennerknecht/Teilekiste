@@ -194,15 +194,21 @@ fi
 
 echo "Preparing install directory at $INSTALL_DIR..."
 run_root mkdir -p "$INSTALL_DIR"
-run_root mkdir -p "$INSTALL_DIR/data"
 run_root chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   echo "Updating existing checkout..."
   git -C "$INSTALL_DIR" fetch --tags origin
 else
-  echo "Cloning repository..."
-  git clone "$REPO_URL" "$INSTALL_DIR"
+  if [[ -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    echo "Existing non-git directory found, initializing repository in place..."
+    git -C "$INSTALL_DIR" init
+    git -C "$INSTALL_DIR" remote remove origin >/dev/null 2>&1 || true
+    git -C "$INSTALL_DIR" remote add origin "$REPO_URL"
+  else
+    echo "Cloning repository..."
+    git clone "$REPO_URL" "$INSTALL_DIR"
+  fi
   git -C "$INSTALL_DIR" fetch --tags origin
 fi
 
@@ -215,6 +221,8 @@ else
 fi
 
 cd "$INSTALL_DIR"
+
+run_root mkdir -p "$INSTALL_DIR/data"
 
 if [[ ! -f ".env" ]]; then
   cp .env.example .env
