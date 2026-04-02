@@ -171,12 +171,15 @@ Beispiele:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | sudo bash
 curl -fsSL https://raw.githubusercontent.com/dkennerknecht/Teilekiste/main/scripts/install-from-source.sh | bash -s -- --ref v2.3.0 --public-url https://inventar.example.com
 ```
 
 Das Script:
 
 - installiert Docker und Grundpakete
+- kann direkt als `root` oder via `sudo bash` laufen
+- legt bei Root-Ausfuehrung automatisch einen dedizierten Host-User `teilekiste` an
 - klont oder aktualisiert das Repo in `/opt/teilekiste`
 - checkt den gewuenschten Branch oder Tag aus
 - erkennt die oeffentliche URL automatisch und fragt nur bei interaktiver Ausfuehrung optional nach einem Override

@@ -5,6 +5,7 @@ REPO_URL="${REPO_URL:-https://github.com/dkennerknecht/Teilekiste.git}"
 GIT_REF="${GIT_REF:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/teilekiste}"
 APP_PORT="${APP_PORT:-3000}"
+APP_USER="${APP_USER:-teilekiste}"
 PUBLIC_URL="${PUBLIC_URL:-}"
 NEXTAUTH_SECRET_VALUE="${NEXTAUTH_SECRET_VALUE:-}"
 RUN_SEED_ON_STARTUP_VALUE="${RUN_SEED_ON_STARTUP_VALUE:-0}"
@@ -22,6 +23,7 @@ Options:
   --repo URL                Git repository URL
   --ref REF                 Git ref to install, e.g. main or v2.3.0
   --install-dir PATH        Target directory, default: /opt/teilekiste
+  --app-user USER           Dedicated host user when run as root, default: teilekiste
   --public-url URL          Public app URL override, default: auto-detect
   --port PORT               Exposed app port, default: 3000
   --nextauth-secret SECRET  Explicit NEXTAUTH_SECRET value
@@ -31,6 +33,7 @@ Options:
 
 Examples:
   bash scripts/install-from-source.sh
+  sudo bash scripts/install-from-source.sh
   bash scripts/install-from-source.sh --ref v2.3.0 --public-url https://inventar.example.com
 EOF
 }
@@ -47,6 +50,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --install-dir)
       INSTALL_DIR="$2"
+      shift 2
+      ;;
+    --app-user)
+      APP_USER="$2"
       shift 2
       ;;
     --public-url)
@@ -127,12 +134,14 @@ fi
 
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
+  RUN_AS_USER="$APP_USER"
 else
   if ! command -v sudo >/dev/null 2>&1; then
     echo "sudo is required when not running as root." >&2
     exit 1
   fi
   SUDO="sudo"
+  RUN_AS_USER="$(id -un)"
 fi
 
 run_root() {
@@ -156,6 +165,14 @@ run_compose() {
     sudo docker compose "$@"
   else
     docker compose "$@"
+  fi
+}
+
+run_owner() {
+  if [[ "$(id -u)" -eq 0 && "$RUN_AS_USER" != "root" ]]; then
+    runuser -u "$RUN_AS_USER" -- "$@"
+  else
+    "$@"
   fi
 }
 
@@ -192,40 +209,60 @@ if ! run_docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "Preparing dedicated host user: $APP_USER"
+  if ! getent group "$APP_USER" >/dev/null 2>&1; then
+    run_root groupadd --system "$APP_USER"
+  fi
+  if ! id -u "$APP_USER" >/dev/null 2>&1; then
+    run_root useradd --system --create-home --home-dir "/home/$APP_USER" --shell /bin/bash --gid "$APP_USER" "$APP_USER"
+  fi
+  if getent group docker >/dev/null 2>&1; then
+    run_root usermod -aG docker "$APP_USER"
+  fi
+fi
+
+OWNER_UID="$(id -u "$RUN_AS_USER")"
+OWNER_GID="$(id -g "$RUN_AS_USER")"
+
 echo "Preparing install directory at $INSTALL_DIR..."
 run_root mkdir -p "$INSTALL_DIR"
-run_root chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
+run_root chown -R "$OWNER_UID:$OWNER_GID" "$INSTALL_DIR"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   echo "Updating existing checkout..."
-  git -C "$INSTALL_DIR" fetch --tags origin
+  run_owner git -C "$INSTALL_DIR" fetch --tags origin
 else
   if [[ -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
     echo "Existing non-git directory found, initializing repository in place..."
-    git -C "$INSTALL_DIR" init
-    git -C "$INSTALL_DIR" remote remove origin >/dev/null 2>&1 || true
-    git -C "$INSTALL_DIR" remote add origin "$REPO_URL"
+    run_owner git -C "$INSTALL_DIR" init
+    if run_owner git -C "$INSTALL_DIR" remote get-url origin >/dev/null 2>&1; then
+      run_owner git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
+    else
+      run_owner git -C "$INSTALL_DIR" remote add origin "$REPO_URL"
+    fi
   else
     echo "Cloning repository..."
-    git clone "$REPO_URL" "$INSTALL_DIR"
+    run_owner git clone "$REPO_URL" "$INSTALL_DIR"
   fi
-  git -C "$INSTALL_DIR" fetch --tags origin
+  run_owner git -C "$INSTALL_DIR" fetch --tags origin
 fi
 
 echo "Checking out $GIT_REF..."
-git -C "$INSTALL_DIR" checkout "$GIT_REF"
-if git -C "$INSTALL_DIR" show-ref --verify --quiet "refs/remotes/origin/$GIT_REF"; then
-  git -C "$INSTALL_DIR" reset --hard "origin/$GIT_REF"
+run_owner git -C "$INSTALL_DIR" checkout "$GIT_REF"
+if run_owner git -C "$INSTALL_DIR" show-ref --verify --quiet "refs/remotes/origin/$GIT_REF"; then
+  run_owner git -C "$INSTALL_DIR" reset --hard "origin/$GIT_REF"
 else
-  git -C "$INSTALL_DIR" reset --hard "$GIT_REF"
+  run_owner git -C "$INSTALL_DIR" reset --hard "$GIT_REF"
 fi
 
 cd "$INSTALL_DIR"
 
 run_root mkdir -p "$INSTALL_DIR/data"
+run_root chown -R "$OWNER_UID:$OWNER_GID" "$INSTALL_DIR"
 
 if [[ ! -f ".env" ]]; then
-  cp .env.example .env
+  run_owner cp .env.example .env
 fi
 
 set_env_value ".env" "APP_BASE_URL" "$PUBLIC_URL"
@@ -235,6 +272,8 @@ set_env_value ".env" "AUTH_TRUST_HOST" "true"
 set_env_value ".env" "HOST_PORT" "$APP_PORT"
 set_env_value ".env" "NEXTAUTH_SECRET" "$NEXTAUTH_SECRET_VALUE"
 set_env_value ".env" "RUN_SEED_ON_STARTUP" "$RUN_SEED_ON_STARTUP_VALUE"
+run_root rm -f .env.bak
+run_root chown "$OWNER_UID:$OWNER_GID" .env
 
 echo "Building and starting containers from source..."
 run_compose up -d --build
@@ -261,6 +300,7 @@ Teilekiste installed from source.
 
 Source ref:   $GIT_REF
 Install dir:  $INSTALL_DIR
+Host user:    $RUN_AS_USER
 Public URL:   $PUBLIC_URL
 
 Default login after bootstrap:
