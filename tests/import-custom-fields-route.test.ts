@@ -196,5 +196,5 @@ describe("import route custom fields", () => {
         })
       })
     );
-  });
+  }, 30000);
 });

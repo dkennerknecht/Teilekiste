@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { env } from "@/lib/env";
 
 const requireAuthMock = vi.fn();
 const resolveAllowedLocationIdsMock = vi.fn();
@@ -46,6 +47,8 @@ afterEach(() => {
   vi.resetModules();
 });
 
+const fallbackOrigin = new URL(env.APP_BASE_URL || env.NEXTAUTH_URL || "http://localhost:3000").origin;
+
 describe("ptouch export route", () => {
   it("exports all shelf and drawer labels with generic columns", async () => {
     requireAuthMock.mockResolvedValue({
@@ -74,8 +77,8 @@ describe("ptouch export route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("ptouch-all-labels.csv");
     expect(body).toContain("labelUrl;labelName");
-    expect(body).toContain("http://localhost:3000/shelves/shelf-1;AB");
-    expect(body).toContain("http://localhost:3000/bins/AB02;AB02");
+    expect(body).toContain(`${fallbackOrigin}/shelves/shelf-1;AB`);
+    expect(body).toContain(`${fallbackOrigin}/bins/AB02;AB02`);
   });
 
   it("exports only shelf labels", async () => {
@@ -99,7 +102,7 @@ describe("ptouch export route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("ptouch-shelves.csv");
     expect(body).toContain("labelUrl;labelName");
-    expect(body).toContain("http://localhost:3000/shelves/shelf-1;CA");
+    expect(body).toContain(`${fallbackOrigin}/shelves/shelf-1;CA`);
     expect(body).not.toContain("/bins/");
   });
 
@@ -124,7 +127,7 @@ describe("ptouch export route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("ptouch-drawers.csv");
     expect(body).toContain("labelUrl;labelName");
-    expect(body).toContain("http://localhost:3000/bins/CB99;CB99");
+    expect(body).toContain(`${fallbackOrigin}/bins/CB99;CB99`);
     expect(body).not.toContain("/shelves/");
   });
 
@@ -148,7 +151,7 @@ describe("ptouch export route", () => {
 
     expect(response.status).toBe(200);
     expect(body).toContain("labelUrl,labelName");
-    expect(body).toContain("http://localhost:3000/shelves/shelf-1,AA");
+    expect(body).toContain(`${fallbackOrigin}/shelves/shelf-1,AA`);
     expect(body).not.toContain("labelUrl;labelName");
   });
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { env } from "@/lib/env";
 import { buildAbsoluteUrl, getRequestOrigin, resolveSameOriginRedirect } from "@/lib/request-origin";
+
+const fallbackOrigin = new URL(env.APP_BASE_URL || env.NEXTAUTH_URL || "http://localhost:3000").origin;
 
 describe("request origin helpers", () => {
   it("prefers forwarded host and protocol", () => {
@@ -32,7 +35,7 @@ describe("request origin helpers", () => {
       }
     });
 
-    expect(getRequestOrigin(request)).toBe("http://localhost:3000");
+    expect(getRequestOrigin(request)).toBe(fallbackOrigin);
   });
 
   it("keeps auth redirects on the current request origin", () => {

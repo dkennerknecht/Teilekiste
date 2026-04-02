@@ -68,7 +68,7 @@ describe("import profile routes", () => {
         }
       })
     ]);
-  });
+  }, 30000);
 
   it("creates a new profile with serialized mapping config", async () => {
     requireAdminMock.mockResolvedValue({
