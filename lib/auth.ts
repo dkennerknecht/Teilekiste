@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { getServerSession } from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { getSessionTokenPayloadFromCookieStore } from "@/lib/auth-token";
 import { E2E_EMAIL_COOKIE, E2E_ROLE_COOKIE, isE2eAuthBypassEnabled, parseE2eAuthRole } from "@/lib/e2e-auth";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -104,12 +104,19 @@ export async function getSessionUser() {
   const bypassUser = await getE2eBypassUserFromRequestCookies(cookieStore);
   if (bypassUser) return bypassUser;
 
-  const session = (await getServerSession(authOptions)) as { user?: { id?: string; email?: string | null } } | null;
-  if (!session?.user?.id || !session.user.email) return null;
+  const token = await getSessionTokenPayloadFromCookieStore(cookieStore);
+  const tokenUserId = typeof token?.sub === "string" && token.sub ? token.sub : null;
+  const tokenEmail = typeof token?.email === "string" && token.email ? token.email : null;
+
+  if (!tokenUserId && !tokenEmail) return null;
+
+  const identityMatchers = [];
+  if (tokenUserId) identityMatchers.push({ id: tokenUserId });
+  if (tokenEmail) identityMatchers.push({ email: tokenEmail });
 
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ id: session.user.id }, { email: session.user.email }],
+      OR: identityMatchers,
       isActive: true
     },
     select: {
