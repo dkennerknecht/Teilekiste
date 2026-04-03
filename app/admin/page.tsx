@@ -85,6 +85,8 @@ export default function AdminPage() {
   const [editShelfMode, setEditShelfMode] = useState("OPEN_AREA");
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [editUser, setEditUser] = useState({ name: "", email: "", role: "READ", isActive: true, password: "" });
+  const [userActionBusyId, setUserActionBusyId] = useState<string | null>(null);
+  const [userActionMessage, setUserActionMessage] = useState<{ id: string; kind: "success" | "error"; text: string } | null>(null);
   const [newShelfLocationId, setNewShelfLocationId] = useState("");
   const [newShelfMode, setNewShelfMode] = useState("OPEN_AREA");
   const [newShelfCode, setNewShelfCode] = useState("");
@@ -191,6 +193,7 @@ export default function AdminPage() {
       setEditShelfMode((row as any).mode || "OPEN_AREA");
     }
     if (kind === "user") {
+      setUserActionMessage(null);
       setEditUserId(row.id);
       setEditUser({
         name: (row as any).name || "",
@@ -649,9 +652,22 @@ export default function AdminPage() {
                     <option value="READ">READ</option><option value="READ_WRITE">READ_WRITE</option><option value="ADMIN">ADMIN</option>
                   </select>
                   <label className="text-sm"><input type="checkbox" checked={editUser.isActive} onChange={(e) => setEditUser((v) => ({ ...v, isActive: e.target.checked }))} /> {tr("aktiv", "active")}</label>
-                  <input className="input" value={editUser.password} onChange={(e) => setEditUser((v) => ({ ...v, password: e.target.value }))} placeholder={tr("Neues Passwort (optional)", "New password (optional)")} />
+                  <input
+                    className="input"
+                    type="password"
+                    autoComplete="new-password"
+                    value={editUser.password}
+                    onChange={(e) => setEditUser((v) => ({ ...v, password: e.target.value }))}
+                    placeholder={tr("Neues Passwort (optional)", "New password (optional)")}
+                  />
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <button className="btn-secondary px-2" onClick={async () => {
+                    <button
+                      type="button"
+                      className="btn-secondary px-2"
+                      disabled={userActionBusyId === u.id}
+                      onClick={async () => {
+                      setUserActionBusyId(u.id);
+                      setUserActionMessage(null);
                       const payload: any = { id: u.id, name: editUser.name, email: editUser.email, role: editUser.role, isActive: editUser.isActive };
                       if (editUser.password) payload.password = editUser.password;
                       const { res, data } = await apiJson("/api/admin/users", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
@@ -660,17 +676,42 @@ export default function AdminPage() {
                         setUsers((prev) => replaceById(prev, data));
                         setEditUserId(null);
                         setEditUser({ name: "", email: "", role: "READ", isActive: true, password: "" });
+                        setUserActionMessage({
+                          id: u.id,
+                          kind: "success",
+                          text: editUser.password
+                            ? tr("Nutzer und Passwort aktualisiert", "User and password updated")
+                            : tr("Nutzer aktualisiert", "User updated")
+                        });
+                      } else {
+                        setUserActionMessage({
+                          id: u.id,
+                          kind: "error",
+                          text: data.error || unknownError
+                        });
                       }
-                    }}>{tr("Speichern", "Save")}</button>
-                    <button className="btn-secondary px-2" onClick={() => setEditUserId(null)}>{tr("Abbrechen", "Cancel")}</button>
+                      setUserActionBusyId(null);
+                    }}>{userActionBusyId === u.id ? tr("Speichert...", "Saving...") : tr("Speichern", "Save")}</button>
+                    <button type="button" className="btn-secondary px-2" onClick={() => {
+                      setEditUserId(null);
+                      setUserActionMessage(null);
+                    }}>{tr("Abbrechen", "Cancel")}</button>
                   </div>
+                  {(() => {
+                    const activeUserActionMessage = userActionMessage?.id === u.id ? userActionMessage : null;
+                    return activeUserActionMessage ? (
+                      <p className={`text-sm ${activeUserActionMessage.kind === "error" ? "[color:var(--app-danger-text)]" : "text-green-700"}`}>
+                        {activeUserActionMessage.text}
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <span className="break-words">{u.name} ({u.email}) - {u.role} - {tr("aktiv", "active")}: {String(u.isActive)}</span>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <button className="btn-secondary px-2 py-1" onClick={() => startEdit(u, "user")}>{tr("Bearbeiten", "Edit")}</button>
-                    <button className="btn-secondary px-2 py-1" onClick={async () => {
+                    <button type="button" className="btn-secondary px-2 py-1" onClick={() => startEdit(u, "user")}>{tr("Bearbeiten", "Edit")}</button>
+                    <button type="button" className="btn-secondary px-2 py-1" onClick={async () => {
                       const { res, data } = await apiJson("/api/admin/users", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: u.id }) });
                       setFeedback(res.ok ? tr("Nutzer deaktiviert", "User deactivated") : tr(`Nutzer deaktivieren fehlgeschlagen: ${data.error || unknownError}`, `User deactivation failed: ${data.error || unknownError}`));
                       if (res.ok) {

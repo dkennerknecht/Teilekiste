@@ -4,6 +4,7 @@ const uuidSchema = z.string().uuid();
 const nameSchema = z.string().trim().min(1).max(120);
 const codeSchema = z.string().trim().min(1).max(40);
 const shortCodeSchema = z.string().trim().regex(/^[A-Za-z0-9]{2}$/);
+const localEmailSchema = z.string().trim().min(3).max(200).regex(/^[^\s@]+@[^\s@]+$/);
 const customFieldCatalogEntrySchema = z.object({
   value: z.string().trim().min(1).max(120),
   aliases: z.array(z.string().trim().min(1).max(120)).default([]),
@@ -69,7 +70,7 @@ export const reservationSchema = z.object({
 
 export const adminUserSchema = z.object({
   name: z.string().min(1).max(120),
-  email: z.string().email().max(200),
+  email: localEmailSchema,
   password: z.string().min(8).max(200).optional(),
   role: z.enum(["ADMIN", "READ_WRITE", "READ"]).default("READ"),
   isActive: z.boolean().optional().default(true),
